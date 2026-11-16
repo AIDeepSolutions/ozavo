@@ -216,6 +216,7 @@ const timeline: TimelineDictionary = {
       endpoint_refused: "el endpoint de la clasificación no es una dirección https pública, o la protección de red lo rechazó",
       endpoint_key_missing: "el endpoint de la clasificación no tiene su clave guardada",
     },
+    turn_latency: "El agente empezó a responder {rtt} ms después de que quien llamó dejó de hablar (modelo: {llm} ms; síntesis de voz: {ttfb} ms).",
     caller_unanswered: {
       turn_closed: "Quien llamó estuvo {seconds} s sin respuesta, quizás por ruido en la línea. Se pidió al agente que respondiera a lo que escuchó.",
       asked_to_repeat: "El agente seguía callado {seconds} s después de lo último que dijo quien llamó, y le pidió que lo repitiera.",
@@ -232,6 +233,7 @@ const timeline: TimelineDictionary = {
     voicemail: "La llamada fue atendida por el buzón de voz.",
     voicemail_failed: "El buzón de voz atendió la llamada, pero el mensaje no se pudo grabar.",
     inbound_limit_reached: "Se alcanzó el límite de llamadas recibidas al mismo tiempo. Quien llamó recibió señal de ocupado. El límite se ajusta en Configuración → Llamadas.",
+    provider_limit_reached: "La cuenta del proveedor de síntesis de voz estaba en el tope de llamadas simultáneas de la instalación. Quien llamó recibió señal de ocupado. El tope se ajusta en FinOps → Límites de operación.",
     hangup: "Quien llamó colgó.",
     caller_hangup: "Quien llamó colgó.",
     agent_ended: "El agente terminó la conversación.",

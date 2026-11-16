@@ -26,6 +26,8 @@ const FAILURE_MESSAGE =
 export const MAX_CREATE_TASK_PER_CALL = 5;
 export const MAX_AGENDA_MARCAR_PER_CALL = 5;
 export const MAX_AGENDA_REMARCAR_PER_CALL = 5;
+/** Desmarcar é destrutivo: uma ligação raramente cancela mais de um compromisso. */
+export const MAX_AGENDA_CANCELAR_PER_CALL = 3;
 export const MAX_NOTIFY_HUMAN_PER_CALL = 3;
 export const MAX_CALL_WEBHOOK_PER_CALL = 5;
 /** Conta tentativas: cada pedido avisa a equipe, mesmo o que é negado ou expira. */
@@ -35,6 +37,7 @@ export const MAX_SUCCESSFUL_CALLS_PER_CALL: Readonly<Record<string, number>> = {
   create_task: MAX_CREATE_TASK_PER_CALL,
   agenda_marcar: MAX_AGENDA_MARCAR_PER_CALL,
   agenda_remarcar: MAX_AGENDA_REMARCAR_PER_CALL,
+  agenda_cancelar: MAX_AGENDA_CANCELAR_PER_CALL,
   notify_human: MAX_NOTIFY_HUMAN_PER_CALL,
   call_webhook: MAX_CALL_WEBHOOK_PER_CALL,
   request_approval: MAX_REQUEST_APPROVAL_PER_CALL,

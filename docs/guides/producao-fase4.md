@@ -20,8 +20,12 @@ precisam de `sslmode=verify-full`; as três URLs precisam da conexão de sessão
 (hexadecimal de 32 bytes), a mesma chave da instalação. Não passe segredos em argumentos nem
 salve esse JSON no repositório. Não use credenciais de produção em testes.
 
-Sem `s3`, o preparo gera credenciais e habilita o perfil MinIO interno. Com `s3`, informe `endpoint`
-HTTPS, `bucket`, `region`, `accessKeyId`, `secretAccessKey`; o MinIO fica fora da composição ativa.
+**Em produção, use S3 gerenciado**: informe `s3` com `endpoint` HTTPS, `bucket`, `region`,
+`accessKeyId`, `secretAccessKey`; o MinIO fica fora da composição ativa. O MinIO da composição é um
+espelho não oficial (`dappros/minio`, fixado por digest), porque a imagem oficial deixou de ser
+pública: em 16/11/2026 o Docker Hub respondia "object not found" para `minio/minio` e o quay.io
+pedia autenticação. Ele serve para bancada, e o preparo só o liga com `localMinio: true` explícito;
+sem `s3` nem `localMinio`, o preparo recusa. Nesse caso ele gera as credenciais do MinIO interno.
 Credenciais S3 externas devem permitir apenas o bucket do Ozavo. Não habilite versionamento ou
 retenção imutável sem um mecanismo que também apague versões antigas no prazo e a pedido do titular.
 O aplicativo não remove versões anteriores nem remove backups fora desse bucket.
@@ -67,6 +71,24 @@ de iniciar as aplicações. Não use as imagens de uma versão anterior para tes
 - [ ] Nenhum voiceprint, embedding biométrico ou reconhecimento de voz do interlocutor. TTS com
   voz escolhida pelo cliente não autoriza coletar biometria de quem ligou.
 
+## Variáveis do painel: o mínimo, e nada no build
+
+O build das imagens não lê segredo nenhum: o CI constrói `panel`, `voice` e `routines` só com
+`APP_VERSION` (`.github/workflows/ci.yml`). Numa plataforma que injeta variáveis no build (o Coolify
+marca "build time" por variável), desmarque o build de **todas**: segredo no build fica na camada
+da imagem e no log do build.
+
+No runtime, o painel lê só o que `loadConfig` (`packages/core/src/config.ts`) pede:
+
+| Variável | Painel em runtime |
+|---|---|
+| `DATABASE_URL` (papel `ozavo_app`, sem BYPASSRLS) | sim |
+| `SYSTEM_DATABASE_URL` (papel `ozavo_system`) | sim |
+| `OZAVO_SECRET_KEY`, `PUBLIC_URL`, `ARI_PASSWORD` | sim |
+| `MIGRATION_DATABASE_URL` (dono do schema) | **não**: só o comando de migrations. Guarde-a fora do painel |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | **não**: o produto fala com o Postgres pelas URLs acima |
+| `CARTESIA_API_KEY`, `DEEPGRAM_API_KEY`, `OPENROUTER_API_KEY` | **não**: a chave do motor fica cifrada em `settings`, cadastrada pela tela |
+
 ## Saúde, métricas e alertas
 
 ```sh
@@ -76,6 +98,12 @@ node --import tsx scripts/production-healthcheck.ts https://instalacao.example
 A checagem lê o relatório de saúde, não só HTTP 200. Sai 0 em `ok`, 1 em `warn`, 2 em falha, com
 um estado por peça e sem configuração/segredos. O relatório mede banco, voz, Asterisk e a fila
 (listener/atraso). O healthcheck do contêiner é de disponibilidade do processo; não substitui isto.
+
+Monitor externo que só entende o código HTTP (o do Coolify, um serviço de uptime) aponta para
+`/api/v1/system/health?strict=1`: nesse modo, qualquer peça em falha (`worst: "fail"`) responde
+**503**, com o mesmo relatório no corpo. Sem `strict`, a rota responde 200 com `worst: "fail"`, e a
+central sem voz parece no ar. O healthcheck dos contêineres fica sem `strict` de propósito: a voz
+caída não deve marcar o painel como doente nem segurar o Caddy.
 
 Configurar o monitor externo e um destinatário antes da liberação. Não foram criados monitores nem
 enviados alertas externos nesta tarefa. Registrar em operação o destinatário e provar a entrega.

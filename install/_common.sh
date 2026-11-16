@@ -286,13 +286,51 @@ render_asterisk_config() {
   render_asterisk_file ari.conf.tmpl ari.conf
   render_asterisk_file rtp.conf.tmpl rtp.conf
   render_asterisk_file pjsip.conf.base pjsip.conf
-  if [ ! -s "$GENERATED_DIR/tls/server.key" ]; then
-    mkdir -p "$GENERATED_DIR/tls"
-    openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=$PUBLIC_IP" \
-      -keyout "$GENERATED_DIR/tls/server.key" -out "$GENERATED_DIR/tls/server.crt" >/dev/null 2>&1
-    chmod 644 "$GENERATED_DIR/tls/server.key"
+  # Certificado autoassinado de 365 dias para o SIP sobre TLS. Renovado sozinho: a instalação e cada
+  # atualização trocam o par quando faltam menos de 30 dias (a checagem de saúde avisa antes).
+  local tls="$GENERATED_DIR/tls"
+  if [ ! -s "$tls/server.key" ] || ! tls_cert_valid_for "$tls/server.crt" "$TLS_RENEW_DAYS"; then
+    # Renovação (havia chave): o transporte TLS só lê o par novo reiniciando o Asterisk.
+    if [ -s "$tls/server.key" ]; then touch "$TLS_ROTATED"; fi
+    mkdir -p "$tls"
+    rm -f "$tls/server.key.new"
+    ( umask 077; openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=$PUBLIC_IP" \
+      -keyout "$tls/server.key.new" -out "$tls/server.crt" >/dev/null 2>&1 )
+    mv -f "$tls/server.key.new" "$tls/server.key"
   fi
+  chmod 755 "$tls"
+  [ -f "$tls/server.crt" ] && chmod 644 "$tls/server.crt"
+  secure_tls_key "$tls/server.key"
   unset ARI_PASSWORD
+}
+# O Asterisk da imagem fixada roda como o usuário `asterisk`, uid e gid 1000: a imagem faz
+# `usermod -u 1000 -g 1000 asterisk` e o comando é `asterisk ... -U asterisk` (conferido na
+# configuração da imagem andrius/asterisk@sha256:927d4c98..., Asterisk 20.20.1 em Alpine 3.24,
+# em 16/11/2026). Trocou a imagem? Confira de novo.
+ASTERISK_UID="${ASTERISK_UID:-1000}"
+TLS_RENEW_DAYS=30
+TLS_ROTATED="$GENERATED_DIR/.tls-rotated"
+mode_of_file() { if stat -c %a "$1" >/dev/null 2>&1; then stat -c %a "$1"; else stat -f %Lp "$1"; fi; }
+tls_cert_valid_for() {  # tls_cert_valid_for <certificado> <dias>: 0 se ainda vale por esse tempo
+  [ -s "$1" ] && openssl x509 -checkend "$(( $2 * 86400 ))" -noout -in "$1" >/dev/null 2>&1
+}
+# A chave privada do TLS só pode ser lida pelo Asterisk: 600, com o dono do contêiner. Quem instala
+# nem sempre tem o uid 1000; sem poder trocar o dono (nem pelo sudo sem senha), a chave fica 644,
+# legível por outros usuários da VPS, para o SIP sobre TLS continuar subindo, e o aviso diz o comando.
+secure_tls_key() {  # secure_tls_key <chave>
+  local key="$1" owner
+  [ -f "$key" ] || return 0
+  owner="$(stat -c %u "$key" 2>/dev/null || stat -f %u "$key")"
+  # Já fechada numa passada anterior (inclusive pelo sudo): não há o que mexer, e quem roda pode nem
+  # ser mais o dono do arquivo.
+  if [ "$owner" = "$ASTERISK_UID" ] && [ "$(mode_of_file "$key")" = 600 ]; then return 0; fi
+  if [ "$(id -u)" = "$ASTERISK_UID" ] && chmod 600 "$key" 2>/dev/null; then return 0; fi
+  if { chmod 600 "$key" 2>/dev/null && chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null; } \
+    || { command -v sudo >/dev/null 2>&1 && sudo -n chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null && sudo -n chmod 600 "$key" 2>/dev/null; }; then
+    return 0
+  fi
+  chmod 644 "$key" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo -n chmod 644 "$key" 2>/dev/null; } || true
+  warn "A chave do SIP sobre TLS ficou legível por outros usuários desta VPS: não consegui passá-la ao usuário do Asterisk (uid $ASTERISK_UID). Rode: sudo chown $ASTERISK_UID:$ASTERISK_UID $key && sudo chmod 600 $key"
 }
 # O que mudou num arquivo que o Asterisk já tinha fica anotado em ASTERISK_PENDING, para
 # converge_asterisk recarregar depois que os contêineres sobem. Arquivo novo (instalação nova)
@@ -880,7 +918,8 @@ restart_asterisk() {  # restart_asterisk "<por quê>"
 converge_asterisk() {
   local f stale="" modules="" out wanted reloaded
   # Parado, ele lê o que está no disco quando subir.
-  if [ -z "$(dc ps -q --status running asterisk 2>/dev/null)" ]; then rm -f "$ASTERISK_PENDING"; return 0; fi
+  if [ -z "$(dc ps -q --status running asterisk 2>/dev/null)" ]; then rm -f "$ASTERISK_PENDING" "$TLS_ROTATED"; return 0; fi
+  if [ -f "$TLS_ROTATED" ]; then restart_asterisk "o certificado do SIP sobre TLS foi renovado, e o transporte TLS só o lê ao reiniciar"; rm -f "$TLS_ROTATED"; return 0; fi
   for f in extensions http ari rtp pjsip; do
     [ -f "$GENERATED_DIR/$f.conf" ] || continue
     if mount_differs asterisk "/etc/asterisk/$f.conf" "$GENERATED_DIR/$f.conf"; then stale="$f.conf"; break; fi

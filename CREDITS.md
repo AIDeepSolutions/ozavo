@@ -150,7 +150,9 @@ qual licença, e acrescente uma linha neste arquivo. Código sem origem declarad
   O perfil local referencia o espelho não oficial Dappros, fixado por digest de manifest
   amd64/arm64 conferido no registro em 16/11/2026:
   https://hub.docker.com/r/dappros/minio. O mantenedor declara cópia sem alterações;
-  não reconstruímos nem auditamos seus binários. As imagens oficiais retornaram 401 nessa data.
+  não reconstruímos nem auditamos seus binários. As imagens oficiais retornaram 401 nessa data
+  (de novo em 16/11/2026, à noite: Docker Hub "object not found", quay.io 401). Por isso o perfil
+  é só para bancada, ligado com `localMinio: true`; produção usa S3 gerenciado.
 - **AWS SDK for JavaScript**: cliente S3, Apache-2.0,
   https://github.com/aws/aws-sdk-js-v3.
 - **Pillow**: conversão de logos RCD via processo Python, licença HPND,

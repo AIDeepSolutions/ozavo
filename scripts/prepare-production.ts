@@ -1,5 +1,5 @@
 import { randomBytes, createPrivateKey, X509Certificate } from "node:crypto";
-import { mkdir, readFile, writeFile, copyFile, chmod } from "node:fs/promises";
+import { mkdir, readFile, writeFile, copyFile, chmod, chown } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
@@ -23,7 +23,10 @@ export const productionInput = z.object({
   s3: z.object({ endpoint: z.url().refine(value => new URL(value).protocol === "https:"),
     bucket: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/), region: z.string().min(1),
     accessKeyId: z.string().min(1), secretAccessKey: z.string().min(1) }).optional(),
-});
+  // O MinIO da composição é um espelho não oficial (a imagem oficial não é mais pública: 16/11/2026).
+  // Sem `s3`, ele só entra com o pedido explícito, e é para bancada: em produção, S3 gerenciado.
+  localMinio: z.literal(true).optional(),
+}).refine(value => value.s3 !== undefined || value.localMinio === true, { message: "Inform s3 (managed storage), or localMinio: true to accept the unofficial MinIO mirror", path: ["s3"] });
 const hex = () => randomBytes(32).toString("hex");
 function envText(values: Record<string, string>): string {
   // Env_file raw não interpola $ de senhas. Valores não podem injetar nova linha.
@@ -31,8 +34,19 @@ function envText(values: Record<string, string>): string {
   return Object.entries(values).map(([key, value]) => `${key}='${value.replaceAll("'", "\\'")}'`).join("\n") + "\n";
 }
 
-/** Só prepara arquivos em diretório novo; não acessa banco, Docker, rede ou instalação existente. */
-export async function prepareProduction(target: string, input: unknown): Promise<void> {
+/**
+ * O usuário do Asterisk na imagem fixada: `asterisk`, uid e gid 1000 (a imagem faz `usermod -u 1000
+ * -g 1000 asterisk` e roda `asterisk -U asterisk`; conferido na configuração de
+ * andrius/asterisk@sha256:927d4c98..., 20.20.1, em 16/11/2026). O mesmo de `install/_common.sh`.
+ */
+export const ASTERISK_UID = 1000;
+
+/**
+ * Só prepara arquivos em diretório novo; não acessa banco, Docker, rede ou instalação existente.
+ * Devolve os avisos que quem roda precisa ler (a chave TLS que não pôde ser fechada).
+ */
+export async function prepareProduction(target: string, input: unknown, options: { asteriskUid?: number } = {}): Promise<string[]> {
+  const warnings: string[] = [];
   if (!isAbsolute(target) || resolve(target) === "/" || resolve(target) === root) throw new Error("Use a new absolute directory");
   const data = productionInput.parse(input);
   const certificate = await readFile(data.tlsCertificate);
@@ -67,24 +81,38 @@ export async function prepareProduction(target: string, input: unknown): Promise
     await writeFile(file, source.replace(/\$\{([A-Z_]+)\}/g, (original: string, key: string) => replacements[key] ?? original), { mode: 0o644 });
     await chmod(file, 0o644);
   }
-  // O diretório pai 0700 protege a chave; o Asterisk no contêiner precisa ler o bind mount.
+  // O certificado é público. A chave privada só o Asterisk lê: 0600 com o dono do contêiner. Sem
+  // poder trocar o dono (quem roda não é root nem o uid do Asterisk), fica 0644 para o TLS subir, e
+  // o aviso diz o comando: nunca uma chave que o Asterisk não lê, que deixaria a central sem TLS.
   await writeFile(join(generated, "tls/server.crt"), certificate, { mode: 0o644 });
-  await writeFile(join(generated, "tls/server.key"), privateKey, { mode: 0o644 });
   await chmod(join(generated, "tls/server.crt"), 0o644);
-  await chmod(join(generated, "tls/server.key"), 0o644);
+  const keyFile = join(generated, "tls/server.key");
+  await writeFile(keyFile, privateKey, { mode: 0o600 });
+  await chmod(keyFile, 0o600);
+  const asteriskUid = options.asteriskUid ?? ASTERISK_UID;
+  if (process.getuid?.() !== asteriskUid) {
+    try {
+      await chown(keyFile, asteriskUid, asteriskUid);
+    } catch {
+      await chmod(keyFile, 0o644);
+      warnings.push(`A chave TLS ficou legível por outros usuários: rode sudo chown ${asteriskUid}:${asteriskUid} ${keyFile} && sudo chmod 600 ${keyFile}`);
+    }
+  }
   await chmod(generated, 0o700);
   await copyFile(join(root, "deploy/Caddyfile"), join(target, "Caddyfile"));
   const compose = parse(await readFile(join(root, "deploy/docker-compose.supabase.yml"), "utf8"), { merge: true }) as { services: Record<string, { build?: { context: string } }> };
   for (const service of Object.values(compose.services)) if (service.build) service.build.context = root;
   await writeFile(join(target, "docker-compose.yml"), stringify(compose));
+  return warnings;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Uint8Array));
-    await prepareProduction(process.argv[2] ?? "", JSON.parse(Buffer.concat(chunks).toString()));
+    const warnings = await prepareProduction(process.argv[2] ?? "", JSON.parse(Buffer.concat(chunks).toString()));
     process.stdout.write("Arquivos preparados. Nenhuma migration ou implantação executada.\n");
+    for (const warning of warnings) process.stderr.write(`Aviso: ${warning}\n`);
   } catch {
     process.stderr.write("Preparo recusado. Confira diretório novo, URLs Supabase com TLS, conexão de sessão e certificado correspondente. Nenhum segredo foi impresso.\n");
     process.exitCode = 1;

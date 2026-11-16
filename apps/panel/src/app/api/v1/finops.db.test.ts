@@ -4,6 +4,7 @@ import { call, createOrganization, createUser, startPanel } from "../../../../te
 import { GET as getPlan, PUT as putPlan } from "./finops/plan/route";
 import { GET as getSummary } from "./finops/route";
 import { GET as getLimits, PUT as putLimits } from "./finops/settings/route";
+import { GET as getSetting, PUT as putSetting } from "./settings/[key]/route";
 
 const panel = startPanel();
 let org: string;
@@ -22,9 +23,14 @@ beforeAll(async () => {
   tenantOwner = (await createUser(panel.app, tenant, "owner")).cookie;
   tenantAdmin = (await createUser(panel.app, tenant, "admin")).cookie;
 });
-afterAll(() => panel.close());
+// O teto do provedor da plataforma vale para a instalação inteira: o banco é de todos os testes.
+afterAll(async () => {
+  await withSystem(panel.app, (q) => q.exec("update organizations set platform = false where id = $1", [org]));
+  await panel.close();
+});
 
-const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4 };
+const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4, shortCallSeconds: 7, shortCallInclusive: true, shortCallCountsUnanswered: false };
+const SPEC_RULE = { shortCallSeconds: 6, shortCallInclusive: false, shortCallCountsUnanswered: true };
 
 describe("FinOps pela API", () => {
   it("sem plano, o resumo vem do mês do calendário, sem franquia", async () => {
@@ -36,7 +42,7 @@ describe("FinOps pela API", () => {
   it("operador lê, mas não troca o plano nem os limites", async () => {
     expect(await call(putPlan, { cookie: operator, method: "PUT", body: { plan: "pro", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 403, code: "forbidden" });
     expect(await call(putLimits, { cookie: operator, method: "PUT", body: limits })).toMatchObject({ status: 403, code: "forbidden" });
-    expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+    expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, ...SPEC_RULE });
   });
 
   it("dono ou admin de uma empresa comum não troca o próprio plano nem afrouxa os limites", async () => {
@@ -48,7 +54,7 @@ describe("FinOps pela API", () => {
     }
     // A leitura continua: a tela da empresa mostra o plano e os limites, sem poder gravar.
     expect((await call(getPlan, { cookie: tenantOwner })).data).toMatchObject({ subscription: null, platform: false });
-    expect((await call(getLimits, { cookie: tenantOwner })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+    expect((await call(getLimits, { cookie: tenantOwner })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, ...SPEC_RULE });
     expect((await call(getPlan, { cookie: owner })).data).toMatchObject({ platform: true });
   });
 
@@ -71,5 +77,13 @@ describe("FinOps pela API", () => {
     expect((await call(putLimits, { cookie: owner, method: "PUT", body: limits })).data).toEqual(limits);
     expect(await call(putLimits, { cookie: owner, method: "PUT", body: { ...limits, ttsConcurrencyLimit: 0 } })).toMatchObject({ status: 400, code: "validation_error" });
     expect((await call(getSummary, { cookie: owner })).data).toMatchObject({ settings: limits, margin: { providerCostCents: 0, telephonyCostCents: 0, variableCostCents: 0 } });
+  });
+
+  it("a própria empresa escolhe por onde mais sai o aviso de franquia, e o padrão é só o painel", async () => {
+    expect((await call(getSetting, { cookie: tenantOwner, params: { key: "plan.alert_whatsapp" } })).data).toEqual({ key: "plan.alert_whatsapp", value: false });
+    expect((await call(putSetting, { cookie: tenantOwner, method: "PUT", params: { key: "plan.alert_whatsapp" }, body: { value: true } })).data).toMatchObject({ value: true });
+    expect((await call(putSetting, { cookie: tenantAdmin, method: "PUT", params: { key: "plan.alert_webhook" }, body: { value: "n8n" } })).data).toMatchObject({ value: "n8n" });
+    expect(await call(putSetting, { cookie: tenantOwner, method: "PUT", params: { key: "plan.alert_webhook" }, body: { value: "" } })).toMatchObject({ status: 400, code: "validation_error" });
+    expect(await call(putSetting, { cookie: operator, method: "PUT", params: { key: "plan.alert_whatsapp" }, body: { value: true } })).toMatchObject({ status: 403 });
   });
 });

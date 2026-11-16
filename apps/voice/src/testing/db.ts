@@ -96,13 +96,15 @@ export async function createTrunk(
     callerId?: string | null;
     matchExtra?: string[];
     outboundHost?: string | null;
+    /** A linha de teste é TLS, salvo pedido: o banco faz nascer em UDP desde a 20261116T220000. */
+    sipTls?: boolean;
   } = {},
 ): Promise<string> {
   const id = randomUUID();
   const password = options.password === undefined ? "s3nha-do-tronco" : options.password;
   await withSystem(app, (q) =>
     q.exec(
-      "insert into trunks (id, organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host) values ($1, $2, 'Operadora', $3, $4, $5, $6, $7, $8, $9)",
+      "insert into trunks (id, organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host, sip_tls) values ($1, $2, 'Operadora', $3, $4, $5, $6, $7, $8, $9, $10)",
       [
         id,
         organizationId,
@@ -113,6 +115,7 @@ export async function createTrunk(
         options.callerId ?? null,
         options.matchExtra ?? [],
         options.outboundHost ?? null,
+        options.sipTls ?? true,
       ],
     ),
   );
@@ -239,6 +242,8 @@ export interface ManualTransport extends CallTransport {
   sentDtmf: string[];
   /** Áudio de quem ligou por `ms`; `peak` acima de zero manda fala em vez de silêncio. */
   callerAudio(ms: number, peak?: number): void;
+  /** Áudio de quem ligou, como está (PCM16 8 kHz), em quadros de 20 ms. */
+  callerPcm(pcm: Buffer): void;
   callerHangup(): void;
 }
 
@@ -264,6 +269,9 @@ export function manualTransport(): ManualTransport {
       const frame = Buffer.alloc(320);
       if (peak > 0) for (let i = 0; i + 1 < frame.length; i += 2) frame.writeInt16LE(i % 4 === 0 ? peak : -peak, i);
       for (let sent = 0; sent < ms; sent += 20) audio?.(frame);
+    },
+    callerPcm(pcm) {
+      for (let at = 0; at < pcm.length; at += 320) audio?.(pcm.subarray(at, at + 320));
     },
     callerHangup: () => hangup?.(),
   };

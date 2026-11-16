@@ -260,6 +260,11 @@ describe("secrets", () => {
     }
     const row = await stored<string>("select secret_enc from trunks where id = $1", [id]);
     expect(row?.secret_enc).not.toContain(password);
+    // Sem escolha explícita, a linha nasce em UDP: a maioria das operadoras não fala SIP sobre TLS.
+    expect(created.data).toMatchObject({ sipTls: false });
+    expect(await stored<boolean>("select sip_tls from trunks where id = $1", [id])).toEqual({ sip_tls: false });
+    const tls = await call(createTrunk, { method: "POST", cookie: owner, body: { name: "Operadora TLS", host: "sip.example.test:5061", username: "5532", password, authMode: "register", sipTls: true } });
+    expect(tls.data).toMatchObject({ sipTls: true });
     expect(decryptSecret(row?.secret_enc ?? "", SECRET_KEY)).toBe(password);
 
     const injected = await call(patchTrunk, { method: "PATCH", cookie: owner, params: { id }, body: { host: "sip.example.test\n[evil]" } });

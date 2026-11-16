@@ -24,7 +24,7 @@ const line: LineDictionary = {
   passwordKept: "Password configured. Leave blank to keep the current one.",
   passwordAgain: "You changed the address or the user: enter the password again. The stored password is only valid for the previous provider.",
   sipTls: "Encrypt signaling and audio",
-  sipTlsHint: "TLS 5061 and SRTP. Required in Supabase production; disabling only preserves compatibility in the community installer.",
+  sipTlsHint: "TLS on port 5061 and SRTP audio. Check it only if your carrier accepts SIP over TLS: most speak UDP only, and a line checked without that support does not register. The production setup certified with the carrier (Supabase) uses TLS.",
   callerDisplayName: "Call display name (RCD)",
   callerDisplayNameHint: "Up to 32 ASCII characters, without accents. SIP TLS 5061 and SRTP are required.",
   callerId: "Displayed number",

@@ -1,4 +1,4 @@
-import type { AgendaAppointment, AgendaClient, AgendaFreeSlots, AgendaSlot, BookRequest, FreeSlotsRequest, RescheduleRequest } from "../src/connectors/agenda";
+import type { AgendaAppointment, AgendaClient, AgendaFreeSlots, AgendaSlot, BookRequest, CancelRequest, FreeSlotsRequest, RescheduleRequest } from "../src/connectors/agenda";
 import type { ToolContext } from "../src/types";
 
 /** O momento da ligação nos testes: um instante fixo, nunca o relógio da máquina. */
@@ -15,7 +15,7 @@ export const HORARIOS_LIVRES: AgendaSlot[] = [
  * provar a escrita — e a ausência dela — sem HTTP, sem rede e sem depender do CRM de verdade.
  */
 export interface CrmSimulado extends AgendaClient {
-  readonly pedidos: { horarios: FreeSlotsRequest[]; marcacoes: BookRequest[]; remarcacoes: RescheduleRequest[] };
+  readonly pedidos: { horarios: FreeSlotsRequest[]; marcacoes: BookRequest[]; remarcacoes: RescheduleRequest[]; cancelamentos: CancelRequest[] };
   readonly compromissos: Map<string, AgendaAppointment>;
   /** Derruba o CRM simulado: a próxima chamada, e as seguintes, falham como servidor fora do ar. */
   foraDoAr(motivo?: string): void;
@@ -24,7 +24,7 @@ export interface CrmSimulado extends AgendaClient {
 export function crmSimulado(options: { slots?: AgendaSlot[]; timezone?: string } = {}): CrmSimulado {
   const slots = options.slots ?? HORARIOS_LIVRES;
   const timezone = options.timezone ?? "America/Sao_Paulo";
-  const pedidos = { horarios: [] as FreeSlotsRequest[], marcacoes: [] as BookRequest[], remarcacoes: [] as RescheduleRequest[] };
+  const pedidos = { horarios: [] as FreeSlotsRequest[], marcacoes: [] as BookRequest[], remarcacoes: [] as RescheduleRequest[], cancelamentos: [] as CancelRequest[] };
   const compromissos = new Map<string, AgendaAppointment>();
   let falha: Error | null = null;
   let proximo = 0;
@@ -60,6 +60,11 @@ export function crmSimulado(options: { slots?: AgendaSlot[]; timezone?: string }
       const remarcado = { id: atual.id, startsAt: pedido.startsAt };
       compromissos.set(remarcado.id, remarcado);
       return remarcado;
+    },
+    async cancel(pedido: CancelRequest): Promise<void> {
+      pedidos.cancelamentos.push(pedido);
+      conferir();
+      if (!compromissos.delete(pedido.appointmentId)) throw new Error(`compromisso ${pedido.appointmentId} não existe no CRM (HTTP 404)`);
     },
   };
 }

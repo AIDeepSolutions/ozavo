@@ -58,6 +58,19 @@ export interface Usage {
   providerCostCents?: number;
 }
 
+/** O que um motor mede por turno, em milissegundos. */
+export interface TurnLatency {
+  turn: number;
+  /** Prazo do endpointing usado no turno. */
+  endpointDelayMs: number;
+  /** Do fim da fala de quem ligou ao primeiro texto do modelo. */
+  llmFirstTokenMs: number;
+  /** Do primeiro texto mandado à síntese ao primeiro áudio dela (TTFB). */
+  ttfbMs: number;
+  /** Do fim da fala de quem ligou ao primeiro áudio do agente. */
+  rttMs: number;
+}
+
 export interface VoiceSessionEvents {
   /** Fala do agente. Sempre PCM16 mono 8 kHz, em pedaços de qualquer tamanho. */
   audio(pcm16_8k: Buffer): void;
@@ -82,6 +95,11 @@ export interface VoiceSessionEvents {
   answeringMachine(detection: AnsweringMachineDetection): void;
   /** Incremento desde o último `usage` (não é acumulado): quem mede custo soma os eventos. */
   usage(usage: Usage): void;
+  /**
+   * Latência medida de um turno do agente (só os motores que medem, hoje o pipeline): quem conduz
+   * a chamada grava na linha do tempo (`turn_latency`).
+   */
+  turnMetrics(metrics: TurnLatency): void;
   /** Seguido de `closed` quando é fatal; sozinho, a sessão continua. */
   error(error: Error): void;
   closed(reason: string): void;
@@ -302,6 +320,12 @@ export interface VoiceEngine {
   defaultVoice?: string;
   /** Verdadeiro para motores que não precisam de chave (o simulado). */
   keyless?: boolean;
+  /**
+   * Verdadeiro para motor que detecta caixa postal sozinho e emite `answeringMachine` (o pipeline).
+   * Para os outros, quem conduz a chamada roda o mesmo detector sobre o áudio e a transcrição de
+   * quem atendeu (`apps/voice/src/call-session.ts`), então toda ligação de saída tem AMD.
+   */
+  detectsAnsweringMachine?: boolean;
   pricing: EnginePricing;
   connect(config: VoiceSessionConfig, apiKey: string, options?: ConnectOptions): Promise<VoiceSession>;
   /**

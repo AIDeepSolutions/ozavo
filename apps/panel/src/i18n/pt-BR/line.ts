@@ -22,7 +22,7 @@ const line = {
   passwordKept: "Senha configurada. Deixe em branco para manter a atual.",
   passwordAgain: "Você mudou o endereço ou o usuário: informe a senha de novo. A senha gravada vale só para o provedor anterior.",
   sipTls: "Proteger sinalização e áudio",
-  sipTlsHint: "TLS 5061 e SRTP. Obrigatório na produção Supabase; desmarcar só mantém compatibilidade no instalador comunitário.",
+  sipTlsHint: "TLS na porta 5061 e áudio SRTP. Marque só se a sua operadora aceita SIP sobre TLS: a maioria fala só UDP, e a linha marcada sem esse suporte não registra. A produção que homologa com a operadora (Supabase) usa TLS.",
   callerDisplayName: "Nome na chamada (RCD)",
   callerDisplayNameHint: "Até 32 caracteres ASCII, sem acentos. SIP TLS 5061 e SRTP são obrigatórios.",
   callerId: "Número exibido",

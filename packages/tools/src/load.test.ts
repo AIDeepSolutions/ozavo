@@ -26,6 +26,7 @@ describe("loadTools", { timeout: 30_000 }, () => {
   it("descobre as ferramentas da pasta, cada uma com o nome do próprio arquivo", async () => {
     const tools = await loadTools();
     expect([...tools.keys()].sort()).toEqual([
+      "agenda_cancelar",
       "agenda_horarios_livres",
       "agenda_marcar",
       "agenda_remarcar",

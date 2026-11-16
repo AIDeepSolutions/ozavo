@@ -17,7 +17,7 @@ termina.
 
 **[ozavo.com.br](https://ozavo.com.br)** (en portugués) · [Instalar](https://ozavo.com.br/instalar) · [Guías](https://ozavo.com.br/guias) · [Notas de versión](https://ozavo.com.br/changelog)
 
-[![Sitio](https://img.shields.io/badge/sitio-ozavo.com.br-a2552f)](https://ozavo.com.br)
+[![Sitio](https://img.shields.io/badge/sitio-ozavo.com.br-0052CC)](https://ozavo.com.br)
 [![CI](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml/badge.svg)](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green)](LICENSE)
 [![Node 22](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)

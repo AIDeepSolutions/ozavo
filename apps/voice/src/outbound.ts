@@ -58,7 +58,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
 
     if (!trunk.caller_id_e164 || toE164(trunk.caller_id_e164) !== trunk.caller_id_e164) return { code: "no_line", message: "The outgoing line needs its own E.164 caller ID." };
     const policy = await checkOutboundAllowed(q, to, clock, trunk.caller_id_e164);
-    const decision = policy.allowed ? await checkPacingAllowed(q, clock.now(), { lineE164: trunk.caller_id_e164, globalActive: deps.calls.inProgress }) : policy;
+    const decision = policy.allowed ? await checkPacingAllowed(q, clock.now(), { db, lineE164: trunk.caller_id_e164 }) : policy;
     const call = await q.one<{ id: string }>(
       `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at, requested_by_key_id, request_context, request_key)
        values ($1, $2, 'outbound', 'phone', $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,

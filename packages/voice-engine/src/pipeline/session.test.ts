@@ -74,6 +74,7 @@ async function setup(config: Partial<VoiceSessionConfig> = {}, options: { amd?: 
   let stt: SttHandlers | undefined;
   let tts: TtsHandlers | undefined;
   const metrics: TurnMetrics[] = [];
+  const emittedMetrics: TurnMetrics[] = [];
   const session = await createPipelineSession({
     config: { instructions: "Você é a recepcionista da Clínica Exemplo.", language: "pt-BR", tools: TOOLS, ...config },
     clock: time.clock,
@@ -128,11 +129,12 @@ async function setup(config: Partial<VoiceSessionConfig> = {}, options: { amd?: 
   session.on("toolCall", (call) => toolCalls.push(call));
   session.on("transcript", (turn) => transcripts.push(turn));
   session.on("answeringMachine", (detection) => amd.push(detection));
+  session.on("turnMetrics", (measured) => emittedMetrics.push(measured));
   session.on("audio", (pcm) => audio.push(pcm));
   if (!stt || !tts) throw new Error("portas não abertas");
   const ports = { stt, tts };
   const addSttSeconds = (s: number) => (sttSeconds += s);
-  return { session, time, timers, streams, spoken, cancelled, sentAudio, metrics, events, usages, toolCalls, transcripts, amd, audio, ports, addSttSeconds, finalizes: () => finalizes, closes: () => closes };
+  return { session, time, timers, streams, spoken, cancelled, sentAudio, metrics, emittedMetrics, events, usages, toolCalls, transcripts, amd, audio, ports, addSttSeconds, finalizes: () => finalizes, closes: () => closes };
 }
 
 /** Quem ligou fala e para: a STT entrega o final com pausa, e o endpointing marca o prazo. */
@@ -470,6 +472,8 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
     expect(t.metrics).toEqual([
       { turn: 1, endpointDelayMs: ENDPOINT_CLOSED_MS, llmFirstTokenMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS, ttfbMs: TTS_TTFB_MS, rttMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS + TTS_TTFB_MS },
     ]);
+    // A mesma medida sai como evento da sessão, que a conversa grava na linha do tempo.
+    expect(t.emittedMetrics).toEqual(t.metrics);
     expect(t.metrics[0]?.ttfbMs).toBeLessThan(100);
     expect(t.metrics[0]?.rttMs).toBeLessThan(500);
     expect(t.spoken[0]?.at).toBe(speechEnd + ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS);

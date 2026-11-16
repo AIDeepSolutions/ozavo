@@ -217,6 +217,7 @@ const timeline = {
       endpoint_refused: "o endpoint da classificação não é um endereço https público, ou a guarda de rede o recusou",
       endpoint_key_missing: "o endpoint da classificação não tem a chave dele cadastrada",
     } as Record<string, string>,
+    turn_latency: "O agente começou a responder {rtt} ms depois de quem ligou parar de falar (modelo: {llm} ms; síntese de voz: {ttfb} ms).",
     caller_unanswered: {
       turn_closed: "Quem ligou ficou {seconds} s sem resposta, talvez por barulho na linha. O agente foi chamado a responder ao que ouviu.",
       asked_to_repeat: "O agente seguia calado {seconds} s depois da última fala de quem ligou e pediu para a pessoa repetir.",
@@ -233,6 +234,7 @@ const timeline = {
     voicemail: "A ligação foi atendida pela caixa postal.",
     voicemail_failed: "A ligação foi atendida pela caixa postal, mas o recado não pôde ser gravado.",
     inbound_limit_reached: "O limite de ligações recebidas ao mesmo tempo foi atingido. Quem ligou recebeu sinal de ocupado. O limite se ajusta em Configurações → Ligações.",
+    provider_limit_reached: "A conta do provedor de síntese de voz estava no teto de chamadas ao mesmo tempo da instalação. Quem ligou recebeu sinal de ocupado. O teto se ajusta em FinOps → Limites de operação.",
     hangup: "Quem ligou desligou.",
     caller_hangup: "Quem ligou desligou.",
     agent_ended: "O agente encerrou a conversa.",

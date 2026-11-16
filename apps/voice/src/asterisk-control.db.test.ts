@@ -74,7 +74,7 @@ describe("troncos", { timeout: 120_000 }, () => {
     expect(conf).toContain(`[trunk-${good}-registration]`);
     expect(conf).toContain("password=s3nha-boa\n");
     expect(conf).toContain(`[trunk-${good}]\ntype=endpoint`);
-    // A linha nasce em TLS e tem endereço por nome: o PAI leva o domínio da operadora (auditoria A8).
+    // A linha em TLS (o padrão do teste) com endereço por nome: o PAI leva o domínio da operadora (auditoria A8).
     expect(conf.slice(conf.indexOf(`[trunk-${good}]`), conf.indexOf(`[trunk-${good}-auth]`))).toContain("from_domain=sip.boa.example");
     // Sem TLS, vale o IP público da organização, que vem antes do da instalação.
     await withSystem(app, (q) => q.exec("update trunks set sip_tls = false where id = $1", [good]));

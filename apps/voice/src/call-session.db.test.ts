@@ -15,6 +15,7 @@ import { createAgendaRemarcar } from "../../../packages/tools/src/tools/agenda_r
 import { EngineTimeoutError, type VoiceEngine } from "@ozavo/voice-engine";
 import openaiRealtime from "../../../packages/voice-engine/src/engines/openai-realtime";
 import { startFakeProvider } from "../../../packages/voice-engine/src/testing/fake-provider";
+import { silence, speech } from "../../../packages/voice-engine/src/testing/audio";
 import { DEFAULT_RECORDING_NOTICE, startCallSession, type CallSession } from "./call-session";
 import {
   approvalsOf,
@@ -984,6 +985,20 @@ describe("gravação a pedido de quem ligou", { timeout: 120_000 }, () => {
 });
 
 
+describe("latência por turno", () => {
+  it("a medida que o motor emite vira turn_latency na linha do tempo", async () => {
+    const manual = manualEngine({ keyless: true });
+    const { callId, start } = await scene("turn-latency", { engine: "manual" }, manual);
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    manual.emit("turnMetrics", { turn: 1, endpointDelayMs: 200, llmFirstTokenMs: 380, ttfbMs: 270, rttMs: 650 });
+    await waitFor(async () => (await kindsOf(app, callId)).includes("turn_latency"), "the latency to be recorded");
+    expect((await eventsOf(app, callId)).find((event) => event.kind === "turn_latency")?.payload).toEqual({ turn: 1, rttMs: 650, ttfbMs: 270, llmFirstTokenMs: 380, endpointDelayMs: 200 });
+    session.stop("caller_hangup");
+    await session.done;
+  });
+});
+
 describe("AMD nas ligações de saída", () => {
   it.each(["machine", "unknown"] as const)("encerra saída com veredito %s e registra o motivo", async (verdict) => {
     const manual = manualEngine({ keyless: true });
@@ -997,6 +1012,56 @@ describe("AMD nas ligações de saída", () => {
     expect((await callOf(app, callId)).end_reason).toBe(reason);
     expect(transport.hangups).toBe(1);
     expect((await eventsOf(app, callId)).find((event) => event.kind === "call_ended")?.payload).toMatchObject({ reason });
+  });
+
+  // Gemini Live e OpenAI Realtime não detectam caixa postal: a conversa roda o detector do pipeline
+  // sobre o áudio e a transcrição de quem atendeu.
+  it("motor sem AMD próprio: saudação longa sem pausa encerra como caixa postal", async () => {
+    const manual = manualEngine();
+    const { organizationId, callId, transport, start } = await scene("amd-own-long", { engine: "manual" }, manual, "outbound");
+    await putSetting(app, organizationId, "engine.manual.api_key", encryptSecret("sk-certa", secretKey));
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    transport.callerPcm(Buffer.concat([silence(10), speech(140)]));
+    expect(await session.done).toMatchObject({ status: "completed", endReason: "answering_machine" });
+    expect(transport.hangups).toBe(1);
+  });
+
+  it("motor sem AMD próprio: a frase de caixa postal na transcrição encerra", async () => {
+    const manual = manualEngine();
+    const { organizationId, callId, start } = await scene("amd-own-phrase", { engine: "manual" }, manual, "outbound");
+    await putSetting(app, organizationId, "engine.manual.api_key", encryptSecret("sk-certa", secretKey));
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    manual.emit("transcript", { speaker: "user", text: "Deixe sua mensagem após o sinal." });
+    expect(await session.done).toMatchObject({ status: "completed", endReason: "answering_machine" });
+  });
+
+  it("motor sem AMD próprio: gente que atende com um alô curto segue na conversa", async () => {
+    const manual = manualEngine();
+    const { organizationId, callId, transport, start } = await scene("amd-own-human", { engine: "manual" }, manual, "outbound");
+    await putSetting(app, organizationId, "engine.manual.api_key", encryptSecret("sk-certa", secretKey));
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    // "Alô?" curto e silêncio: o detector decide que é gente e para de medir, então o silêncio
+    // depois (mais que o prazo de 5 s) não encerra a ligação.
+    transport.callerPcm(Buffer.concat([silence(10), speech(30), silence(400)]));
+    // Se o detector tivesse encerrado, o fim seria o dele, e não o de quem desligou.
+    session.stop("caller_hangup");
+    expect(await session.done).toMatchObject({ endReason: "caller_hangup" });
+  });
+
+  it("motor que declara AMD próprio não ganha um segundo detector", async () => {
+    const manual = manualEngine();
+    manual.engine.detectsAnsweringMachine = true;
+    const { organizationId, callId, transport, start } = await scene("amd-own-engine", { engine: "manual" }, manual, "outbound");
+    await putSetting(app, organizationId, "engine.manual.api_key", encryptSecret("sk-certa", secretKey));
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    transport.callerPcm(Buffer.concat([silence(10), speech(140), silence(300)]));
+    // Se o detector tivesse encerrado, o fim seria o dele, e não o de quem desligou.
+    session.stop("caller_hangup");
+    expect(await session.done).toMatchObject({ endReason: "caller_hangup" });
   });
 
   it("não encerra entrada quando um motor emite AMD", async () => {

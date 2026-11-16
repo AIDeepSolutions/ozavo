@@ -63,9 +63,22 @@ de voz em cada linha.
 Dois tetos seguram a ligação de saída a mais, com a recusa `concurrency_limit`:
 
 - **da organização**: o `max_concurrent_calls` do plano;
-- **da conta do provedor de síntese** (Cartesia): o valor informado em FinOps → Limites de operação.
-  Este conta as chamadas em curso de todas as organizações do processo de voz, porque elas dividem
-  a mesma conta no provedor. Vazio é "sem limite por aqui".
+- **da conta do provedor de síntese** (Cartesia): um número só, da instalação, o valor que a
+  organização da plataforma informa em FinOps → Limites de operação (`takeProviderSlots`, em
+  `packages/core/src/provider-slots.ts`). Ele conta as chamadas vivas de todas as organizações,
+  recebidas e de saída, de qualquer processo de voz, porque todas dividem a mesma conta no provedor.
+  O recado da caixa postal e a chamada simulada não usam o provedor e não contam. A conferência
+  roda sob uma trava consultiva global (`pg_advisory_xact_lock`) na mesma transação que grava a
+  chamada, então duas empresas ligando juntas não furam a última vaga. A vaga é a própria linha em
+  `calls`: ela volta quando a chamada termina ou falha antes de conectar, e uma linha presa (o
+  processo caiu) deixa de contar depois do maior tempo máximo de chamada dos agentes, mais 2
+  minutos. Vazio é "sem limite por aqui". O valor da própria organização, se houver, só aperta o
+  teto para ela.
+
+A ligação **recebida** (operadora e WhatsApp) também passa pelas vagas do provedor. No teto, quem
+liga pela operadora ouve sinal de ocupado, e a do WhatsApp continua tocando no celular; nos dois
+casos a chamada fica recusada com o motivo `provider_limit_reached`, o evento `call_refused` e um
+aviso no painel. Nunca uma chamada atendida e muda.
 
 A recusa fica gravada como chamada `refused` com o evento `call_refused`, como qualquer recusa da
 política de saída. Não há fila de espera: quem pediu a ligação recebe o código e tenta de novo.
@@ -73,19 +86,35 @@ política de saída. Não há fila de espera: quem pediu a ligação recebe o c�
 ## Redução de cadência por chamadas curtas
 
 A rotina `watch_short_calls` confere, a cada 15 minutos enquanto a organização faz ligações de
-saída, as ligações do dia por linha. Quando mais de 1.000 ligações de saída foram feitas no dia e
-75% ou mais delas foram atendidas e duraram menos de 6 segundos:
+saída, as ligações do dia **por linha e pela empresa inteira** (todas as linhas somadas, quando há
+mais de uma). Quando mais de 1.000 ligações de saída foram feitas no dia e 75% ou mais delas foram
+curtas:
 
-- a linha entra em `cadence_breakers` para aquele dia;
+- a linha entra em `cadence_breakers` para aquele dia; a empresa inteira entra com a linha `*`
+  (`WHOLE_ORGANIZATION`), e então cada linha dela fica reduzida;
 - sai um aviso crítico no painel e o evento `cadence_reduced`;
 - até o fim do dia, a linha só faz o número de ligações por hora informado em FinOps (padrão: 60), e
   a ligação a mais é recusada com `cadence_reduced`.
 
 A redução acaba sozinha na virada do dia, no fuso da organização.
 
-Os números (6 s, 75%, 1.000 por dia) vêm da especificação do produto recebida em 2026-11-16, que
-cita o Despacho 100/2026 da Anatel. O texto do despacho não foi conferido por quem escreveu este
-guia, inclusive a definição exata de "chamada curta".
+O que conta como **curta** fica em FinOps → Limites de operação (só a plataforma grava), com o
+padrão literal da especificação:
+
+| Campo | Padrão | O que faz |
+|---|---|---|
+| `shortCallSeconds` | 6 | Segundos de conversa abaixo dos quais a ligação é curta |
+| `shortCallInclusive` | não | Com sim, a ligação de exatamente esse tempo também conta (até, em vez de menos de) |
+| `shortCallCountsUnanswered` | sim | A ligação de saída não completada conta como curta, com duração 0 |
+
+Os números (6 s, 75%, 1.000 por dia, por tenant e por tronco) vêm da especificação do produto
+recebida em 2026-11-16 (seção 6), que cita o Despacho 100/2026 da Anatel e fala em "duração inferior
+a 6 segundos". O texto do despacho não foi conferido por quem escreveu este guia, inclusive se a
+ligação não completada conta e se a fronteira é exclusiva: por isso os três campos acima existem.
+
+Para o disjuntor ter efeito, o limite diário por linha da política de saída (`daily_cap_per_line`,
+em Configurações → Ligações de saída) precisa passar de 1.000 ligações: com um teto menor, a linha
+nunca chega ao volume que dispara a regra, e quem a protege é o próprio teto.
 
 ## Limite de caracteres por turno
 
@@ -168,3 +197,6 @@ responde, vale o padrão indicado.
 
 **Recomendação:** A agora; B junto com o papel de administrador da plataforma.
 **Se ninguém responder em 14 dias, vale:** A.
+**Resolvida em 16/11/2026:** B. O papel de plataforma passou a existir (só a plataforma grava os
+limites), e o valor dela virou o teto da instalação. A auditoria de 16/11 mostrou o custo de A: uma
+empresa sem o número informado ficava sem limite, e a ligação recebida não contava.

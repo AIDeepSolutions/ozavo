@@ -246,6 +246,14 @@ if [ "$only_essential" = 0 ]; then
   if [ "$free_mb" -lt 1024 ]; then add disk "Disco" 0 falha "só ${free_mb} MB livres: o banco pode parar de gravar. Apague backups antigos em backups/ ou aumente o disco"
   elif [ "$free_mb" -lt 5120 ]; then add disk "Disco" 0 aviso "${free_mb} MB livres: pouco espaço para backups e atualização"
   else add disk "Disco" 0 ok "$((free_mb / 1024)) GB livres"; fi
+
+  # ── Certificado do SIP sobre TLS ──
+  tls_crt="$GENERATED_DIR/tls/server.crt" tls_key="$GENERATED_DIR/tls/server.key"
+  if [ ! -s "$tls_crt" ]; then add tls "Certificado TLS" 0 aviso "o certificado do SIP sobre TLS ainda não existe. Rode: bash install/install.sh"
+  elif ! tls_cert_valid_for "$tls_crt" 0; then add tls "Certificado TLS" 0 falha "o certificado do SIP sobre TLS venceu: as linhas em TLS não conectam. Rode: bash install/update.sh (ele renova o certificado)"
+  elif ! tls_cert_valid_for "$tls_crt" "$TLS_RENEW_DAYS"; then add tls "Certificado TLS" 0 aviso "o certificado do SIP sobre TLS vence em menos de $TLS_RENEW_DAYS dias. Rode: bash install/update.sh (ele renova o certificado)"
+  elif [ "$(mode_of_file "$tls_key")" != 600 ]; then add tls "Certificado TLS" 0 aviso "a chave do SIP sobre TLS está legível por outros usuários desta VPS. Rode: sudo chown $ASTERISK_UID:$ASTERISK_UID $tls_key && sudo chmod 600 $tls_key"
+  else add tls "Certificado TLS" 0 ok "válido por mais de $TLS_RENEW_DAYS dias, chave só para o Asterisk"; fi
 fi
 
 # ── Saída ──

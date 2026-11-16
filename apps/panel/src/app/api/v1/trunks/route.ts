@@ -28,7 +28,7 @@ export const POST = handle(
         body.matchExtra ?? [],
         body.outboundHost ?? null,
         body.callerDisplayName ?? null,
-        body.sipTls ?? true,
+        body.sipTls ?? false,
       ],
     );
   },

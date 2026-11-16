@@ -15,6 +15,8 @@ export NO_COLOR=1
 # O agendamento do agente vai para pastas do teste: nada aqui toca no systemd nem no cron da máquina.
 export OZAVO_SYSTEMD_DIR="$SANDBOX/systemd" OZAVO_SYSTEMD_RUN_DIR="$SANDBOX/systemd-run" OZAVO_CRON_DIR="$SANDBOX/cron.d"
 export PATH="$TEST_DIR/fake:$PATH"
+# O dono da chave TLS que o Asterisk lê: aqui, quem roda o teste (ninguém troca dono de arquivo nos testes).
+export ASTERISK_UID="$(id -u)"
 mkdir -p "$FAKE_DIR" "$OZAVO_DEPLOY_DIR" "$OZAVO_SYSTEMD_DIR" "$OZAVO_SYSTEMD_RUN_DIR"
 cp -R "$REPO/deploy/asterisk" "$OZAVO_DEPLOY_DIR/asterisk"
 rm -rf "$OZAVO_DEPLOY_DIR/asterisk/generated"

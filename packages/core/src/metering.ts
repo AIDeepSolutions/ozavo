@@ -1,5 +1,6 @@
 import { recordOrgEvent } from "./events";
 import { notifyPanel } from "./notices";
+import { enqueueTask } from "./queue";
 import { billingPeriod, getPlanSubscription, type PlanSubscription } from "./plans";
 import type { OrgQuery } from "./types";
 
@@ -15,6 +16,11 @@ export const USAGE_ALERT_THRESHOLDS = [80, 100] as const;
 export type UsageAlertThreshold = (typeof USAGE_ALERT_THRESHOLDS)[number];
 
 export const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+
+/** Mandar também o aviso de franquia pelo WhatsApp ao dono (ou administrador) com número. Ausente vale desligado. */
+export const PLAN_ALERT_WHATSAPP_SETTING = "plan.alert_whatsapp";
+/** O nome de um webhook cadastrado que recebe o aviso de franquia (o n8n, por exemplo). Ausente: nenhum. */
+export const PLAN_ALERT_WEBHOOK_SETTING = "plan.alert_webhook";
 
 /** O fuso da organização: o da janela de ligações de saída, que é o único fuso que ela escolhe. */
 const ZONE_SQL = `coalesce((select timezone from outbound_policy where organization_id = $1), '${DEFAULT_TIMEZONE}')`;
@@ -95,13 +101,40 @@ export async function checkUsageAlerts(q: OrgQuery, now: Date): Promise<UsageAle
     );
     if (inserted !== 1) continue;
     fired.push(threshold);
-    await notifyPanel(q, alertBody(threshold, usage), now);
-    await recordOrgEvent(
-      q,
-      "plan_usage_alert",
-      { threshold, periodStart: usage.period.start, consumedSeconds: usage.consumedSeconds, includedSeconds: usage.includedSeconds, overageRule: usage.subscription.overageRule },
-      now,
-    );
+    const body = alertBody(threshold, usage);
+    const facts = { threshold, periodStart: usage.period.start, consumedSeconds: usage.consumedSeconds, includedSeconds: usage.includedSeconds, overageRule: usage.subscription.overageRule };
+    await notifyPanel(q, body, now);
+    await deliverAlertOutside(q, body, facts, now);
+    await recordOrgEvent(q, "plan_usage_alert", facts, now);
   }
   return fired;
+}
+
+/**
+ * O aviso de franquia também fora do painel, como a organização escolheu em FinOps: pelo WhatsApp ao
+ * dono ou administrador com número (com o conector configurado), e para um webhook cadastrado. Roda na
+ * mesma transação que grava o limiar, então sai uma vez por limiar e ciclo, como o aviso do painel. O
+ * texto não leva dado de quem ligou: só o consumo do plano.
+ */
+async function deliverAlertOutside(q: OrgQuery, body: string, facts: Record<string, unknown>, now: Date): Promise<void> {
+  const stored = await q.many<{ key: string; value: unknown }>("select key, value from settings where key = any($1)", [[PLAN_ALERT_WHATSAPP_SETTING, PLAN_ALERT_WEBHOOK_SETTING, "whatsapp.connector"]]);
+  const valueOf = (key: string): unknown => stored.find((row) => row.key === key)?.value;
+  if (valueOf(PLAN_ALERT_WHATSAPP_SETTING) === true && valueOf("whatsapp.connector") !== undefined) {
+    const owner = await q.one<{ whatsapp_e164: string }>(
+      `select whatsapp_e164 from users where role in ('owner', 'admin') and whatsapp_e164 is not null
+        order by case when role = 'owner' then 0 else 1 end, created_at limit 1`,
+    );
+    if (owner) {
+      const row = await q.one<{ id: string }>(
+        "insert into notifications (organization_id, call_id, channel, target, body, created_at) values ($1, null, 'whatsapp', $2, $3, $4) returning id",
+        [q.organizationId, owner.whatsapp_e164, body, now],
+      );
+      if (!row) throw new Error("WhatsApp plan alert was not created");
+      await enqueueTask(q, { kind: "deliver_notification", payload: { notificationId: row.id }, runAt: now });
+    }
+  }
+  const webhook = valueOf(PLAN_ALERT_WEBHOOK_SETTING);
+  if (typeof webhook === "string" && webhook.trim() !== "") {
+    await enqueueTask(q, { kind: "deliver_webhook", payload: { name: webhook, payload: { event: "plan_usage_alert", ...facts, message: body } }, runAt: now });
+  }
 }

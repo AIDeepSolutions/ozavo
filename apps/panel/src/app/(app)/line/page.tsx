@@ -127,7 +127,7 @@ function TrunkForm({ trunk, t, cancel, numbersCount, onSaved }: { trunk: Trunk |
     password: "",
     callerId: formatPhone(trunk?.callerId),
     callerDisplayName: trunk?.callerDisplayName ?? "",
-    sipTls: trunk?.sipTls ?? true,
+    sipTls: trunk?.sipTls ?? false,
     matchExtra: (trunk?.matchExtra ?? []).join("\n"),
     outboundHost: trunk?.outboundHost ?? "",
   });

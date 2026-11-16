@@ -45,6 +45,42 @@ G="$D/asterisk/generated"
 contains "ari.conf recebe a senha da ARI" "$(cat "$G/ari.conf")" "password = $(env_get "$D/app.env" ARI_PASSWORD)"
 equal "pasta com a senha da ARI fechada para outros usuários" 700 "$(mode_of "$G")"
 
+# Chave privada do SIP sobre TLS: só o Asterisk lê (600, dono do contêiner); a pasta dela é montada
+# direto, então precisa deixar o Asterisk entrar.
+check "a chave TLS existe" test -s "$G/tls/server.key"
+equal "a chave TLS não é legível por outros usuários" 600 "$(mode_of "$G/tls/server.key")"
+equal "o certificado é público" 644 "$(mode_of "$G/tls/server.crt")"
+equal "a pasta montada no Asterisk deixa ele entrar" 755 "$(mode_of "$G/tls")"
+# Instalação antiga, com a chave 644: a próxima passada fecha a chave sem trocar o par.
+chmod 644 "$G/tls/server.key"; before="$(cksum < "$G/tls/server.key")"
+render_asterisk_config
+equal "a chave antiga 644 é fechada na atualização" 600 "$(mode_of "$G/tls/server.key")"
+equal "fechar a chave não troca o par" "$before" "$(cksum < "$G/tls/server.key")"
+check "par válido não é renovado nem reinicia o Asterisk" test ! -f "$G/.tls-rotated"
+# A chave já fechada numa passada anterior (dona: o usuário do Asterisk) não é mais de quem roda o
+# instalador: mexer na permissão dela falharia. A atualização seguinte passa sem tocá-la. Achado no CI.
+mkdir -p "$SANDBOX/nochmod"
+printf '#!/usr/bin/env bash\ncase "$*" in *server.key*) echo "chmod: Operation not permitted" >&2; exit 1 ;; esac\nexec /bin/chmod "$@"\n' > "$SANDBOX/nochmod/chmod"
+/bin/chmod +x "$SANDBOX/nochmod/chmod"
+( PATH="$SANDBOX/nochmod:$PATH"; source "$KIT/_common.sh"; render_asterisk_config ) >/dev/null 2>&1
+equal "chave já do Asterisk: a passada seguinte não falha" 0 "$?"
+# Sem poder passar a chave ao usuário do Asterisk (uid de outro e sudo pedindo senha): fica 644 para o
+# TLS continuar subindo, e o aviso diz o comando.
+touch "$FAKE_DIR/sudo_fail"
+warned="$( ( source "$KIT/_common.sh"; ASTERISK_UID=4242; secure_tls_key "$G/tls/server.key" ) 2>&1 )"
+rm -f "$FAKE_DIR/sudo_fail"
+equal "sem trocar o dono, a chave fica legível para o Asterisk" 644 "$(mode_of "$G/tls/server.key")"
+contains "e o aviso diz o comando" "$warned" "sudo chown 4242:4242"
+# Certificado perto do fim: a passada seguinte troca o par e marca o Asterisk para reiniciar.
+openssl req -x509 -newkey rsa:2048 -nodes -days 10 -subj "/CN=203.0.113.10" -keyout "$G/tls/server.key" -out "$G/tls/server.crt" >/dev/null 2>&1
+before="$(cksum < "$G/tls/server.crt")"
+render_asterisk_config
+lacks "certificado a menos de 30 dias do fim é renovado" "$before" "$(cksum < "$G/tls/server.crt")"
+check "o novo vale por mais de 300 dias" openssl x509 -checkend $((300 * 86400)) -noout -in "$G/tls/server.crt"
+equal "a chave renovada nasce fechada" 600 "$(mode_of "$G/tls/server.key")"
+check "a renovação marca o Asterisk para reiniciar" test -f "$G/.tls-rotated"
+rm -f "$G/.tls-rotated"
+
 # Servidor endurecido (umask 077): o repositório baixado e tudo o que o instalador escreve nascem
 # legíveis só pelo dono. O Asterisk roda com outro usuário dentro do contêiner, então todo arquivo
 # que ele monta precisa sair legível, qualquer que seja o umask. Achado na primeira instalação

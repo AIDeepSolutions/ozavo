@@ -14,6 +14,8 @@ import type { AgendaClient, AgendaService } from "./agenda";
  *   (https://cal.com/docs/api-reference/v2/bookings/create-a-booking). O e-mail do convidado é opcional.
  * - `POST /v2/bookings/{uid}/reschedule` com `{ start }`, mesma versão, devolve a reserva nova em `data`
  *   (https://cal.com/docs/api-reference/v2/bookings/reschedule-a-booking).
+ * - `POST /v2/bookings/{uid}/cancel` com `{ cancellationReason }`, mesma versão, devolve `200` com
+ *   `{ status, data }` (https://cal.com/docs/api-reference/v2/bookings/cancel-a-booking, conferido em 2026-11-16).
  */
 
 export const CALCOM_API_URL = "https://api.cal.com";
@@ -31,6 +33,7 @@ export interface CalcomConfig {
 }
 
 const slotsSchema = z.object({ data: z.record(z.string(), z.array(z.object({ start: z.string(), end: z.string().optional() }))) });
+const cancelSchema = z.object({ status: z.string() });
 const bookingSchema = z.object({ data: z.object({ uid: z.string().min(1), start: z.string().min(1) }) });
 
 export class AgendaServiceUnknown extends Error {}
@@ -80,6 +83,10 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
         await call(`/v2/bookings/${encodeURIComponent(request.appointmentId)}/reschedule`, BOOKINGS_VERSION, "POST", { start: new Date(request.startsAt).toISOString(), reschedulingReason: "Remarcado por telefone" }),
       );
       return { id: parsed.data.uid, startsAt: parsed.data.start };
+    },
+    async cancel(request) {
+      const parsed = cancelSchema.parse(await call(`/v2/bookings/${encodeURIComponent(request.appointmentId)}/cancel`, BOOKINGS_VERSION, "POST", { cancellationReason: "Desmarcado por telefone" }));
+      if (parsed.status !== "success") throw new Error("Cal.com did not confirm the cancellation");
     },
   };
 }

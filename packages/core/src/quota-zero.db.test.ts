@@ -22,7 +22,7 @@ describe("franquia zero", () => {
     const org = await createOrganization(app, "franquia zero pausa");
     await withOrg(app, org, async (q) => {
       await setPlanSubscription(q, { ...custom, overageRule: "pause_outbound" }, at(5), "2030-05-05");
-      expect(await checkPacingAllowed(q, at(6))).toMatchObject({ allowed: false, code: "plan_quota_exhausted" });
+      expect(await checkPacingAllowed(q, at(6), { db: app })).toMatchObject({ allowed: false, code: "plan_quota_exhausted" });
     });
   });
 
@@ -30,7 +30,7 @@ describe("franquia zero", () => {
     const org = await createOrganization(app, "franquia zero tarifa");
     await withOrg(app, org, async (q) => {
       await setPlanSubscription(q, { ...custom, overageRule: "bill_overage", overagePriceCentsPerMinute: 30 }, at(5), "2030-05-05");
-      expect(await checkPacingAllowed(q, at(6))).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, at(6), { db: app })).toEqual({ allowed: true });
     });
   });
 });

@@ -64,7 +64,10 @@ services:
 
   minio:
     profiles: [minio]
-    # Espelho não oficial, amd64/arm64, manifest conferido em 16/11/2026. Ver CREDITS.md.
+    # Só para bancada: espelho não oficial, amd64/arm64, manifest conferido em 16/11/2026. A imagem
+    # oficial não é mais pública (Docker Hub minio/minio: "object not found"; quay.io: 401, 16/11/2026).
+    # Em produção, S3 gerenciado (campo `s3` do preparo). O preparo só liga este perfil com
+    # `localMinio: true`. Ver CREDITS.md e docs/guides/producao-fase4.md.
     image: dappros/minio:RELEASE.2025-09-07T16-13-09Z@sha256:624bad2fe79a8613aa3c5c9b765ebcab365080b8445cf1b05c357cc7753725f0
     restart: unless-stopped
     env_file: minio.env

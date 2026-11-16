@@ -9,6 +9,7 @@ import {
   inboundLimitOf,
   recordEvent,
   resolveInboundRoute,
+  takeProviderSlots,
   toE164,
   voicemailEnabledOf,
   voicemailLanguageOf,
@@ -35,7 +36,7 @@ export interface InboundDeps {
 // O canal chega como `PJSIP/trunk-<uuid do tronco>-<sufixo>`: `trunks.ts` cria o endpoint com esse nome.
 const TRUNK_CHANNEL = /^PJSIP\/trunk-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-/i;
 
-type Refusal = "no_agent" | "agent_disabled" | "inbound_limit_reached";
+type Refusal = "no_agent" | "agent_disabled" | "inbound_limit_reached" | "provider_limit_reached";
 
 /**
  * Os motivos em que a chamada não tem quem atenda e o recado pode entrar. O teto de conversas
@@ -57,7 +58,12 @@ const NOTICE: Record<Refusal, (dialed: string, limit: number) => string> = {
   agent_disabled: (dialed) => `Uma ligação para ${dialed} foi recusada porque o agente desse número está desligado. Ligue o agente ou escolha outro em Linha telefônica.`,
   inbound_limit_reached: (dialed, limit) =>
     `Uma ligação para ${dialed} recebeu sinal de ocupado porque já havia ${limit} ligações recebidas em andamento, o limite definido em Configurações → Ligações. Outras recusas pelo mesmo motivo nos próximos 10 minutos aparecem só em Chamadas.`,
+  provider_limit_reached: (dialed, limit) =>
+    `Uma ligação para ${dialed} recebeu sinal de ocupado porque a conta do provedor de síntese de voz já tinha ${limit} chamadas ao mesmo tempo na instalação, o teto informado em FinOps → Limites de operação. Outras recusas pelo mesmo motivo nos próximos 10 minutos aparecem só em Chamadas.`,
 };
+
+/** Os motivos de ocupado: há agente, e o que falta é vaga. */
+const BUSY: ReadonlyArray<Refusal> = ["inbound_limit_reached", "provider_limit_reached"];
 
 /**
  * Confere o teto de ligações recebidas, dentro da transação de quem vai criar a chamada. Vale para
@@ -98,7 +104,7 @@ export async function inboundLimitReached(q: OrgQuery, clock: Clock, kind: "conv
 export async function limitNoticedLately(q: OrgQuery, clock: Clock): Promise<boolean> {
   const hit = await q.one(
     `select 1 as hit from notifications n join calls c on c.organization_id = n.organization_id and c.id = n.call_id
-      where n.organization_id = $1 and c.end_reason = 'inbound_limit_reached' and n.created_at > $2 limit 1`,
+      where n.organization_id = $1 and c.end_reason in ('inbound_limit_reached', 'provider_limit_reached') and n.created_at > $2 limit 1`,
     [q.organizationId, new Date(clock.now().getTime() - LIMIT_NOTICE_EVERY_MS)],
   );
   return hit !== null;
@@ -162,6 +168,15 @@ export async function handleInbound(deps: InboundDeps, channel: AriChannel): Pro
       limit = checked.limit;
       if (checked.reached) refusal = "inbound_limit_reached";
     }
+    if (!refusal) {
+      // A conversa usa a conta do provedor de síntese, que a instalação inteira divide. Acima do
+      // teto, ocupado agora em vez de uma chamada atendida e muda quando o provedor recusar.
+      const slots = await takeProviderSlots(q, db, clock.now());
+      if (slots.full) {
+        refusal = "provider_limit_reached";
+        limit = slots.limit ?? 0;
+      }
+    }
     const answered = refusal === null || voicemail !== null;
     const call = await q.one<{ id: string }>(
       `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at, voicemail)
@@ -170,7 +185,7 @@ export async function handleInbound(deps: InboundDeps, channel: AriChannel): Pro
     );
     if (!call) throw new Error("Inbound call was not created");
     if (refusal && !voicemail) {
-      const overLimit = refusal === "inbound_limit_reached";
+      const overLimit = BUSY.includes(refusal);
       await recordEvent(q, call.id, "call_refused", { reason: refusal, from, to, dialed: exten, ...(overLimit && { limit }), ...(voicemailOverLimit && { voicemail: true }) }, clock.now());
       const noticedLately = overLimit && (await limitNoticedLately(q, clock));
       const dialedLabel = to ?? "um número que este tronco não informou";
@@ -182,7 +197,7 @@ export async function handleInbound(deps: InboundDeps, channel: AriChannel): Pro
   if (outcome.refusal && !outcome.voicemail) {
     log("info", "inbound call refused", { callId: outcome.callId, reason: outcome.refusal });
     // No teto, quem ligou recebe ocupado: é o que aconteceu, e ele sabe que pode tentar de novo.
-    await ari.hangup(channel.id, outcome.refusal === "inbound_limit_reached" ? "busy" : undefined);
+    await ari.hangup(channel.id, BUSY.includes(outcome.refusal) ? "busy" : undefined);
     return;
   }
   if (outcome.voicemail) log("info", "inbound call goes to voicemail", { callId: outcome.callId, ...outcome.voicemail });

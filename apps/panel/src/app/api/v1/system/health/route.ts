@@ -18,7 +18,7 @@ import { observeCalls, type WhatsAppCallsView } from "../../../../../server/what
  * ela que o `healthcheck.sh`, inclusive o de uma versão anterior durante a atualização, lê
  * `panel`, `trunk` e `engine`.
  */
-export const GET = handlePublic({}, async ({ request, deps }) => {
+const report = handlePublic({}, async ({ request, deps }) => {
   const now = deps.clock.now();
   const lines: Partial<Record<HealthId, HealthCheck>> = { panel: panelLine() };
 
@@ -103,3 +103,17 @@ export const GET = handlePublic({}, async ({ request, deps }) => {
   const report = healthReport(lines);
   return { ...report, ...Object.fromEntries(report.checks.map((line) => [line.id, line])) };
 });
+
+/**
+ * Com `?strict=1`, a falha de uma peça vira HTTP 503 (o corpo é o mesmo relatório). É para o monitor
+ * de fora que só olha o código da resposta (o do Coolify, um serviço de uptime): sem isso, a rota
+ * responde 200 com `worst: "fail"`, e a central sem voz parece no ar. O healthcheck dos contêineres
+ * continua sem `strict`: o painel não deve ser dado como doente porque a voz caiu.
+ */
+export async function GET(request: Request): Promise<Response> {
+  const response = await report(request);
+  if (new URL(request.url).searchParams.get("strict") !== "1" || !response.ok) return response;
+  const body = await response.text();
+  const worst = (JSON.parse(body) as { data?: { worst?: string } }).data?.worst;
+  return new Response(body, { status: worst === "fail" ? 503 : 200, headers: response.headers });
+}
