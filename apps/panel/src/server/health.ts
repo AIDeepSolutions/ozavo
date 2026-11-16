@@ -1,3 +1,4 @@
+import type { DatabaseTransport } from "@ozavo/core";
 import { fill } from "../i18n/locales";
 import ptBR, { type HealthAction, type HealthReason } from "../i18n/pt-BR/health";
 import type { KeyCheckView } from "./engine-key";
@@ -53,10 +54,16 @@ export const panelLine = (): HealthCheck => ok("panel_ok");
 /**
  * `bypassesRls`: a conexão de aplicação usa um papel que contorna o RLS. O banco responde, mas o
  * isolamento entre organizações não vale, e isso é falha, nunca aviso.
+ * `transport`: como a conexão de aplicação chega ao banco (`dbTransport`, de `@ozavo/core`).
  */
-export const databaseLine = (answered: boolean, bypassesRls = false): HealthCheck => {
+export const databaseLine = (answered: boolean, bypassesRls = false, transport: DatabaseTransport = "local"): HealthCheck => {
   if (!answered) return fail("database_down");
-  return bypassesRls ? fail("database_bypasses_rls") : ok("database_ok");
+  if (bypassesRls) return fail("database_bypasses_rls");
+  // Banco fora da rede sem TLS: senha e dados de cliente passam em texto puro. Com TLS sem a
+  // verificação explícita, aviso: a conexão é cifrada, mas não se sabe com quem.
+  if (transport === "plaintext") return fail("database_plaintext");
+  if (transport === "unverified") return warn("database_tls_unverified");
+  return ok("database_ok");
 };
 
 /** `null`: o processo de voz não respondeu. */

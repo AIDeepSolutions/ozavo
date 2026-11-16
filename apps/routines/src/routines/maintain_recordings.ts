@@ -1,7 +1,7 @@
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { RECORDING_MAINTENANCE_TASK, RECORDING_RETENTION_SETTING, recordingRetentionOf, recordingPath, sealLegacyRecording, lockCall,
-  scheduleRecordingMaintenance, purgeRecordings, recordOrgEvent, withOrg } from "@ozavo/core";
+  scheduleRecordingMaintenance, purgeRecordings, recordOrgEvent, withOrg, type Db, type RecordingArchive } from "@ozavo/core";
 import type { Routine } from "../types";
 
 const DAY = 86400000;
@@ -87,6 +87,15 @@ const routine: Routine = {
         }
       } catch (error) { failures.push(error); }
     }
+
+    if (deps.recordingArchive?.list && isOrphanSweepDay(task.organizationId, now)) {
+      try {
+        const copies = await sweepRemoteOrphans(deps.recordingArchive, task.organizationId, before, now, deps.db, failures);
+        if (copies > 0) {
+          await withOrg(deps.db, task.organizationId, q => recordOrgEvent(q, "remote_recordings_orphans_purged", { copies, retentionDays: days }, now));
+        }
+      } catch (error) { failures.push(error); }
+    }
     // A fila tenta novamente, sem perder o expurgo já concluído nem deixar um item
     // inacessível impedir a tentativa dos demais objetos remotos.
     if (failures.length > 0) {
@@ -96,3 +105,41 @@ const routine: Routine = {
   },
 };
 export default routine;
+
+/**
+ * O dia da semana em que a organização tem a varredura de órfãos, tirado do id: as organizações não
+ * listam o bucket todas no mesmo dia, e listar o acervo inteiro todo dia voltaria a fazer o trabalho
+ * crescer com o acervo.
+ */
+export function isOrphanSweepDay(organizationId: string, now: Date): boolean {
+  const slot = Number.parseInt(organizationId.replace(/-/g, "").slice(-6), 16) % 7;
+  return Math.floor(now.getTime() / DAY) % 7 === slot;
+}
+
+/**
+ * Apaga do destino remoto a cópia que o banco não sustenta mais: de chamada vencida ou apagada a
+ * pedido (o caso do banco restaurado de um backup mais antigo que o bucket, em que a marca de cópia
+ * apagada se perdeu) e a cópia sem chamada nenhuma, depois do prazo de guarda. Cópia sem chamada e
+ * mais nova que o prazo fica: pode ser de uma ligação que o banco restaurado ainda não conhece.
+ */
+async function sweepRemoteOrphans(archive: RecordingArchive, organizationId: string, before: Date, now: Date, db: Db, failures: unknown[]): Promise<number> {
+  const listed: Array<{ callId: string; modifiedAt: Date }> = [];
+  if (!archive.list) return 0;
+  for await (const item of archive.list(organizationId)) listed.push(item);
+  if (listed.length === 0) return 0;
+  const rows = await withOrg(db, organizationId, q => q.many<{ id: string; expired: boolean }>(
+    "select id, (erased_at is not null or coalesce(ended_at < $1, false)) as expired from calls where id = any($2::uuid[])",
+    [before, listed.map(item => item.callId)]));
+  const known = new Map(rows.map(row => [row.id, row.expired]));
+  let copies = 0;
+  for (const item of listed) {
+    const expired = known.get(item.callId);
+    if (expired === false || (expired === undefined && item.modifiedAt.getTime() >= before.getTime())) continue;
+    try {
+      await archive.remove(organizationId, item.callId);
+      copies += 1;
+      if (expired) await withOrg(db, organizationId, q => q.exec("update calls set recording_remote_purged_at = coalesce(recording_remote_purged_at, $2) where id = $1", [item.callId, now]));
+    } catch (error) { failures.push(error); }
+  }
+  return copies;
+}

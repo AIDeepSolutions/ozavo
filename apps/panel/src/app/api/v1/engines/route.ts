@@ -25,6 +25,8 @@ export const GET = handle({}, async ({ q }) => {
     provider: engine.provider,
     processingLocation: engine.processingLocation,
     requiresKey: !engine.keyless,
+    // Motor de vários provedores: a tela pede um campo por parte e monta o JSON da chave.
+    keyParts: engine.keyParts ?? [],
     // Só o motor que declara aceita endpoint e modelo próprios na classificação; a tela mostra os
     // campos só para ele. Da chave do endpoint, só se existe.
     classifyTarget: engine.classifyTarget === true,

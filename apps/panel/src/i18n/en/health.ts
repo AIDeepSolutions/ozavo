@@ -30,6 +30,8 @@ const health: HealthDictionary = {
     database_ok: "answering",
     database_down: "the database did not answer the panel",
     database_bypasses_rls: "the panel connects to the database with a role that ignores the isolation between organizations (superuser or BYPASSRLS): one company can see another's data",
+    database_plaintext: "the database is outside this server and the connection does not use TLS: passwords and customer data cross the network in plain text",
+    database_tls_unverified: "the database connection is encrypted, but the server certificate is not checked",
     voice_ok: "answering",
     voice_down: "the voice process did not answer the panel: no call is answered",
     telephony_ok: "the voice process is connected to Asterisk",
@@ -76,6 +78,8 @@ const health: HealthDictionary = {
   actions: {
     database_down: "Check on the server whether Postgres is up and whether there is free disk. The health check shows both:",
     database_bypasses_rls: "Point DATABASE_URL to the ozavo_app role, which has no BYPASSRLS and does not own the tables. The database owner's connection is only for migrations.",
+    database_plaintext: "Add sslmode=verify-full to DATABASE_URL and SYSTEM_DATABASE_URL. If the provider uses its own authority, also set sslrootcert to its certificate.",
+    database_tls_unverified: "Change the sslmode of DATABASE_URL and SYSTEM_DATABASE_URL to verify-full, so the panel only connects to the server with the right certificate.",
     voice_down: "Check the voice process on the server. The health check says whether the container is stopped; its logs say why:",
     telephony_down: "The most common cause is Asterisk not having read the configuration. Run the installer again on the server, in the Ozavo folder; it keeps what already exists:",
     routines_not_listening: "The routines process stopped or lost its database connection. Restart it on the server, in the Ozavo folder; if it stops again, its logs say why:",

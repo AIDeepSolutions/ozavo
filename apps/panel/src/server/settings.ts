@@ -1,3 +1,4 @@
+import { createPrivateKey } from "node:crypto";
 import {
   DEFAULT_INBOUND_LIMIT,
   DEFAULT_VOICEMAIL_MAX_SECONDS,
@@ -16,7 +17,7 @@ import {
 import { z, type ZodType } from "zod";
 import type { VoiceEngine } from "@ozavo/voice-engine";
 import { ANALYSIS_SETTING, AUTO_TRANSCRIPTION_SETTING, OUTCOME_SETTING, TRANSCRIPTION_SETTING, classifyBaseUrlOf, classifyModelOf, engineClassifyTargetSetting, storedClassifyTargetOf } from "@ozavo/voice-engine/types";
-import { AGENDA_CONNECTOR_KEY, storedAgendaConnector } from "@ozavo/tools/agenda";
+import { AGENDA_CONNECTOR_KEY, serviceAccountKeyFile, storedAgendaConnector } from "@ozavo/tools/agenda";
 import { ApiError } from "./context";
 import { engineKeySetting, listEngines } from "./pieces";
 
@@ -180,7 +181,7 @@ const timeZone = z.string().refine((zone) => {
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM");
 const serviceName = z.string().trim().min(1).max(80);
 
-// A agenda da empresa: Cal.com por chave de API, ou Google Agenda por OAuth. Como no conector, o
+// A agenda da empresa: Cal.com por chave de API, ou Google Agenda por OAuth ou por conta de serviço. Como no conector, o
 // segredo em branco mantém o gravado só para o MESMO destino (a mesma conta do Cal.com, o mesmo
 // cliente OAuth do Google); o token de renovação do Google só vem pela autorização, nunca da tela.
 const agendaConnector = setting<
@@ -189,6 +190,19 @@ const agendaConnector = setting<
       type: "google_calendar";
       clientId: string;
       clientSecret?: string;
+      calendarId: string;
+      timezone: string;
+      workStart: string;
+      workEnd: string;
+      workDays: number[];
+      slotMinutes: number;
+      services: Array<{ name: string; durationMinutes: number }>;
+    }
+  | {
+      type: "google_service_account";
+      /** O arquivo JSON da chave da conta, colado inteiro. Em branco mantém a chave gravada, se a conta é a mesma. */
+      keyFile?: string;
+      clientEmail?: string;
       calendarId: string;
       timezone: string;
       workStart: string;
@@ -217,6 +231,18 @@ const agendaConnector = setting<
       slotMinutes: z.number().int().min(5).max(480),
       services: z.array(z.object({ name: serviceName, durationMinutes: z.number().int().min(5).max(480) })).max(30),
     }),
+    z.object({
+      type: z.literal("google_service_account"),
+      keyFile: z.string().trim().min(1).max(10_000).optional(),
+      clientEmail: z.string().trim().email().optional(),
+      calendarId: z.string().trim().min(1).max(300),
+      timezone: timeZone,
+      workStart: hhmm,
+      workEnd: hhmm,
+      workDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+      slotMinutes: z.number().int().min(5).max(480),
+      services: z.array(z.object({ name: serviceName, durationMinutes: z.number().int().min(5).max(480) })).max(30),
+    }),
   ]),
   secret: true,
   store(value, key, previous) {
@@ -227,6 +253,17 @@ const agendaConnector = setting<
       return { type: "calcom", apiKeyEnc, timezone: value.timezone, services: value.services };
     }
     if (value.workStart >= value.workEnd) throw new ApiError(400, "validation_error", "workEnd: the working day must end after it starts.");
+    if (value.type === "google_service_account") {
+      const { keyFile, clientEmail: _email, ...schedule } = value;
+      if (keyFile !== undefined) {
+        const account = readServiceAccountFile(keyFile);
+        return { ...schedule, clientEmail: account.client_email, privateKeyEnc: encryptSecret(account.private_key, key) };
+      }
+      // Sem arquivo novo, vale a chave gravada, se a tela ainda fala da mesma conta.
+      const same = kept.success && kept.data.type === "google_service_account" && kept.data.clientEmail === value.clientEmail ? kept.data : undefined;
+      if (!same) throw new ApiError(400, "token_required", "Paste the service account key file (JSON).");
+      return { ...schedule, clientEmail: same.clientEmail, privateKeyEnc: same.privateKeyEnc };
+    }
     const sameClient = kept.success && kept.data.type === "google_calendar" && kept.data.clientId === value.clientId ? kept.data : undefined;
     const clientSecretEnc = value.clientSecret ? encryptSecret(value.clientSecret, key) : sameClient?.clientSecretEnc;
     if (clientSecretEnc === undefined) throw new ApiError(400, "token_required", "When the OAuth client changes, enter its secret again.");
@@ -242,10 +279,32 @@ const agendaConnector = setting<
       const { apiKeyEnc: _key, ...rest } = parsed.data;
       return { ...rest, apiKey: CONFIGURED };
     }
+    if (parsed.data.type === "google_service_account") {
+      const { privateKeyEnc: _key, ...rest } = parsed.data;
+      return { ...rest, keyFile: CONFIGURED };
+    }
     const { clientSecretEnc: _secret, refreshTokenEnc, ...rest } = parsed.data;
     return { ...rest, clientSecret: CONFIGURED, authorized: refreshTokenEnc !== undefined };
   },
 });
+
+/** O arquivo de chave da conta de serviço. A mensagem de erro nunca repete o que foi colado. */
+function readServiceAccountFile(text: string): { client_email: string; private_key: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new ApiError(400, "validation_error", "keyFile: paste the whole JSON file of the service account key.");
+  }
+  const parsed = serviceAccountKeyFile.safeParse(raw);
+  if (!parsed.success) throw new ApiError(400, "validation_error", "keyFile: this is not a service account key file (type service_account, client_email, private_key).");
+  try {
+    createPrivateKey(parsed.data.private_key);
+  } catch {
+    throw new ApiError(400, "validation_error", "keyFile: the private key in the file is not readable.");
+  }
+  return parsed.data;
+}
 
 /** A definição da chave, ou `undefined` se a chave não for conhecida. Não existe configuração livre. */
 export async function settingDefinition(key: string): Promise<Setting | undefined> {

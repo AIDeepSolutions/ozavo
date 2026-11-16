@@ -15,7 +15,7 @@ import type { Costs } from "../../../ui/types";
 const PERIODS = [7, 30, 90];
 const isoDay = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-/** Barra proporcional ao maior valor da lista. Em sage: cobre é só para o que está vivo. */
+/** Barra proporcional ao maior valor da lista. Na cor de estado `ok`: o acento é só para o que está vivo. */
 function Bar({ share }: { share: number }) {
   return (
     <span className="block h-2 overflow-hidden rounded-full bg-sunken">

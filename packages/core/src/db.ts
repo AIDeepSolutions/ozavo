@@ -11,6 +11,8 @@ export function createDb(url: string, systemUrl?: string): Db {
   return {
     pool,
     systemPool,
+    appUrl: url,
+    systemUrl,
     async close() {
       await Promise.all([pool.end(), systemPool?.end()]);
     },
@@ -95,4 +97,63 @@ export async function countListeners(db: Db, channel: string): Promise<number> {
     [`listen ${channel}`],
   );
   return rows[0]?.n ?? 0;
+}
+
+/**
+ * Como a conexão de aplicação chega ao banco, lido do endereço:
+ *
+ * - `local`: o banco está na mesma máquina ou na rede privada (o contêiner `postgres` do Compose,
+ *   `localhost`, soquete, faixas privadas). TLS ali é opcional.
+ * - `verified`: banco fora da rede com `sslmode=verify-full` ou `verify-ca`: o `pg` só conecta se o
+ *   certificado for válido para o nome, então conexão aberta é conexão verificada.
+ * - `unverified`: banco fora da rede com TLS que não exige a verificação explícita (`require`,
+ *   `prefer`, `no-verify`, `ssl=true`). O `no-verify` aceita qualquer certificado; os outros dependem
+ *   de como cada versão do `pg` lê o modo, e a regra da instalação é escrever `verify-full`.
+ * - `plaintext`: banco fora da rede sem TLS. Senha e dados de cliente passam em texto puro.
+ *
+ * Endereço inválido ou ausente conta como `local`: quem não abre conexão não tem o que medir aqui, e
+ * a linha do banco já diz se ele respondeu.
+ */
+export type DatabaseTransport = "local" | "verified" | "unverified" | "plaintext";
+
+export function databaseTransport(url: string | undefined): DatabaseTransport {
+  if (!url) return "local";
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "local";
+  }
+  const host = decodeURIComponent(parsed.hostname).replace(/^\[|\]$/g, "").toLowerCase();
+  const socketHost = parsed.searchParams.get("host");
+  if (isPrivateDatabaseHost(host) || (host === "" && (socketHost === null || socketHost.startsWith("/")))) return "local";
+  const mode = parsed.searchParams.get("sslmode")?.toLowerCase();
+  if (mode === "verify-full" || mode === "verify-ca") return "verified";
+  if (mode === "require" || mode === "prefer" || mode === "no-verify") return "unverified";
+  const ssl = parsed.searchParams.get("ssl")?.toLowerCase();
+  if (mode === undefined && (ssl === "true" || ssl === "1")) return "unverified";
+  return "plaintext";
+}
+
+/** Nome sem ponto (serviço do Compose), `localhost`, `.internal`/`.local`, laço e faixas privadas IPv4/IPv6. */
+export function isPrivateDatabaseHost(host: string): boolean {
+  if (host === "") return false;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local")) return true;
+  if (host === "::1" || /^f[cd][0-9a-f]{2}:/.test(host) || host.startsWith("fe80:")) return true;
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  return !host.includes(".") && !host.includes(":");
+}
+
+const TRANSPORT_RANK: Record<DatabaseTransport, number> = { local: 0, verified: 0, unverified: 1, plaintext: 2 };
+
+/** O pior transporte entre a conexão de aplicação e a de sistema: as duas levam dado de cliente. */
+export function dbTransport(db: Pick<Db, "appUrl" | "systemUrl">): DatabaseTransport {
+  const app = databaseTransport(db.appUrl);
+  if (db.systemUrl === undefined) return app;
+  const system = databaseTransport(db.systemUrl);
+  return TRANSPORT_RANK[system] > TRANSPORT_RANK[app] ? system : app;
 }

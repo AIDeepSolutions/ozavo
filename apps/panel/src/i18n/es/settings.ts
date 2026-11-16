@@ -17,6 +17,7 @@ const settings: SettingsDictionary = {
   enginesTitle: "Motores de voz",
   enginesLead: "El motor de voz es el modelo de IA que escucha y habla en la llamada. Cada proveedor pide su propia clave.",
   keyOf: "Clave de {engine}",
+  keyPartsHint: "Este motor usa un proveedor para escuchar, uno para pensar y uno para hablar. Pega la clave de cada uno; para cambiar cualquiera, pega las tres de nuevo.",
   keyConfigured: "Configurada",
   keyMissing: "Sin clave",
   keyNotNeeded: "No pide clave",

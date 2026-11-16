@@ -74,6 +74,7 @@ const privacy: PrivacyDictionary = {
   history: {
     recording_retention_changed: "{who} changed audio retention from {from} to {to}.",
     recordings_purged: "Recordings older than {days} days deleted: {count}.",
+    remote_recordings_orphans_purged: "Remote recording copies with no call in force deleted (expired, of a call erased on request, or with no record and older than {days} days): {count}.",
     transcript_retention_changed: "{who} changed the retention period from {from} to {to}.",
     transcripts_purged: "The text of speech and the call summaries older than {days} days were deleted by the retention period. Speech and summaries deleted: {count}.",
     caller_data_exported: "{who} exported the data of {phone}. Calls: {calls}. Events: {events}.",

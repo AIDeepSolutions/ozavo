@@ -29,7 +29,7 @@ describe("panel-colors-come-from-tokens", () => {
   it("nenhuma tela do painel escreve cor como valor", () => {
     expectClean(
       check(REPO_ROOT),
-      "Use um token: crie `--dv-<nome>` em apps/panel/src/design/tokens.css (com `light-dark()`, mesmo valor dos dois lados se a cor é fixa), a ponte `--color-<nome>` em globals.css, e a classe `bg-<nome>`/`text-<nome>` na tela. Direção: docs/design/direcao-do-painel.md.",
+      "Use um token: crie `--oz-<nome>` em apps/panel/src/design/tokens.css (com `light-dark()`, mesmo valor dos dois lados se a cor é fixa), a ponte `--color-<nome>` em globals.css, e a classe `bg-<nome>`/`text-<nome>` na tela. Direção: docs/design/direcao-do-painel.md.",
     );
   });
 

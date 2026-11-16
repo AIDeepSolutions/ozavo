@@ -43,3 +43,39 @@ it("S3 copia apenas cifrado com chave org/chamada, é idempotente e apaga sem ex
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+it("S3 lista as cópias da organização, página a página, e ignora chave fora do padrão", async () => {
+  const org = "11111111-1111-4111-8111-111111111111";
+  const call = (n: number): string => `${n}2222222-2222-4222-8222-222222222222`;
+  const seen: string[] = [];
+  const page = (keys: string[], next?: string): string =>
+    `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>recordings</Name><Prefix>${org}/</Prefix><KeyCount>${keys.length}</KeyCount><MaxKeys>1000</MaxKeys>` +
+    `<IsTruncated>${next ? "true" : "false"}</IsTruncated>${next ? `<NextContinuationToken>${next}</NextContinuationToken>` : ""}` +
+    keys.map((key) => `<Contents><Key>${key}</Key><LastModified>2026-08-01T10:00:00.000Z</LastModified><Size>10</Size></Contents>`).join("") +
+    "</ListBucketResult>";
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://x");
+    seen.push(`${url.searchParams.get("prefix")}|${url.searchParams.get("continuation-token") ?? ""}`);
+    const body = url.searchParams.get("continuation-token") === "p2"
+      ? page([`${org}/${call(2)}.wav.enc`])
+      : page([`${org}/${call(1)}.wav.enc`, `${org}/lixo.txt`, `${org}/sub/${call(3)}.wav.enc`], "p2");
+    response.writeHead(200, { "Content-Type": "application/xml" }).end(body);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No test port");
+  try {
+    const archive = recordingArchiveFromEnv({ S3_ENDPOINT: `http://127.0.0.1:${address.port}`, S3_ACCESS_KEY_ID: "invented-access", S3_SECRET_ACCESS_KEY: "invented-local-secret" })!;
+    const listed: Array<{ callId: string; modifiedAt: Date }> = [];
+    for await (const item of archive.list!(org)) listed.push(item);
+    expect(listed).toEqual([
+      { callId: call(1), modifiedAt: new Date("2026-08-01T10:00:00.000Z") },
+      { callId: call(2), modifiedAt: new Date("2026-08-01T10:00:00.000Z") },
+    ]);
+    expect(seen).toEqual([`${org}/|`, `${org}/|p2`]);
+    await expect(async () => { for await (const _ of archive.list!("../outra")) void _; }).rejects.toThrow();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});

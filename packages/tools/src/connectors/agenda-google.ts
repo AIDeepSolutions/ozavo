@@ -1,10 +1,13 @@
+import { createSign } from "node:crypto";
+import { systemClock, type Clock } from "@ozavo/core";
 import { z } from "zod";
 import { safeFetch, type SafeFetchOptions } from "../net/safe-fetch";
 import type { AgendaClient, AgendaService, AgendaSlot } from "./agenda";
 
 /**
- * A agenda pelo Google Agenda, com o consentimento OAuth de quem administra a empresa (o token de
- * renovação fica cifrado em `agenda.connector`). O Google não tem "horário livre" pronto: os horários
+ * A agenda pelo Google Agenda, por um de dois acessos: o consentimento OAuth de quem administra a
+ * empresa (o token de renovação fica cifrado em `agenda.connector`), ou uma conta de serviço do Google
+ * Cloud, cuja chave privada fica cifrada no mesmo lugar e com quem a agenda foi compartilhada. O Google não tem "horário livre" pronto: os horários
  * saem do expediente configurado na tela menos os períodos ocupados que o `freeBusy` devolve.
  *
  * Endpoints públicos da Calendar API v3 e do OAuth 2.0 do Google:
@@ -13,6 +16,12 @@ import type { AgendaClient, AgendaService, AgendaSlot } from "./agenda";
  * - `POST /calendar/v3/calendars/{id}/events`, `GET` e `PATCH /calendar/v3/calendars/{id}/events/{eventId}`;
  * - `DELETE /calendar/v3/calendars/{id}/events/{eventId}?sendUpdates=all`, resposta sem corpo
  *   (https://developers.google.com/workspace/calendar/api/v3/reference/events/delete, conferido em 2026-11-16).
+ * - Conta de serviço: `POST https://oauth2.googleapis.com/token` com
+ *   `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` e `assertion`, um JWT RS256 assinado com a
+ *   chave da conta (`iss` = e-mail da conta, `scope`, `aud` = o endereço do token, `iat`, `exp` até 1 h),
+ *   como descreve https://developers.google.com/identity/protocols/oauth2/service-account (seção
+ *   "Preparing to make an authorized API call", HTTP/REST). Não conferido contra o servidor real em
+ *   2026-11-16: os testes usam um servidor falso que confere a assinatura com a chave pública.
  */
 
 export const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -25,10 +34,20 @@ const MAX_BYTES = 256 * 1024;
 const MAX_DAYS = 31;
 const MAX_SLOTS = 60;
 
-export interface GoogleAgendaConfig {
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
+/** Acesso por OAuth (token de renovação de quem autorizou) ou por conta de serviço. */
+export type GoogleAgendaAuth =
+  | { clientId: string; clientSecret: string; refreshToken: string }
+  | { serviceAccount: GoogleServiceAccount; clock?: Clock };
+
+export interface GoogleServiceAccount {
+  clientEmail: string;
+  /** A chave privada em PEM, como vem no arquivo JSON da conta. */
+  privateKey: string;
+}
+
+export type GoogleAgendaConfig = GoogleAgendaAuth & GoogleAgendaSchedule;
+
+export interface GoogleAgendaSchedule {
   calendarId: string;
   timezone: string;
   /** Expediente, em `HH:MM` no fuso da agenda, e dias da semana (0 = domingo). */
@@ -42,6 +61,27 @@ export interface GoogleAgendaConfig {
   /** Endereços; só o teste troca. */
   urls?: { token?: string; calendar?: string };
 }
+
+const JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+
+/**
+ * O JWT que a conta de serviço troca por um token de acesso. `aud` é sempre o endereço oficial do
+ * token, mesmo quando o teste aponta o pedido para outro lugar: é o valor que o Google confere.
+ */
+export function serviceAccountAssertion(account: GoogleServiceAccount, now: Date): string {
+  const issuedAt = Math.floor(now.getTime() / 1000);
+  const part = (value: object): string => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: account.clientEmail, scope: GOOGLE_SCOPES.join(" "), aud: GOOGLE_TOKEN_URL, iat: issuedAt, exp: issuedAt + 3600 })}`;
+  const signature = createSign("RSA-SHA256").update(unsigned).sign(account.privateKey).toString("base64url");
+  return `${unsigned}.${signature}`;
+}
+
+/** O arquivo JSON que o Google Cloud entrega ao criar a chave de uma conta de serviço. */
+export const serviceAccountKeyFile = z.object({
+  type: z.literal("service_account"),
+  client_email: z.string().email(),
+  private_key: z.string().includes("PRIVATE KEY"),
+});
 
 const tokenSchema = z.object({ access_token: z.string().min(1) });
 const busySchema = z.object({ calendars: z.record(z.string(), z.object({ busy: z.array(z.object({ start: z.string(), end: z.string() })).default([]) })) });
@@ -107,7 +147,10 @@ export function createGoogleAgenda(config: GoogleAgendaConfig, net: SafeFetchOpt
   };
   const authorized = async (): Promise<void> => {
     if (accessToken) return;
-    const form = new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, refresh_token: config.refreshToken, grant_type: "refresh_token" });
+    const form =
+      "serviceAccount" in config
+        ? new URLSearchParams({ grant_type: JWT_BEARER, assertion: serviceAccountAssertion(config.serviceAccount, (config.clock ?? systemClock).now()) })
+        : new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, refresh_token: config.refreshToken, grant_type: "refresh_token" });
     accessToken = tokenSchema.parse(await request(config.urls?.token ?? GOOGLE_TOKEN_URL, "POST", form.toString(), "application/x-www-form-urlencoded")).access_token;
   };
   const durationOf = (serviceType: string, override?: number): number => {

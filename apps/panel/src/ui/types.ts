@@ -160,6 +160,8 @@ export interface Engine {
   provider: string;
   processingLocation: ProcessingLocation;
   requiresKey: boolean;
+  /** Uma parte por provedor (o pipeline); vazia quando a chave é um texto só. */
+  keyParts: { id: string; label: string }[];
   /** O motor aceita endpoint e modelo próprios na classificação (provedor compatível com OpenAI). */
   classifyTarget: boolean;
   /** O endpoint da classificação gravado, ou `null` para o do motor. */

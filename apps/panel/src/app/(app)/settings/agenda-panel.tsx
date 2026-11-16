@@ -13,7 +13,7 @@ import ptBR, { type CompanyDictionary } from "../../../i18n/pt-BR/company";
 import { useDict } from "../../../i18n/provider";
 import { api, useApi } from "../../../ui/api";
 import { ActionStatus, useAction } from "../../../ui/errors";
-import { Button, Field, Notice, Panel, Select, Skeleton, TextInput } from "../../../ui/kit";
+import { Button, Field, Notice, Panel, Select, Skeleton, TextArea, TextInput } from "../../../ui/kit";
 import { useCanConfigure } from "../../../ui/me";
 import type { Setting } from "../../../ui/types";
 import { put } from "./setting-api";
@@ -42,6 +42,18 @@ type Stored =
       services: Array<{ name: string; durationMinutes: number }>;
       clientSecret: { configured: boolean };
       authorized: boolean;
+    }
+  | {
+      type: "google_service_account";
+      clientEmail: string;
+      calendarId: string;
+      timezone: string;
+      workStart: string;
+      workEnd: string;
+      workDays: number[];
+      slotMinutes: number;
+      services: Array<{ name: string; durationMinutes: number }>;
+      keyFile: { configured: boolean };
     };
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
@@ -60,6 +72,8 @@ export function AgendaPanel() {
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [secret, setSecret] = useState("");
   const [clientId, setClientId] = useState("");
+  // A conta de serviço gravada: o e-mail volta da API; a chave, nunca.
+  const [clientEmail, setClientEmail] = useState("");
   const [calendarId, setCalendarId] = useState("primary");
   const [workStart, setWorkStart] = useState("09:00");
   const [workEnd, setWorkEnd] = useState("18:00");
@@ -78,7 +92,8 @@ export function AgendaPanel() {
     if (value.type === "calcom") {
       setServices(value.services.map((service) => ({ name: service.name, value: String(service.eventTypeId) })));
     } else {
-      setClientId(value.clientId);
+      if (value.type === "google_calendar") setClientId(value.clientId);
+      else setClientEmail(value.clientEmail);
       setCalendarId(value.calendarId);
       setWorkStart(value.workStart);
       setWorkEnd(value.workEnd);
@@ -104,8 +119,7 @@ export function AgendaPanel() {
       ? { type, timezone, ...(secret && { apiKey: secret }), services: services.map((service) => ({ name: service.name, eventTypeId: Number(service.value) })) }
       : {
           type,
-          clientId,
-          ...(secret && { clientSecret: secret }),
+          ...(type === "google_service_account" ? { ...(secret ? { keyFile: secret } : { clientEmail }) } : { clientId, ...(secret && { clientSecret: secret }) }),
           calendarId,
           timezone,
           workStart,
@@ -152,10 +166,24 @@ export function AgendaPanel() {
                 </Field>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Field label={t.googleClientId} hint={fill(t.googleClientHint, { uri: redirectUri })}>
-                    <TextInput mono autoComplete="off" value={clientId} required onChange={(event) => setClientId(event.target.value)} />
-                  </Field>
-                  <Field label={t.googleClientSecret}>
+                  {type === "google_service_account" ? (
+                    <div className="grid gap-2 md:col-span-2">
+                      <Field label={t.serviceAccountKey} hint={t.serviceAccountKeyHint}>
+                        <TextArea className="data" autoComplete="off" spellCheck={false} rows={4} value={secret} required={!(current?.type === "google_service_account" && current.keyFile.configured)} onChange={(event) => setSecret(event.target.value)} />
+                      </Field>
+                      {current?.type === "google_service_account" ? (
+                        <>
+                          <p className="text-sm text-muted">{fill(t.serviceAccountKept, { email: current.clientEmail })}</p>
+                          <Notice tone="warn">{fill(t.serviceAccountShare, { email: current.clientEmail })}</Notice>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <>
+                      <Field label={t.googleClientId} hint={fill(t.googleClientHint, { uri: redirectUri })}>
+                        <TextInput mono autoComplete="off" value={clientId} required onChange={(event) => setClientId(event.target.value)} />
+                      </Field>
+                      <Field label={t.googleClientSecret}>
                     <TextInput
                       mono
                       type="password"
@@ -164,8 +192,10 @@ export function AgendaPanel() {
                       value={secret}
                       onChange={(event) => setSecret(event.target.value)}
                     />
-                  </Field>
-                  <Field label={t.calendarId} hint={t.calendarIdHint}>
+                      </Field>
+                    </>
+                  )}
+                  <Field label={t.calendarId} hint={type === "google_service_account" ? t.serviceAccountCalendarHint : t.calendarIdHint}>
                     <TextInput mono value={calendarId} required onChange={(event) => setCalendarId(event.target.value)} />
                   </Field>
                   <Field label={t.slotMinutes}>

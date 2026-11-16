@@ -1,21 +1,34 @@
 # OZAVO — STATUS DE EXECUÇÃO
 
 > Atualizado sempre que algo muda. Quem lê: o agente (sempre) e o Macgyver (quando quiser).
-> Última atualização: 16/11/2026 ~21h30 UTC (16/11 18h30 BRT), reconciliado depois da auditoria.
+> Última atualização: 16/11/2026 ~23h50 UTC (16/11 20h50 BRT), depois dos PRs #7 a #10 e do ramo
+> `feat/auditoria-restante`.
 
 ## Estado atual (vale sobre as seções abaixo, que ficam como histórico)
 
-- Fases 1, 2, 3 e 4 estão na `main` (PRs #3, #5 e #6). As correções de segurança P0 da auditoria
-  (RLS anulado em produção e só a plataforma muda plano) entraram no PR #7.
-- Banco (Supabase): as 29 migrations da `main` estão aplicadas; a conexão usa `ozavo_app` e
-  `ozavo_system` com `sslmode=verify-full`. O ramo `feat/p2-auditoria` traz mais três migrations
-  aditivas, ainda **não aplicadas**: `20261116T211700`, `20261116T212500` e `20261116T213500`.
-- Coolify: o painel e, desde 16/11 ~21h UTC, as **rotinas** (segunda aplicação, alvo `routines`)
-  estão no ar; a saúde mostra `routines_ok`. Voz e Asterisk **não** sobem sem o número (tronco)
-  homologado, e por isso a saúde segue com `voice_down`. Ver
+- Fases 1, 2, 3 e 4 estão na `main` (PRs #3, #5 e #6). Correções da auditoria: P0 no PR #7, P2 no
+  PR #8, P1 no PR #9, Asaas nativo no PR #10. O ramo `feat/auditoria-restante` fecha o que sobrou sem
+  número e sem Asaas: chave do motor pipeline em três campos na tela (onboarding), saúde acusa banco
+  remoto sem TLS verificado, Google Agenda por conta de serviço, varredura semanal de cópias órfãs no
+  bucket, ensaio de restauração registrado e metadados/manifesto da marca.
+- Banco (Supabase): 29 migrations aplicadas; a conexão usa `ozavo_app` e `ozavo_system` com
+  `sslmode=verify-full`. **Seis migrations da `main` ainda não aplicadas**: `20261116T211700`,
+  `20261116T212500`, `20261116T213500`, `20261116T220000`, `20261116T221000` e `20261116T230000`.
+  Elas entraram sem erro numa cópia restaurada do backup de produção (ensaio em
+  [docs/guides/producao-fase4.md](docs/guides/producao-fase4.md)). Aplicar pede o OK do dono.
+- Coolify: painel e **rotinas** no ar; a saúde mostra `routines_ok`. Voz e Asterisk **não** sobem sem
+  o número (tronco) homologado, e por isso a saúde segue com `voice_down` (a rota `?strict=1` responde
+  503). As variáveis do painel deixaram de ir para o build em 16/11 ~23h45 UTC (só execução). Ver
   [docs/guides/producao-coolify.md](docs/guides/producao-coolify.md).
-- Inter já está versionada no painel (fonte local).
-- Bloqueado pelo número: ligação real, homologação de TLS/SRTP, PAI e RCD com a operadora.
+- Monitor: um vigia na VPS lê a saúde estrita a cada 5 minutos e avisa o dono no Telegram quando o
+  conjunto de falhas muda (fora do repositório, na área de estado do agente).
+- Bloqueado pelo número: ligação real, homologação de TLS/SRTP, PAI e RCD com a operadora, voz e
+  Asterisk no Coolify, agente cadastrado com linha.
+- Bloqueado pelo Asaas: chave, token e URL do webhook (PR #10 pronto).
+- Esperando decisão do dono: tirar do painel no Coolify as variáveis que nenhum código lê
+  (`MIGRATION_DATABASE_URL`, chaves do Supabase e dos provedores de voz, que vão para a tela do
+  motor), o destino do brand kit não versionado (`brand/_brandkit`, zip) e os pedidos de
+  [docs/plans/2026-11-16-pedidos-de-decisao-da-auditoria.md](docs/plans/2026-11-16-pedidos-de-decisao-da-auditoria.md).
 - Os bloqueios antigos das seções "BLOQUEIOS / PENDÊNCIAS" e "A FAZER" abaixo estão resolvidos,
   salvo o que está nesta seção.
 

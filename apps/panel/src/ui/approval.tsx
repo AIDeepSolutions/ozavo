@@ -23,7 +23,7 @@ export function contextText(context: Record<string, unknown>): string {
 }
 
 /**
- * Um pedido esperando resposta. É o único bloco do painel inteiro em cobre: há uma pessoa na
+ * Um pedido esperando resposta. É o único bloco do painel inteiro com borda no acento: há uma pessoa na
  * linha. `compact` é a versão da faixa que aparece no topo de qualquer tela.
  */
 export function ApprovalCard({ approval, now, compact = false, unknownCaller }: { approval: Approval; now: number; compact?: boolean; unknownCaller: string }) {
