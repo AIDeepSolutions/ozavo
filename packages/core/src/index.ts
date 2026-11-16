@@ -30,6 +30,7 @@ export * from "./recording-retention";
 export * from "./recording-archive";
 export * from "./rcd";
 export * from "./finops";
+export * from "./finops-consolidated";
 export * from "./metering";
 export * from "./notices";
 export * from "./operation-settings";
