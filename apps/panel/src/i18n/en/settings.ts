@@ -8,6 +8,7 @@ const settings: SettingsDictionary = {
     ai: "Artificial intelligence",
     calls: "Calls",
     whatsapp: "WhatsApp",
+    company: "Company and API",
     integrations: "Integrations",
     privacy: "Privacy",
     system: "System",

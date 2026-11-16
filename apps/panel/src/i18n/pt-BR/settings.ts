@@ -6,6 +6,7 @@ const settings = {
     ai: "Inteligência artificial",
     calls: "Ligações",
     whatsapp: "WhatsApp",
+    company: "Empresa e API",
     integrations: "Integrações",
     privacy: "Privacidade",
     system: "Sistema",

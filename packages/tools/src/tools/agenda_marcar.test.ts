@@ -13,7 +13,8 @@ describe("agenda_marcar", () => {
 
     expect(result).toMatchObject({ ok: true, data: { appointmentId: "agendamento-1", startsAt: ESCOLHIDO } });
     expect(result.message).toContain("marcado");
-    expect(crm.pedidos.marcacoes).toEqual([{ serviceType: "Consulta", startsAt: ESCOLHIDO, callId: "call-1" }]);
+    // O telefone vem da ligação, nunca do modelo.
+    expect(crm.pedidos.marcacoes).toEqual([{ serviceType: "Consulta", startsAt: ESCOLHIDO, callId: "call-1", attendeePhone: "+5511988887777" }]);
     expect(ctx.said).toEqual(["Um instante, estou marcando."]);
   });
 

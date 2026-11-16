@@ -1,4 +1,4 @@
-import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, decryptSecret, enqueueTask, recordEvent, recordingPath, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
 import { EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
@@ -88,6 +88,16 @@ interface AgentRow {
 }
 
 export const engineKeySetting = (engineId: string): string => `engine.${engineId}.api_key`;
+
+/**
+ * A voz da empresa, quando este motor sabe falar com ela: está na lista dele, ou ele aceita voz
+ * própria da conta (a clonada da Cartesia). Voz de outro provedor iria ao motor como nome
+ * desconhecido e derrubaria a ligação; nesse caso vale a voz padrão do motor.
+ */
+export function tenantVoiceFor(engine: Pick<VoiceEngine, "voices" | "acceptsCustomVoices">, voiceId: string | null): string | undefined {
+  if (voiceId === null) return undefined;
+  return engine.acceptsCustomVoices === true || engine.voices?.some((voice) => voice.id === voiceId) === true ? voiceId : undefined;
+}
 export const RECORDING_NOTICE_SETTING = "recording_notice.text";
 /** O aviso que vale quando o operador não escreveu o dele. Toda chamada começa por um aviso. */
 export const DEFAULT_RECORDING_NOTICE = "Esta ligação é atendida por uma assistente virtual e a conversa fica registrada.";
@@ -417,8 +427,14 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       "select name, instructions, greeting, engine, voice_id, language, tools, max_call_seconds, cost_ceiling_cents, transfer_to_e164, vocabulary, listening_environment from agents where id = $1",
       [agentId],
     )) ?? undefined;
-    const call = await q.one<{ direction: "inbound" | "outbound"; from_e164: string | null; to_e164: string | null }>("select direction, from_e164, to_e164 from calls where id = $1", [callId]);
+    const call = await q.one<{ direction: "inbound" | "outbound"; from_e164: string | null; to_e164: string | null; request_context: unknown }>(
+      "select direction, from_e164, to_e164, request_context from calls where id = $1",
+      [callId],
+    );
     if (!agent || !call) throw new Error(`Agent ${agentId} or call ${callId} not found in organization ${organizationId}`);
+    // O perfil da empresa: o prompt base vem antes da instrução do agente, e a voz da empresa vale
+    // quando o agente não escolheu a dele. Sem perfil, tudo segue como antes.
+    const tenant = await readTenantProfile(q);
     const transferTo = canTransfer ? agent.transfer_to_e164 : null;
 
     await event("call_started", { direction: call.direction, from: call.from_e164, to: call.to_e164, agentId, ...input.started });
@@ -445,6 +461,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       // Ferramenta sem a peça de que depende (a agenda sem cliente) também some: oferecida, o motor a
       // chamaria em toda ligação de agendamento só para ouvir que ela não está ligada.
       if (tool?.available === false) continue;
+      // A peça pode depender da configuração da organização (a agenda sem conector salvo): mesma regra.
+      if (tool?.ready && !(await tool.ready(q))) continue;
       if (tool) enabled.set(name, tool);
       else log("error", "agent enables a tool that is not installed; ignoring it", { tool: name });
     }
@@ -471,13 +489,16 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       const connecting = engine.connect(
         {
           direction: call.direction,
-          instructions: overrides?.instructions ?? agent.instructions,
+          // O roteiro da chamada simulada substitui tudo: é o teste de um roteiro, não da empresa.
+          instructions:
+            overrides?.instructions ??
+            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined }),
           // O aviso vem antes de tudo, e os motores falam a abertura ao conectar: o aviso entra
           // na frente da saudação. Lição do DeskcommCRM: na ligação recebida quem atende fala
           // primeiro; na que nós fazemos, quem atende diz "alô" e o agente responde a isso, então
           // não há saudação, e o aviso sai por `say` assim que a pessoa atende.
           greeting: call.direction === "inbound" ? [recordingNotice, agent.greeting?.trim()].filter(Boolean).join(" ") : undefined,
-          voiceId: agent.voice_id ?? undefined,
+          voiceId: agent.voice_id ?? tenantVoiceFor(engine, tenant.defaultVoiceId),
           language: agent.language,
           tools: [...enabled.values()].map(toSpec),
           // Dica de reconhecimento; vazia, o motor envia ao provedor o mesmo de antes.

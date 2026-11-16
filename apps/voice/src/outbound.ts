@@ -12,7 +12,17 @@ export interface OutboundDeps {
   log: Logger;
 }
 
-export type OutboundResult = { callId: string } | { code: string; message: string };
+export type OutboundResult = { callId: string; repeated?: boolean } | { code: string; message: string };
+
+/** O que vem a mais quando quem pede é um sistema de fora (chave de API). */
+export interface OutboundRequest {
+  /** A chave que pediu, gravada na chamada. */
+  apiKeyId?: string;
+  /** Dados do lead e do motivo, entregues ao agente como contexto (nunca como instrução). */
+  context?: Record<string, unknown>;
+  /** Chave de repetição: o mesmo pedido reenviado devolve a mesma chamada e não liga de novo. */
+  requestKey?: string;
+}
 
 /**
  * Origina uma ligação do agente para `toE164`. Só depois de `checkOutboundAllowed`: não existe
@@ -20,13 +30,18 @@ export type OutboundResult = { callId: string } | { code: string; message: strin
  * (franquia do plano, chamadas ao mesmo tempo, cadência reduzida). A recusa, de uma ou de outra,
  * fica gravada como chamada `refused` com o evento `call_refused`, para quem audita ver o que foi tentado.
  */
-export async function startOutboundCall(deps: OutboundDeps, input: { organizationId: string; agentId: string; toE164: string }): Promise<OutboundResult> {
+export async function startOutboundCall(deps: OutboundDeps, input: { organizationId: string; agentId: string; toE164: string } & OutboundRequest): Promise<OutboundResult> {
   const { db, ari, clock, log } = deps;
   const to = toE164(input.toE164);
   if (!to) return { code: "invalid_number", message: "The destination is not a valid phone number." };
 
   type Line = { id: string; caller_id_e164: string | null };
-  const prepared = await withOrg(db, input.organizationId, async (q): Promise<{ callId: string; trunk: Line } | { code: string; message: string }> => {
+  const prepare = (): Promise<{ callId: string; trunk: Line } | OutboundResult> => withOrg(db, input.organizationId, async (q): Promise<{ callId: string; trunk: Line } | OutboundResult> => {
+    if (input.requestKey !== undefined) {
+      const earlier = await q.one<{ id: string; status: string; end_reason: string | null }>("select id, status, end_reason from calls where request_key = $1", [input.requestKey]);
+      // O pedido repetido devolve o que o primeiro deu: a mesma chamada, ou a mesma recusa.
+      if (earlier) return earlier.status === "refused" ? { code: earlier.end_reason ?? "refused", message: "This request was already refused." } : { callId: earlier.id, repeated: true };
+    }
     const agent = await q.one<{ enabled: boolean }>("select enabled from agents where id = $1", [input.agentId]);
     if (!agent) return { code: "agent_not_found", message: "This agent does not exist in this organization." };
     if (!agent.enabled) return { code: "agent_disabled", message: "This agent is turned off." };
@@ -44,9 +59,21 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     const policy = await checkOutboundAllowed(q, to, clock, trunk.caller_id_e164);
     const decision = policy.allowed ? await checkPacingAllowed(q, clock.now(), { lineE164: trunk.caller_id_e164, globalActive: deps.calls.inProgress }) : policy;
     const call = await q.one<{ id: string }>(
-      `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at)
-       values ($1, $2, 'outbound', 'phone', $3, $4, $5, $6, $7, $8) returning id`,
-      [input.organizationId, input.agentId, trunk.caller_id_e164, to, decision.allowed ? "ringing" : "refused", decision.allowed ? null : decision.code, clock.now(), decision.allowed ? null : clock.now()],
+      `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at, requested_by_key_id, request_context, request_key)
+       values ($1, $2, 'outbound', 'phone', $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
+      [
+        input.organizationId,
+        input.agentId,
+        trunk.caller_id_e164,
+        to,
+        decision.allowed ? "ringing" : "refused",
+        decision.allowed ? null : decision.code,
+        clock.now(),
+        decision.allowed ? null : clock.now(),
+        input.apiKeyId ?? null,
+        input.context === undefined ? null : JSON.stringify(input.context),
+        input.requestKey ?? null,
+      ],
     );
     if (!call) throw new Error("Outbound call was not created");
     if (!decision.allowed) {
@@ -55,7 +82,17 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     }
     return { callId: call.id, trunk };
   });
-  if (!("callId" in prepared)) return prepared;
+  let prepared: Awaited<ReturnType<typeof prepare>>;
+  try {
+    prepared = await prepare();
+  } catch (error) {
+    // Dois pedidos com a mesma chave ao mesmo tempo: o índice único deixa um gravar, e o outro,
+    // repetido, já encontra a chamada do primeiro e devolve a mesma.
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (input.requestKey === undefined || code !== "23505") throw error;
+    prepared = await prepare();
+  }
+  if (!("trunk" in prepared)) return prepared;
 
   const { callId, trunk } = prepared;
   // O id do canal é o da chamada, escolhido antes de originar: quando o AudioSocket conectar, a

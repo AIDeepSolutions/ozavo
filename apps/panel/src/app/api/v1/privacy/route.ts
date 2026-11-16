@@ -1,4 +1,4 @@
-import { CALL_RECORDING_SETTING, DEFAULT_CALLER_NOTES_RETENTION_DAYS, MAX_CALLER_NOTES_RETENTION_DAYS, MIN_CALLER_NOTES_RETENTION_DAYS, callerNotesRetention, MAX_TRANSCRIPT_RETENTION_DAYS, MIN_TRANSCRIPT_RETENTION_DAYS, ORG_EVENT_KINDS, TRANSCRIPT_RETENTION_SETTING, callRecordingOf, transcriptRetentionOf } from "@ozavo/core";
+import { CALL_RECORDING_SETTING, DEFAULT_CALLER_NOTES_RETENTION_DAYS, MAX_CALLER_NOTES_RETENTION_DAYS, MIN_CALLER_NOTES_RETENTION_DAYS, callerNotesRetention, MAX_TRANSCRIPT_RETENTION_DAYS, MIN_TRANSCRIPT_RETENTION_DAYS, PRIVACY_EVENT_KINDS, TRANSCRIPT_RETENTION_SETTING, callRecordingOf, transcriptRetentionOf } from "@ozavo/core";
 import { handle } from "../../../../server/context";
 
 const HISTORY_LIMIT = 50;
@@ -11,7 +11,7 @@ export const GET = handle({ configure: true }, async ({ q }) => {
     `select e.id, e.at, e.kind, e.payload, u.name as "actorName"
        from organization_events e left join users u on u.id = e.actor_user_id
       where e.kind = any($1) order by e.at desc, e.id desc limit $2`,
-    [ORG_EVENT_KINDS, HISTORY_LIMIT],
+    [PRIVACY_EVENT_KINDS, HISTORY_LIMIT],
   );
   const notes = await callerNotesRetention(q);
   return {

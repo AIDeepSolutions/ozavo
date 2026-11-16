@@ -24,8 +24,11 @@ Preço e franquia vêm da especificação comercial recebida em 2026-11-16. O n�
 mesmo tempo **não** está na especificação: é o padrão desta versão (veja "Decisões em aberto").
 
 O único caminho que grava o plano é `setPlanSubscription`. A tela chama por
-`PUT /api/v1/finops/plan`; o provisionamento por API deve chamar a mesma função. Cada troca grava o
-evento de organização `plan_changed`.
+`PUT /api/v1/finops/plan`. O provisionamento por API (`POST /api/v1/tenants/provision`) chama a
+mesma função quando o `plan.code` é do catálogo (`starter`, `pro`, `growth`, `scale`): a empresa já
+nasce com a franquia, na regra de pausar as ligações de saída. Um código fora do catálogo fica só
+como vínculo no perfil da empresa, e ela segue sem plano até alguém escolher um na tela. Cada troca
+grava o evento de organização `plan_changed`.
 
 O ciclo é mensal e começa no dia de `cycle_started_on`. Quem começou no dia 31 renova no último dia
 dos meses mais curtos.

@@ -6,6 +6,7 @@ import { saveOperationSettings } from "./operation-settings";
 import { checkPacingAllowed } from "./pacing";
 import { getPlanSubscription, setPlanSubscription } from "./plans";
 import { WATCH_SHORT_CALLS_TASK, activeCadenceBreakers, watchShortCalls } from "./short-calls";
+import { provisionTenant, type ProvisionInput } from "./tenants";
 import { withOrg } from "./with-org";
 
 /**
@@ -169,6 +170,36 @@ describe("ligação de saída: franquia, concorrência e cadência", () => {
     expect(notices.rows[0].body).toMatch(/ALERTA CRÍTICO: A linha \+553133330000 fez 1200 ligações de saída hoje e 79% delas/);
     const events = await owner.pool.query("select payload from organization_events where organization_id = $1 and kind = 'cadence_reduced'", [org]);
     expect(events.rows).toHaveLength(1);
+  });
+});
+
+describe("provisionamento", () => {
+  const input = (ref: string, code: string): ProvisionInput => ({
+    source: "finops-test",
+    externalRef: ref,
+    company: { legalName: `Empresa ${ref} Ltda`, tradeName: null, cnpj: null },
+    owner: { name: "Dona", email: `${ref}@finops.example.com` },
+    plan: { code, monthlyMinutes: null },
+    agent: { name: "Nico", personaName: "Nico", voiceId: null, basePrompt: "", instructions: "", greeting: null, engine: "simulated", tools: [] },
+    secrets: [],
+    requestedBy: "00000000-0000-4000-8000-000000000000",
+  });
+
+  it("empresa provisionada com plano do catálogo já nasce com a franquia; código de fora fica sem plano", async () => {
+    const pro = await provisionTenant(app, input("prov-pro", "pro"), at(7));
+    if (!("created" in pro) || !pro.created) throw new Error("tenant was not provisioned");
+    expect(await withOrg(app, pro.organizationId, (q) => getPlanSubscription(q))).toEqual({
+      plan: "pro",
+      monthlyPriceCents: 99_700,
+      includedMinutes: 750,
+      overageRule: "pause_outbound",
+      overagePriceCentsPerMinute: 0,
+      maxConcurrentCalls: 3,
+      cycleStartedOn: "2030-05-07",
+    });
+    const other = await provisionTenant(app, input("prov-outro", "enterprise-2030"), at(7));
+    if (!("created" in other) || !other.created) throw new Error("tenant was not provisioned");
+    expect(await withOrg(app, other.organizationId, (q) => getPlanSubscription(q))).toBeNull();
   });
 });
 

@@ -55,6 +55,8 @@ export async function createOwner(db: Db, input: OwnerInput): Promise<CreateOwne
       return row.id;
     };
     const organizationId = await insert("insert into organizations (name) values ($1) returning id", [organization]);
+    // A primeira organização da instalação é a que a administra: só ela emite chave para provisionar empresas.
+    await q.exec("update organizations set platform = true where id = $1 and not exists (select from organizations where platform)", [organizationId]);
     const userId = await insert("insert into users (organization_id, email, name, password_hash, role) values ($1, $2, $3, $4, 'owner') returning id", [
       organizationId,
       email,

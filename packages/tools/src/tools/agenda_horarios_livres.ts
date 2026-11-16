@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable, speakSlot } from "../agenda-speech";
 import { defineTool } from "../define-tool";
-import type { ToolDeps } from "../deps";
+import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
 /** Janela padrão quando a pessoa não diz o período: uma semana à frente. */
 const DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -11,7 +11,7 @@ const SPOKEN_SLOTS = 3;
 export function createAgendaHorariosLivres(deps: ToolDeps = {}) {
   return defineTool({
     name: "agenda_horarios_livres",
-    available: deps.agenda !== undefined,
+    ...agendaAvailability(deps),
     description:
       "Consulta os horários livres na agenda para um tipo de atendimento, num período. Use quando a pessoa quiser marcar ou remarcar e ainda não souber que horas há vaga. Devolve os horários em ISO 8601 e em palavras, no fuso da agenda: leia em voz alta o dia da semana e a hora de até três opções e peça que a pessoa escolha. NÃO use para gravar nada nem para confirmar horário: para marcar, use agenda_marcar depois que a pessoa confirmar em voz alta; para trocar um horário já marcado, use agenda_remarcar. NÃO ofereça horário que não esteja na lista devolvida.",
     inputSchema: z.object({
@@ -37,7 +37,7 @@ export function createAgendaHorariosLivres(deps: ToolDeps = {}) {
         .describe("Duração do atendimento em minutos, quando for diferente da duração padrão do tipo."),
     }),
     async run(input, ctx) {
-      const client = deps.agenda;
+      const client = await agendaOf(deps, ctx.q);
       if (!client) return { ok: false, message: agendaNotWired("os horários não foram consultados") };
 
       const from = input.from ? new Date(input.from) : ctx.clock.now();
@@ -90,4 +90,4 @@ export function createAgendaHorariosLivres(deps: ToolDeps = {}) {
   });
 }
 
-export default createAgendaHorariosLivres();
+export default createAgendaHorariosLivres(settingsAgendaDeps());
