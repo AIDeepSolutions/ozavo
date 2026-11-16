@@ -180,6 +180,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
   let requestedEnd: Ending | undefined;
   let requestedFarewell: string | undefined;
   let costCents = 0;
+  // Áudio que o agente mandou para a linha, em ms: a fala da IA na chamada (meta da spec: abaixo de 50%).
+  let agentAudioMs = 0;
   const usage = { seconds: 0, inputTokens: 0, outputTokens: 0, textInputTokens: 0, cachedInputTokens: 0, textOutputTokens: 0, characters: 0, providerCostCents: 0 };
   const cancelTimers: Array<() => void> = [];
   const toolsRunning = new Set<Promise<void>>();
@@ -204,7 +206,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       for (const [kind, payload] of end.events ?? []) await event(kind, payload);
       if (end.notice) await panelNotice(q, clock, callId, end.notice);
       await q.exec("update calls set status = $2, end_reason = $3, ended_at = $4, cost_cents = $5 where id = $1", [callId, end.status, end.endReason, clock.now(), costCents]);
-      await event("call_ended", { status: end.status, reason: end.endReason, costCents, seconds: Math.round(usage.seconds) });
+      await event("call_ended", { status: end.status, reason: end.endReason, costCents, seconds: Math.round(usage.seconds), agentSpeechSeconds: Math.round(agentAudioMs / 1000) });
       const taskId = await enqueueTask(q, { kind: "summarize_call", payload: {}, callId, runAt: clock.now() });
       await event("task_queued", { taskId, kind: "summarize_call" });
     } catch (error) {
@@ -569,6 +571,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     session.on("audio", (pcm) => {
       silenceGuard.agentAudio(pcm.length / PCM16_8K_BYTES_PER_MS);
       if (ending) return;
+      agentAudioMs += pcm.length / PCM16_8K_BYTES_PER_MS;
       transport.sendAudio(pcm);
       recorder?.agent(pcm);
     });

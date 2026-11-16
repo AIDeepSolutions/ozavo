@@ -12,6 +12,7 @@ import { formatBrl, formatDay, formatMoney, formatPhone } from "../../../ui/form
 import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Skeleton, TextInput } from "../../../ui/kit";
 import { useCanConfigure } from "../../../ui/me";
 import type { Finops, OperationSettings, OverageRule, PlanId, PlanState } from "../../../ui/types";
+import { TalkSharePanel } from "./talk-share-panel";
 
 const PLAN_ORDER: PlanId[] = ["starter", "pro", "growth", "scale", "custom"];
 const RULES: OverageRule[] = ["pause_outbound", "bill_overage"];
@@ -209,6 +210,8 @@ export default function FinopsPage() {
           badge={margin.withinTarget === null ? undefined : <Badge tone={margin.withinTarget ? "ok" : "fail"}>{margin.withinTarget ? t.withinTarget : t.aboveTarget}</Badge>}
         />
       </div>
+
+      <TalkSharePanel />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title={t.marginTitle} description={t.marginLead}>

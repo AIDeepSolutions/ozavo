@@ -36,3 +36,4 @@ export * from "./operation-settings";
 export * from "./pacing";
 export * from "./plans";
 export * from "./short-calls";
+export * from "./talk-share";
