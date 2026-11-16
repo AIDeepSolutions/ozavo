@@ -274,6 +274,8 @@ export interface PlanSubscription {
 
 export interface PlanState {
   subscription: PlanSubscription | null;
+  /** Esta organização administra a instalação: só ela grava plano e limites. */
+  platform: boolean;
   catalog: Record<Exclude<PlanId, "custom">, { monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number }>;
 }
 

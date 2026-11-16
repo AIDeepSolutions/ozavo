@@ -29,6 +29,7 @@ const health: HealthDictionary = {
     panel_ok: "answering",
     database_ok: "answering",
     database_down: "the database did not answer the panel",
+    database_bypasses_rls: "the panel connects to the database with a role that ignores the isolation between organizations (superuser or BYPASSRLS): one company can see another's data",
     voice_ok: "answering",
     voice_down: "the voice process did not answer the panel: no call is answered",
     telephony_ok: "the voice process is connected to Asterisk",
@@ -74,6 +75,7 @@ const health: HealthDictionary = {
   },
   actions: {
     database_down: "Check on the server whether Postgres is up and whether there is free disk. The health check shows both:",
+    database_bypasses_rls: "Point DATABASE_URL to the ozavo_app role, which has no BYPASSRLS and does not own the tables. The database owner's connection is only for migrations.",
     voice_down: "Check the voice process on the server. The health check says whether the container is stopped; its logs say why:",
     telephony_down: "The most common cause is Asterisk not having read the configuration. Run the installer again on the server, in the Ozavo folder; it keeps what already exists:",
     routines_not_listening: "The routines process stopped or lost its database connection. Restart it on the server, in the Ozavo folder; if it stops again, its logs say why:",

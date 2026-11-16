@@ -39,6 +39,7 @@ const finops = {
   dayMinutes: "{n} min",
   dayCalls: "Ligações: {n}",
   planTitle: "Plano contratado",
+  platformOnly: "O plano e os limites de operação são definidos pela organização que administra esta instalação. Aqui você acompanha o que foi contratado.",
   planLead: "O plano define a franquia de minutos, o que acontece quando ela acaba e quantas chamadas cabem ao mesmo tempo.",
   plan: "Plano",
   plans: {

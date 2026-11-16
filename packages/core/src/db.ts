@@ -17,6 +17,17 @@ export function createDb(url: string, systemUrl?: string): Db {
   };
 }
 
+/**
+ * O papel da conexão de aplicação contorna o RLS (superusuário ou `BYPASSRLS`)? Se sim, `withOrg`
+ * não isola nada: toda consulta enxerga todas as organizações. Acontece quando a instalação aponta
+ * `DATABASE_URL` para o dono do banco em vez de `ozavo_app`. A saúde do painel trata como falha.
+ */
+export async function appRoleBypassesRls(db: Db): Promise<boolean> {
+  const { rows } = await db.pool.query<{ bypass: boolean }>("select rolsuper or rolbypassrls as bypass from pg_roles where rolname = current_user");
+  // Sem a linha do próprio papel não há como afirmar que o RLS vale: conta como contornado.
+  return rows[0]?.bypass ?? true;
+}
+
 function openPool(url: string): Pool {
   const pool = new Pool({ connectionString: url });
   // Conexão ociosa que cai (banco reiniciou) emite `error` no pool, e evento `error` sem ouvinte

@@ -118,6 +118,8 @@ export default function FinopsPage() {
   const data = summary.data;
   if (!data || !plan.data || !planDraft || !limitsDraft) return <Skeleton lines={5} />;
 
+  // Plano e limites são comerciais: quem não é a plataforma lê, mas não grava.
+  const canEdit = canConfigure && plan.data.platform;
   const { margin } = data;
   const usedMinutes = minutesOf(data.consumedSeconds);
   const share = data.includedSeconds ? data.consumedSeconds / data.includedSeconds : 0;
@@ -159,6 +161,7 @@ export default function FinopsPage() {
     <>
       <PageHeader title={t.title} lead={t.lead} actions={<span className="data text-[0.87rem] text-muted">{fill(t.period, { start: formatDay(data.period.start, locale), end: formatDay(data.period.end, locale) })}</span>} />
       <ReadOnlyNotice />
+      {canConfigure && !plan.data.platform ? <Notice>{t.platformOnly}</Notice> : null}
 
       {data.cadenceBreakers.map((breaker) => (
         <Notice key={breaker.lineE164} tone="fail">
@@ -256,7 +259,7 @@ export default function FinopsPage() {
             void savePlan.run(submitPlan);
           }}
         >
-          <fieldset disabled={!canConfigure} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <fieldset disabled={!canEdit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Field label={t.plan}>
               <Select value={planDraft.plan} onChange={(event) => setPlanDraft({ ...planDraft, plan: event.target.value as PlanId })}>
                 {PLAN_ORDER.map((id) => (
@@ -299,7 +302,7 @@ export default function FinopsPage() {
               <TextInput mono type="date" value={planDraft.cycleStartedOn} onChange={(event) => setPlanDraft({ ...planDraft, cycleStartedOn: event.target.value })} />
             </Field>
           </fieldset>
-          {canConfigure ? (
+          {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" variant="primary" busy={savePlan.busy}>
                 {t.savePlan}
@@ -318,7 +321,7 @@ export default function FinopsPage() {
             void saveLimits.run(submitLimits);
           }}
         >
-          <fieldset disabled={!canConfigure} className="grid gap-4 md:grid-cols-2">
+          <fieldset disabled={!canEdit} className="grid gap-4 md:grid-cols-2">
             <Field label={t.ttsLimit} hint={t.ttsLimitHint}>
               <TextInput mono type="number" min={1} max={1000} step={1} value={limitsDraft.ttsConcurrencyLimit} onChange={(event) => setLimitsDraft({ ...limitsDraft, ttsConcurrencyLimit: event.target.value })} />
             </Field>
@@ -332,7 +335,7 @@ export default function FinopsPage() {
               <TextInput mono type="number" min={0} step="0.0001" value={limitsDraft.usdBrlRate} onChange={(event) => setLimitsDraft({ ...limitsDraft, usdBrlRate: event.target.value })} />
             </Field>
           </fieldset>
-          {canConfigure ? (
+          {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" busy={saveLimits.busy}>
                 {t.saveLimits}

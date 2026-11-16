@@ -1,3 +1,4 @@
+import { withOrg } from "@ozavo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET as getPlan, PUT as putPlan } from "./finops/plan/route";
@@ -8,11 +9,18 @@ const panel = startPanel();
 let org: string;
 let owner: string;
 let operator: string;
+let tenantOwner: string;
+let tenantAdmin: string;
 
+// Plano e limites são comerciais: só a organização que administra a instalação (`platform`) os grava.
 beforeAll(async () => {
   org = await createOrganization(panel.app, "finops api");
+  await withOrg(panel.app, org, (q) => q.exec("update organizations set platform = true where id = $1", [org]));
   owner = (await createUser(panel.app, org, "owner")).cookie;
   operator = (await createUser(panel.app, org, "operator")).cookie;
+  const tenant = await createOrganization(panel.app, "finops tenant");
+  tenantOwner = (await createUser(panel.app, tenant, "owner")).cookie;
+  tenantAdmin = (await createUser(panel.app, tenant, "admin")).cookie;
 });
 afterAll(() => panel.close());
 
@@ -29,6 +37,19 @@ describe("FinOps pela API", () => {
     expect(await call(putPlan, { cookie: operator, method: "PUT", body: { plan: "pro", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 403, code: "forbidden" });
     expect(await call(putLimits, { cookie: operator, method: "PUT", body: limits })).toMatchObject({ status: 403, code: "forbidden" });
     expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+  });
+
+  it("dono ou admin de uma empresa comum não troca o próprio plano nem afrouxa os limites", async () => {
+    const custom = { plan: "custom", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0, monthlyPriceCents: 0, includedMinutes: 1_000_000, maxConcurrentCalls: 500 };
+    for (const cookie of [tenantOwner, tenantAdmin]) {
+      expect(await call(putPlan, { cookie, method: "PUT", body: custom })).toMatchObject({ status: 403, code: "platform_only" });
+      expect(await call(putPlan, { cookie, method: "PUT", body: { plan: "scale", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 403, code: "platform_only" });
+      expect(await call(putLimits, { cookie, method: "PUT", body: { ...limits, reducedCallsPerHour: 10_000 } })).toMatchObject({ status: 403, code: "platform_only" });
+    }
+    // A leitura continua: a tela da empresa mostra o plano e os limites, sem poder gravar.
+    expect((await call(getPlan, { cookie: tenantOwner })).data).toMatchObject({ subscription: null, platform: false });
+    expect((await call(getLimits, { cookie: tenantOwner })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+    expect((await call(getPlan, { cookie: owner })).data).toMatchObject({ platform: true });
   });
 
   it("dono contrata o plano do catálogo, e o ciclo começa hoje no calendário da organização", async () => {

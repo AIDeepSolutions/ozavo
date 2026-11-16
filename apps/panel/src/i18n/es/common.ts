@@ -64,6 +64,7 @@ const common: CommonDictionary = {
     invalid_rcd_logo: "No se pudo convertir la imagen. Envía PNG, JPEG o BMP de hasta 8 MB.",
     fallback: "No pudimos completar esta acción. Intenta de nuevo en un momento.",
     platform_scope: "Solo la organización que administra esta instalación crea una clave que provisiona empresas.",
+    platform_only: "Solo la organización que administra esta instalación cambia el plan y los límites de operación.",
     agenda_not_google: "Guarda la agenda de Google antes de autorizar.",
     network: "El panel no respondió. Revisa tu conexión e intenta de nuevo.",
     internal_error: "Tuvimos un problema en el servidor. No se cambió nada. Intenta de nuevo en un momento.",
