@@ -41,7 +41,11 @@ it("90 dias sem configuração: expurga só o vencido, cifra legado, copia S3 e 
     expect(await readdir(join(dir, org))).toEqual([`${recent}.wav`]);
     expect(await readRecording(recordingPath(dir, org, recent), deps.secretKey)).toEqual(wav);
     expect(await readdir(join(dir, foreign))).toEqual([`${other}.wav`]);
-    expect(copied).toEqual([recent, recent]); expect(removed).toEqual([expired, expired]);
+    // A segunda passada não chama o S3 de novo: a chamada guarda a cópia e a exclusão remota (auditoria A19).
+    expect(copied).toEqual([recent]); expect(removed).toEqual([expired]);
+    const marks = await withOrg(app, org, q => q.many<{ id: string; archived: boolean; purged: boolean }>(
+      "select id, recording_archived_at is not null as archived, recording_remote_purged_at is not null as purged from calls order by started_at"));
+    expect(marks).toEqual([{ id: expired, archived: false, purged: true }, { id: recent, archived: true, purged: false }]);
     const scheduled = await withOrg(app, org, q => q.many<{ run_at: Date }>("select run_at from tasks where kind = 'maintain_recordings' and status = 'queued'"));
     expect(scheduled).toEqual([{ run_at: new Date(t0.getTime() + 86400000) }]);
     const events = await withOrg(app, org, q => q.many<{ kind: string }>("select kind from organization_events where kind = 'recordings_purged'"));
@@ -103,8 +107,9 @@ it.each(["remove", "put"] as const)("falha S3 em %s não bloqueia expurgo local 
       expect(await readdir(join(dir, org))).toEqual([`${recent}.wav`]);
       expect(await readRecording(recordingPath(dir, org, recent), deps.secretKey)).toEqual(wav);
       expect(await readdir(join(dir, foreign))).toEqual([`${other}.wav`]);
-      for (const id of expired) expect(removed.filter(callId => callId === id)).toHaveLength(attempt);
-      expect(copied).toHaveLength(attempt);
+      // O que falhou é tentado de novo; o que deu certo não volta ao S3.
+      for (const id of expired) expect(removed.filter(callId => callId === id)).toHaveLength(failedOperation === "remove" ? attempt : 1);
+      expect(copied).toHaveLength(failedOperation === "put" ? attempt : 1);
       expect(snapshots.every(files => files.length === 1 && files[0] === `${recent}.wav`)).toBe(true);
     }
     const events = await withOrg(app, org, q => q.many<{ payload: { recordings: number } }>("select payload from organization_events where kind = 'recordings_purged'"));
