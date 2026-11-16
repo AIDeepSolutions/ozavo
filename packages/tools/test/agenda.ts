@@ -64,7 +64,10 @@ export function crmSimulado(options: { slots?: AgendaSlot[]; timezone?: string }
   };
 }
 
-/** Contexto de uma ligação: relógio fixo, `say` gravado e banco que reprova quem ousar consultá-lo. */
+/**
+ * Contexto de uma ligação: relógio fixo, `say` gravado e banco que só responde o telefone da ligação
+ * (agenda_marcar o lê para a reserva) e reprova qualquer outra consulta.
+ */
 export function contextoDaAgenda(): ToolContext & { said: string[] } {
   const said: string[] = [];
   const naoUsaBanco = async (): Promise<never> => {
@@ -74,7 +77,12 @@ export function contextoDaAgenda(): ToolContext & { said: string[] } {
     organizationId: "org-1",
     callId: "call-1",
     agentId: "agent-1",
-    q: { organizationId: "org-1", many: naoUsaBanco, one: naoUsaBanco, exec: naoUsaBanco },
+    q: {
+      organizationId: "org-1",
+      many: naoUsaBanco,
+      one: async <T,>(sql: string): Promise<T | null> => (sql.includes("as phone from calls") ? ({ phone: "+5511988887777" } as T) : naoUsaBanco()),
+      exec: naoUsaBanco,
+    },
     clock: { now: () => AGORA },
     telephony: {
       canTransfer: true,

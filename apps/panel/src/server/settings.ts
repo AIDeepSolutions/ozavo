@@ -14,6 +14,7 @@ import {
 import { z, type ZodType } from "zod";
 import type { VoiceEngine } from "@ozavo/voice-engine";
 import { ANALYSIS_SETTING, AUTO_TRANSCRIPTION_SETTING, OUTCOME_SETTING, TRANSCRIPTION_SETTING, classifyBaseUrlOf, classifyModelOf, engineClassifyTargetSetting, storedClassifyTargetOf } from "@ozavo/voice-engine/types";
+import { AGENDA_CONNECTOR_KEY, storedAgendaConnector } from "@ozavo/tools/agenda";
 import { ApiError } from "./context";
 import { engineKeySetting, listEngines } from "./pieces";
 
@@ -166,6 +167,84 @@ const webhooks = setting<Array<{ name: string; url: string; token?: string }>>({
   },
 });
 
+const timeZone = z.string().refine((zone) => {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}, "unknown time zone");
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM");
+const serviceName = z.string().trim().min(1).max(80);
+
+// A agenda da empresa: Cal.com por chave de API, ou Google Agenda por OAuth. Como no conector, o
+// segredo em branco mantém o gravado só para o MESMO destino (a mesma conta do Cal.com, o mesmo
+// cliente OAuth do Google); o token de renovação do Google só vem pela autorização, nunca da tela.
+const agendaConnector = setting<
+  | { type: "calcom"; apiKey?: string; timezone: string; services: Array<{ name: string; eventTypeId: number }> }
+  | {
+      type: "google_calendar";
+      clientId: string;
+      clientSecret?: string;
+      calendarId: string;
+      timezone: string;
+      workStart: string;
+      workEnd: string;
+      workDays: number[];
+      slotMinutes: number;
+      services: Array<{ name: string; durationMinutes: number }>;
+    }
+>({
+  schema: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("calcom"),
+      apiKey: z.string().trim().min(1).max(500).optional(),
+      timezone: timeZone,
+      services: z.array(z.object({ name: serviceName, eventTypeId: z.number().int().positive() })).min(1).max(30),
+    }),
+    z.object({
+      type: z.literal("google_calendar"),
+      clientId: z.string().trim().min(1).max(300),
+      clientSecret: z.string().trim().min(1).max(500).optional(),
+      calendarId: z.string().trim().min(1).max(300),
+      timezone: timeZone,
+      workStart: hhmm,
+      workEnd: hhmm,
+      workDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+      slotMinutes: z.number().int().min(5).max(480),
+      services: z.array(z.object({ name: serviceName, durationMinutes: z.number().int().min(5).max(480) })).max(30),
+    }),
+  ]),
+  secret: true,
+  store(value, key, previous) {
+    const kept = storedAgendaConnector.safeParse(previous);
+    if (value.type === "calcom") {
+      const apiKeyEnc = value.apiKey ? encryptSecret(value.apiKey, key) : kept.success && kept.data.type === "calcom" ? kept.data.apiKeyEnc : undefined;
+      if (apiKeyEnc === undefined) throw new ApiError(400, "token_required", "Enter the Cal.com API key.");
+      return { type: "calcom", apiKeyEnc, timezone: value.timezone, services: value.services };
+    }
+    if (value.workStart >= value.workEnd) throw new ApiError(400, "validation_error", "workEnd: the working day must end after it starts.");
+    const sameClient = kept.success && kept.data.type === "google_calendar" && kept.data.clientId === value.clientId ? kept.data : undefined;
+    const clientSecretEnc = value.clientSecret ? encryptSecret(value.clientSecret, key) : sameClient?.clientSecretEnc;
+    if (clientSecretEnc === undefined) throw new ApiError(400, "token_required", "When the OAuth client changes, enter its secret again.");
+    // A autorização vale para o cliente OAuth que a pediu: outro cliente pede autorizar de novo.
+    const refreshTokenEnc = value.clientSecret === undefined ? sameClient?.refreshTokenEnc : undefined;
+    const { clientSecret: _secret, ...rest } = value;
+    return { ...rest, clientSecretEnc, ...(refreshTokenEnc !== undefined && { refreshTokenEnc }) };
+  },
+  view(stored) {
+    const parsed = storedAgendaConnector.safeParse(stored);
+    if (!parsed.success) return null;
+    if (parsed.data.type === "calcom") {
+      const { apiKeyEnc: _key, ...rest } = parsed.data;
+      return { ...rest, apiKey: CONFIGURED };
+    }
+    const { clientSecretEnc: _secret, refreshTokenEnc, ...rest } = parsed.data;
+    return { ...rest, clientSecret: CONFIGURED, authorized: refreshTokenEnc !== undefined };
+  },
+});
+
 /** A definição da chave, ou `undefined` se a chave não for conhecida. Não existe configuração livre. */
 export async function settingDefinition(key: string): Promise<Setting | undefined> {
   const engines = await listEngines();
@@ -177,6 +256,8 @@ export async function settingDefinition(key: string): Promise<Setting | undefine
     // Ausente vale `false`: o aviso de fim de ligação pelo WhatsApp nasce desligado.
     "whatsapp.notify_owner_on_call_end": plain(z.boolean()),
     "webhooks.allowed": webhooks,
+    // A agenda que as ferramentas de agenda usam. Ausente: elas não são oferecidas na ligação.
+    [AGENDA_CONNECTOR_KEY]: agendaConnector,
     // O que vale quando ninguém responde a um pedido de aprovação. Ausente vale `denied`: é escolha
     // do operador, não do modelo de IA.
     "approvals.default_on_timeout": plain(z.enum(["denied", "approved"])),

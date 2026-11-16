@@ -61,6 +61,8 @@ const common: CommonDictionary = {
   readOnly: "Tu rol es de operador: sigues las llamadas y respondes aprobaciones. Para cambiar esta pantalla, habla con un dueño o administrador.",
   errors: {
     fallback: "No pudimos completar esta acción. Intenta de nuevo en un momento.",
+    platform_scope: "Solo la organización que administra esta instalación crea una clave que provisiona empresas.",
+    agenda_not_google: "Guarda la agenda de Google antes de autorizar.",
     network: "El panel no respondió. Revisa tu conexión e intenta de nuevo.",
     internal_error: "Tuvimos un problema en el servidor. No se cambió nada. Intenta de nuevo en un momento.",
     unauthenticated: "Tu sesión venció. Entra de nuevo para continuar.",

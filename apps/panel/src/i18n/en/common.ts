@@ -61,6 +61,8 @@ const common: CommonDictionary = {
   readOnly: "Your role is operator: you follow calls and answer approvals. To change this screen, talk to an owner or administrator.",
   errors: {
     fallback: "We could not complete this action. Try again in a moment.",
+    platform_scope: "Only the organization that runs this installation can create a key that provisions companies.",
+    agenda_not_google: "Save the Google calendar before authorizing.",
     network: "The panel did not answer. Check your connection and try again.",
     internal_error: "We had a problem on the server. Nothing was changed. Try again in a moment.",
     unauthenticated: "Your session expired. Sign in again to continue.",

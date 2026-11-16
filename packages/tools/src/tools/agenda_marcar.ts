@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
 import { defineTool } from "../define-tool";
-import type { ToolDeps } from "../deps";
+import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
 export function createAgendaMarcar(deps: ToolDeps = {}) {
   return defineTool({
     name: "agenda_marcar",
-    available: deps.agenda !== undefined,
+    ...agendaAvailability(deps),
     description:
       "Marca um horário na agenda, depois que a pessoa confirmou o dia e a hora em voz alta. Chame só depois de ler o dia e a hora e ouvir o sim dela: sem `confirmed: true` nada é gravado. Use o horário exato que agenda_horarios_livres devolveu. NÃO use para trocar um horário já marcado (use agenda_remarcar), nem para marcar sem a confirmação da pessoa, nem para um horário que já passou. NÃO chame duas vezes para o mesmo pedido.",
     inputSchema: z.object({
@@ -29,7 +29,7 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
         };
       }
 
-      const client = deps.agenda;
+      const client = await agendaOf(deps, ctx.q);
       if (!client) return { ok: false, noEffect: true, message: agendaNotWired("o horário não foi marcado") };
 
       if (new Date(input.starts_at).getTime() <= ctx.clock.now().getTime()) {
@@ -43,10 +43,13 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
 
       ctx.say("Um instante, estou marcando.");
       try {
+        // O telefone vem da ligação, nunca do modelo.
+        const line = await ctx.q.one<{ phone: string | null }>("select case when direction = 'inbound' then from_e164 else to_e164 end as phone from calls where id = $1", [ctx.callId]);
         const appointment = await client.book({
           serviceType: input.service_type,
           startsAt: input.starts_at,
           callId: ctx.callId,
+          ...(line?.phone ? { attendeePhone: line.phone } : {}),
         });
         return {
           ok: true,
@@ -62,4 +65,4 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
   });
 }
 
-export default createAgendaMarcar();
+export default createAgendaMarcar(settingsAgendaDeps());
