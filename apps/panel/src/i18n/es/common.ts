@@ -9,6 +9,7 @@ const common: CommonDictionary = {
     line: "Línea telefónica",
     outbound: "Llamadas salientes",
     costs: "Costos",
+    finops: "FinOps",
     team: "Equipo",
     settings: "Configuración",
   },
@@ -62,6 +63,8 @@ const common: CommonDictionary = {
   errors: {
     invalid_rcd_logo: "No se pudo convertir la imagen. Envía PNG, JPEG o BMP de hasta 8 MB.",
     fallback: "No pudimos completar esta acción. Intenta de nuevo en un momento.",
+    platform_scope: "Solo la organización que administra esta instalación crea una clave que provisiona empresas.",
+    agenda_not_google: "Guarda la agenda de Google antes de autorizar.",
     network: "El panel no respondió. Revisa tu conexión e intenta de nuevo.",
     internal_error: "Tuvimos un problema en el servidor. No se cambió nada. Intenta de nuevo en un momento.",
     unauthenticated: "Tu sesión venció. Entra de nuevo para continuar.",

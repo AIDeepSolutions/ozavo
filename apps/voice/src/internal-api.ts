@@ -19,7 +19,7 @@ type Refusal = { code: string; message: string };
 export interface InternalApiHandlers {
   health(): Promise<VoiceHealth>;
   applyTrunks(input: { organizationId: string }): Promise<object>;
-  outbound(input: { organizationId: string; agentId: string; toE164: string }): Promise<{ callId: string } | Refusal>;
+  outbound(input: z.infer<typeof outbound>): Promise<{ callId: string; repeated?: boolean } | Refusal>;
   simulate(input: { organizationId: string; agentId: string; fromE164?: string | null }): Promise<{ callId: string } | Refusal>;
   /** Chamada pelo navegador: cria a chamada e o token de uso único que abre o WebSocket dela. */
   web(input: { organizationId: string; agentId: string; userId: string }): Promise<{ callId: string; token: string; expiresInSeconds: number } | Refusal>;
@@ -40,7 +40,15 @@ export interface InternalApiOptions {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const organization = z.strictObject({ organizationId: z.uuid() });
-const outbound = z.strictObject({ organizationId: z.uuid(), agentId: z.uuid(), toE164: z.string().min(1).max(40) });
+const outbound = z.strictObject({
+  organizationId: z.uuid(),
+  agentId: z.uuid(),
+  toE164: z.string().min(1).max(40),
+  // Só no pedido que veio por chave de API (o painel confere a chave e o tamanho do contexto).
+  apiKeyId: z.uuid().optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
+  requestKey: z.string().min(1).max(200).optional(),
+});
 const simulate = z.strictObject({ organizationId: z.uuid(), agentId: z.uuid(), fromE164: z.string().regex(/^\+[1-9]\d{7,14}$/).nullable().optional() });
 const web = z.strictObject({ organizationId: z.uuid(), agentId: z.uuid(), userId: z.uuid() });
 const stopRecording = z.strictObject({ organizationId: z.uuid(), callId: z.uuid(), userId: z.uuid(), reason: z.string().max(300).nullable() });

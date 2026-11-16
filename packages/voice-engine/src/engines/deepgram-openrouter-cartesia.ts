@@ -166,6 +166,7 @@ const engine: VoiceEngine = {
   provider: "deepgram, openrouter, cartesia",
   processingLocation: { kind: "undeclared" },
   voices: CARTESIA_PT_VOICES,
+  acceptsCustomVoices: true,
   defaultVoice: CARTESIA_DEFAULT_VOICE,
   pricing: {
     centsPerMinute: 0.77,

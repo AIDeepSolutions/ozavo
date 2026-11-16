@@ -293,6 +293,11 @@ export interface VoiceEngine {
   processingLocation: ProcessingLocation;
   /** As vozes que a tela oferece. */
   voices?: readonly EngineVoice[];
+  /**
+   * O provedor aceita voz fora de `voices` (a voz clonada da Cartesia, criada na conta de quem usa).
+   * Com isso, a voz padrão da empresa vale mesmo sem estar na lista.
+   */
+  acceptsCustomVoices?: boolean;
   /** A voz usada quando o agente não escolheu nenhuma. */
   defaultVoice?: string;
   /** Verdadeiro para motores que não precisam de chave (o simulado). */

@@ -290,6 +290,23 @@ describe("ligação de saída", { timeout: 120_000 }, () => {
     expect(failed).toMatchObject([{ status: "failed", end_reason: "no_answer" }]);
     expect(await kindsOf(app, failed[0]?.id ?? "")).toEqual(["call_ended"]);
   });
+
+  it("pedida por sistema de fora: grava o contexto e a chave de repetição, e o mesmo pedido em paralelo liga uma vez só", async () => {
+    const { organizationId, agentId, ari } = await scene("outbound-api-request", "on");
+    const clock = fakeClock();
+    const calls = new AsteriskCalls({ ari, db: app, clock, log: () => undefined });
+    const request = () =>
+      startOutboundCall({ db: app, ari, clock, calls, log: () => undefined }, { organizationId, agentId, toE164: "+5531999998888", context: { lead: "Ana" }, requestKey: "lead-42" });
+    const results = await Promise.all([request(), request(), request()]);
+    const created = await callsOf(app, organizationId);
+    expect(created).toHaveLength(1);
+    const callId = created[0]?.id ?? "";
+    expect(results.map((result) => ("callId" in result ? result.callId : result.code))).toEqual([callId, callId, callId]);
+    expect(results.filter((result) => "repeated" in result && result.repeated)).toHaveLength(2);
+    expect(ari.originated).toHaveLength(1);
+    const row = await withSystem(app, (q) => q.one("select request_context, request_key from calls where id = $1", [callId]));
+    expect(row).toEqual({ request_context: { lead: "Ana" }, request_key: "lead-42" });
+  });
 });
 
 describe("chamada simulada pela API interna", { timeout: 120_000 }, () => {

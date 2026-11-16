@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
 import { defineTool } from "../define-tool";
-import type { ToolDeps } from "../deps";
+import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
 export function createAgendaRemarcar(deps: ToolDeps = {}) {
   return defineTool({
     name: "agenda_remarcar",
-    available: deps.agenda !== undefined,
+    ...agendaAvailability(deps),
     description:
       "Troca o horário de um compromisso que já existe na agenda, depois que a pessoa confirmou o novo dia e a nova hora em voz alta. Use só com o identificador do agendamento que agenda_marcar devolveu ou que o operador informou. Chame só depois de ler o novo dia e a nova hora e ouvir o sim dela: sem `confirmed: true` nada é alterado. NÃO use para marcar um compromisso novo (use agenda_marcar) nem para desmarcar. NÃO remarque para um horário que já passou.",
     inputSchema: z.object({
@@ -32,7 +32,7 @@ export function createAgendaRemarcar(deps: ToolDeps = {}) {
         };
       }
 
-      const client = deps.agenda;
+      const client = await agendaOf(deps, ctx.q);
       if (!client) return { ok: false, noEffect: true, message: agendaNotWired("o horário não foi remarcado") };
 
       if (new Date(input.starts_at).getTime() <= ctx.clock.now().getTime()) {
@@ -64,4 +64,4 @@ export function createAgendaRemarcar(deps: ToolDeps = {}) {
   });
 }
 
-export default createAgendaRemarcar();
+export default createAgendaRemarcar(settingsAgendaDeps());

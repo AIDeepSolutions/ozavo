@@ -253,6 +253,9 @@ const timeline = {
     outside_window: "Fora do horário permitido para ligações de saída.",
     do_not_call: "O número está na lista de não ligar.",
     daily_cap_reached: "O teto diário de ligações desta linha tinha sido atingido.",
+    plan_quota_exhausted: "A franquia de minutos do plano acabou, e as ligações de saída estão pausadas até o próximo ciclo. A regra se ajusta em FinOps.",
+    concurrency_limit: "O limite de chamadas ao mesmo tempo foi atingido (o do plano, ou o da conta do provedor de síntese de voz). Os limites estão em FinOps.",
+    cadence_reduced: "A cadência de saída desta linha está reduzida hoje, por excesso de chamadas curtas, e o limite por hora foi atingido.",
     attempts_exhausted: "O limite de tentativas para esta pessoa tinha sido atingido.",
   },
 };

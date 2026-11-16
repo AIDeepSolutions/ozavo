@@ -60,3 +60,8 @@ export function splitInlineCode(text: string): Array<{ code: boolean; text: stri
   if (last < text.length) pieces.push({ code: false, text: text.slice(last) });
   return pieces;
 }
+
+/** Centavos de real, na moeda do plano. O custo dos provedores é em dólar e usa `formatMoney`. */
+export function formatBrl(cents: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "BRL" }).format(cents / 100);
+}

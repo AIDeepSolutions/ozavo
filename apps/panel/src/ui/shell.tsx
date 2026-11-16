@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChartBar, CircleHalf, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree } from "@phosphor-icons/react";
+import { Bell, ChartBar, CircleHalf, Gauge, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -36,6 +36,7 @@ const NAV = [
   { href: "/line", key: "line", icon: PlugsConnected },
   { href: "/outbound", key: "outbound", icon: PhoneOutgoing },
   { href: "/costs", key: "costs", icon: ChartBar },
+  { href: "/finops", key: "finops", icon: Gauge },
   { href: "/team", key: "team", icon: UsersThree },
   { href: "/settings", key: "settings", icon: GearSix },
 ] as const;

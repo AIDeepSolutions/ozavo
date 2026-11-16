@@ -7,6 +7,7 @@ const common = {
     line: "Linha telefônica",
     outbound: "Ligações de saída",
     costs: "Custos",
+    finops: "FinOps",
     team: "Equipe",
     settings: "Configurações",
   },
@@ -60,6 +61,8 @@ const common = {
   errors: {
     invalid_rcd_logo: "A imagem não pôde ser convertida. Envie PNG, JPEG ou BMP com até 8 MB.",
     fallback: "Não conseguimos concluir essa ação. Tente de novo em instantes.",
+    platform_scope: "Só a organização que administra esta instalação cria chave que provisiona empresas.",
+    agenda_not_google: "Salve a agenda do Google antes de autorizar.",
     network: "O painel não respondeu. Confira sua conexão e tente de novo.",
     internal_error: "Tivemos um problema no servidor. Nada foi alterado. Tente de novo em instantes.",
     unauthenticated: "Sua sessão expirou. Entre de novo para continuar.",
