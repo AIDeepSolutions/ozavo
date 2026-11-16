@@ -1,0 +1,7 @@
+---
+impact: new_capability
+section: added
+title: Planos com franquia de minutos, alertas de consumo, limite de chamadas simultâneas e tela de FinOps
+---
+
+O painel ganhou a tela FinOps. Nela se escolhe o plano da organização (Starter, Pro, Growth, Scale ou Personalizado) e o que acontece quando a franquia de minutos acaba: pausar as ligações de saída ou continuar e tarifar o excedente. O consumo é medido durante as chamadas, e um aviso sai no painel ao chegar a 80% e a 100% da franquia. A mesma tela mostra minutos usados, caracteres de síntese de voz, custo dos provedores e de telefonia, receita e margem bruta do ciclo, com o custo por minuto comparado à meta de R$ 0,28. Em Limites de operação se informa o teto de chamadas simultâneas da conta do provedor de síntese, e uma ligação de saída a mais passa a ser recusada em vez de falhar no provedor. Quando mais de 1.000 ligações de saída de uma linha no dia têm 75% de chamadas com menos de 6 segundos, a cadência dessa linha é reduzida até o fim do dia e um aviso crítico aparece no painel. No motor em pipeline, o turno do agente passa a terminar na frase ou na palavra inteira mais próxima de 160 caracteres, em vez de ser cortado no meio da palavra. Instalações existentes não mudam até alguém escolher um plano: sem plano, nada é limitado nem alertado. Detalhes em docs/guides/planos-e-finops.md. Crédito: @DeskLabs-OpenSource/maintainers.
