@@ -190,7 +190,8 @@ Rode `pnpm verify` e, se tocou em banco, `pnpm test:db`. Isso cobre:
 - tabela sem `organization_id`;
 - migration fora do padrão de nome ou com carimbo repetido;
 - variável de ambiente sem padrão;
-- SQL cru fora de `packages/core`;
+- conexão direta com o Postgres fora de `packages/core` (`import pg` ou `.query(`). SQL escrito
+  na consulta que `withOrg` entrega (`q.one`, `q.many`, `q.exec`) é permitido em qualquer pacote;
 - texto de tela fora de dicionário;
 - marcador de conflito esquecido;
 - workflow sem permissões declaradas;

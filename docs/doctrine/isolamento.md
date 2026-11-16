@@ -35,8 +35,9 @@ A decisão está registrada na [decisão 0006](../decisions/0006-organizacao-des
    `organizations` e `schema_migrations`.
 2. **Todo acesso a dado de produto passa por `withOrg`.** Dentro dela, a consulta só enxerga a
    organização informada.
-3. **Não se escreve SQL fora de `packages/core`.** Processos e pacotes usam as funções do
-   núcleo.
+3. **Fora de `packages/core` ninguém fala direto com o Postgres.** Nada de abrir conexão ou
+   pool: o SQL de rotas, rotinas e ferramentas passa pela consulta presa à organização (`q`) que
+   `withOrg` entrega. O que atravessa organizações mora no núcleo.
 4. **O punhado de operações que atravessa organizações é nomeado e pequeno:** entrar no painel,
    reivindicar tarefa da fila, descobrir de que organização é o número chamado. Elas têm uma
    porta própria no núcleo. Não se cria outra sem revisão.
@@ -58,7 +59,9 @@ A decisão está registrada na [decisão 0006](../decisions/0006-organizacao-des
 ## Como a regra é cobrada
 
 - **Cerca de organização:** reprova tabela sem `organization_id`.
-- **Cerca de SQL:** reprova consulta crua fora de `packages/core`.
+- **Cerca de SQL (`no-raw-sql-outside-core`):** reprova `import pg` e `.query(` fora de
+  `packages/core`. Ela não lê o texto do SQL: `q.one("select ...")` numa rota é aceito, e quem
+  garante o isolamento ali é o RLS do papel `ozavo_app`, não a cerca.
 - **Teste de isolamento gerado:** para cada tabela com `organization_id`, uma linha da
   organização A não aparece nem é alterada dentro de `withOrg` da organização B. A lista de
   tabelas vem do catálogo do banco, e não de uma lista escrita à mão. Tabela nova entra no teste
