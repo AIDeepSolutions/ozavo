@@ -10,7 +10,8 @@
   },
   "type": "module",
   "scripts": {
-    "verify": "pnpm lint && pnpm typecheck && pnpm fences && pnpm test",
+    "verify": "pnpm lint && pnpm typecheck && pnpm typecheck:panel && pnpm fences && pnpm test",
+    "typecheck:panel": "pnpm --filter ./apps/panel typecheck",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "fences": "vitest run --project fences",

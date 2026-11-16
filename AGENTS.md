@@ -82,7 +82,7 @@ compartilhados". Mudou um contrato? Mude lá primeiro.
 
 | Comando | O que faz |
 |---|---|
-| `pnpm verify` | Lint, tipos, cercas e testes. Rode antes de abrir PR |
+| `pnpm verify` | Lint, tipos (da raiz e do painel), cercas e testes. Rode antes de abrir PR |
 | `pnpm test` | Testes de unidade |
 | `pnpm test:db` | Testes que usam Postgres real. Pede Docker |
 | `pnpm test:e2e` | Testes de tela: dirigem o Chromium contra um painel no ar (`OZAVO_E2E_URL`, `OZAVO_E2E_EMAIL`, `OZAVO_E2E_PASSWORD`). Moram em `apps/panel/test/e2e`. Não rode contra uma instalação em uso: eles criam convites, chamadas simuladas e números na lista de não ligar |
