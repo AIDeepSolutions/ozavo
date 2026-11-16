@@ -8,7 +8,7 @@
 - Coolify: projeto "Ozavo" (id 28, env production) + app `ozavo:main-micr58ufexh0gzn8ttzzxz2l` (repo AIDeepSolutions/ozavo, branch main, build_pack dockerfile, porta 3000, domínio https://ozavo.aideepsolutions.io)
 - Spec técnica completa em PDF recebida e CONFERIDA (4 páginas) — tudo coberto no plano em 4 fases. Único ponto divergente: pacing por .env (spec) x tela (AGENTS.md) — aprovado usar tela.
 - Manual da marca lido (3 páginas) — regras repassadas ao pane-6 (assinatura "Ozavo — Uma solução AI Deep Solutions", persona Nico, paleta, tipografia Inter, usos proibidos)
-- Credenciais guardadas em ~/.config/dev-hub/ (600): Supabase (URL/chaves/connection string) + Cartesia
+- Credenciais guardadas no cofre de credenciais da VPS (fora do repositório) (600): Supabase (URL/chaves/connection string) + Cartesia
 - Brand kit extraído em brand/_brandkit/ (logos, ícones, favicon, RCD ABR, KVs)
 - Inspecionado repositório (estrutura, banco, testes, deploy) — 791 testes unitários + 61 fences verdes
 - GitHub: repo github.com/AIDeepSolutions/ozavo criado, branch main rastreando, push feito
@@ -68,7 +68,7 @@
 ## 📌 DECISÕES DO MACGYVER
 - **Banco: Supabase** (gerenciado, separa responsabilidades) — ele cria e me passa a connection string. Enquanto não chega, seguir com as demais prioridades.
 - **LLM: OpenRouter** (não Gemini/GPT-4o-mini direto)
-- **Deploy: automático via main no Coolify** — ele configura o projeto lá; eu NÃO faço deploy manual. Token em `~/.config/dev-hub/coolify.env` (nunca em mensagens/git).
+- **Deploy: automático via main no Coolify** — ele configura o projeto lá; eu NÃO faço deploy manual. Token no arquivo `coolify.env` do cofre de credenciais da VPS (fora do repositório) (nunca em mensagens/git).
 - **Etapas: delegar a panes** (funcionários), eu orquestro e reporto.
 - **Nada de código antes da aprovação do plano** — aprovado em 16/11 03h40.
 
@@ -83,7 +83,7 @@
 
 ## ⚠️ BLOQUEIOS / PENDÊNCIAS
 - Coolify: domínio RESOLVIDO — campo correto é `domains` (o `fqdn` é rejeitado no PATCH). Aplicado `https://ozavo.aideepsolutions.io` + restart disparado.
-- Supabase: URL + chaves publishable/secret RECEBIDAS em 16/11 03h50 (guardadas em ~/.config/dev-hub/supabase.env, 600, nunca em mensagens/git). Falta a connection string do Postgres (postgres://...pooler...) para migrations diretas — pedir se precisar.
+- Supabase: URL + chaves publishable/secret RECEBIDAS em 16/11 03h50 (guardadas no arquivo `supabase.env` do cofre de credenciais da VPS (fora do repositório), 600, nunca em mensagens/git). Falta a connection string do Postgres (postgres://...pooler...) para migrations diretas — pedir se precisar.
 - Push na main: preciso confirmar com ele (regra antiga: "nunca push na main"; deploy é automático pela main).
 - 3 conflitos AGENTS.md x spec: APROVADOS pelo Macgyver em 16/11 03h50 ("os 3 pontos tá beleza"). Marcar para REALINHAR se precisar no futuro: (1) Supabase x Postgres-local, (2) pacing por tela em vez de .env, (3) /calls/outbound com checkOutboundAllowed.
 
@@ -117,9 +117,9 @@
 - Custo variável: < R$ 0,28/min (operacional R$ 0,215/min)
 - Provisionamento de tenant em minutos
 ## 📌 MATERIAIS RECEBIDOS (16/11)
-- PDFs: agent-state/inbox/462531606-Manual_da_Marca…pdf e 462531608-Especifica_o_T_cnica…pdf
+- PDFs: a caixa de entrada da VPS: 462531606-Manual_da_Marca…pdf e 462531608-Especifica_o_T_cnica…pdf
 - Brand kit: brand/ (extraído)
-- Chaves: ~/.config/dev-hub/ (supabase.env = Supabase URL/chaves/connection string + CARTESIA_API_KEY; openrouter.env = OPENROUTER_API_KEY; coolify.env = URL + token)
+- Chaves: o cofre de credenciais da VPS (fora do repositório) (supabase.env = Supabase URL/chaves/connection string + CARTESIA_API_KEY; openrouter.env = OPENROUTER_API_KEY; coolify.env = URL + token)
 
 ## 🛑 PARADO EM 16/11 ~09h20 BRT (religada pedida pelo Macgyver)
 - Inventário do repositório: ENTREGUE (ver seção acima).
@@ -132,7 +132,7 @@
 - main em c077dfd (4 commits: pipeline de áudio, identidade visual, docs). pnpm verify verde (61 cercas + 878 testes). Push feito com autorização do Macgyver; deploy automático confirmado; painel no ar com a identidade oficial (print enviado).
 - Sem migration nova (nada a aplicar no banco).
 - Pendências: chave Deepgram; TTFB Cartesia ~305 ms (meta <100 ms); test:db por permissão do Docker; Inter não versionada.
-- Deepgram: chave RECEBIDA 16/11 (testada, API 200), em ~/.config/dev-hub/deepgram.env (600). PDFs/spec copiados para docs/referencias/ (sem commit).
+- Deepgram: chave RECEBIDA 16/11 (testada, API 200), no arquivo `deepgram.env` do cofre de credenciais da VPS (fora do repositório) (600). PDFs/spec copiados para docs/referencias/ (sem commit).
 - Fase 2 INICIADA 16/11 (OK do Macgyver): pane-10 ozavo-fase2-api, ramo feat/fase2-multitenant-api (worktree ../ozavo-wt-fase2), sem push/migration em prod.
 
 

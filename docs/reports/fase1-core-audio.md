@@ -1,7 +1,7 @@
 # Handoff — Fase 1: core e áudio
 
 Data: 2026-11-16. Implementação no ramo local `feat/fase1-core-audio`, commit
-`ffd1685`, worktree `/home/dev/workspaces/clientes/ozavo-wt-core-audio`.
+`ffd1685`, worktree `<pasta-de-trabalho>/ozavo-wt-core-audio`.
 Base: `691e8ea`. Não houve push, PR, alteração de outro projeto ou cópia de credencial
 para o repositório. O checkout principal foi preservado. Este relatório acompanha o ramo.
 
@@ -73,7 +73,7 @@ latência e na verificação de banco.**
 ```text
 > vitest run --project db
 permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
-Error: Command failed: bash /home/dev/workspaces/clientes/ozavo-wt-core-audio/scripts/test-db.sh up
+Error: Command failed: bash <pasta-de-trabalho>/ozavo-wt-core-audio/scripts/test-db.sh up
 ELIFECYCLE Command failed with exit code 1.
 ```
 

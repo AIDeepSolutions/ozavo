@@ -1,13 +1,13 @@
 (node:44787) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 verify /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 verify <pasta-de-trabalho>/ozavo-wt-core-audio
 > pnpm lint && pnpm typecheck && pnpm fences && pnpm test
 
 (node:44800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 lint /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 lint <pasta-de-trabalho>/ozavo-wt-core-audio
 > eslint .
 
 (node:44813) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
@@ -15,19 +15,19 @@
 (node:44838) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 typecheck /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 typecheck <pasta-de-trabalho>/ozavo-wt-core-audio
 > tsc -p tsconfig.json
 
 (node:44874) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 fences /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 fences <pasta-de-trabalho>/ozavo-wt-core-audio
 > vitest run --project fences
 
 (node:44886) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
- RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio
+ RUN  v5.1.0 <pasta-de-trabalho>/ozavo-wt-core-audio
 
 (node:44914) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
@@ -96,13 +96,13 @@
 (node:45237) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 test /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 test <pasta-de-trabalho>/ozavo-wt-core-audio
 > vitest run --project unit
 
 (node:45250) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
- RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio
+ RUN  v5.1.0 <pasta-de-trabalho>/ozavo-wt-core-audio
 
 (node:45278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)

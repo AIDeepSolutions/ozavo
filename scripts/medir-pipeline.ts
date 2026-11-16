@@ -1,28 +1,20 @@
 /** Bancada opt-in: mede serviços reais; só escreve métricas, nunca credenciais ou áudio. */
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
 import { systemClock } from "../packages/core/src/clock";
 import { CARTESIA_DEFAULT_VOICE } from "../packages/voice-engine/src/engines/deepgram-openrouter-cartesia";
 import { openCartesiaTts } from "../packages/voice-engine/src/pipeline/cartesia-tts";
 import { streamChat } from "../packages/voice-engine/src/pipeline/openrouter-llm";
 
-async function readKey(file: string, name: string): Promise<string> {
-  const environment = process.env[name];
-  if (environment) return environment;
-  const content = await readFile(file, "utf8");
-  for (const line of content.split(/\r?\n/)) {
-    const match = /^(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line.trim());
-    if (match?.[1] === name && match[2]) return match[2].replace(/^(['"])(.*)\1$/, "$2");
-  }
-  throw new Error(`Credencial ausente: ${name}`);
+/** A chave vem só do ambiente: quem mede passa as suas, sem caminho de arquivo de uma máquina. */
+function readKey(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Credencial ausente: ${name}`);
+  return value;
 }
 
 async function main(): Promise<void> {
   if (!process.argv.includes("--live")) throw new Error("Use --live para medir serviços pagos; testes locais: pnpm vitest run --project unit packages/voice-engine");
-  const configDir = path.join(homedir(), ".config", "dev-hub");
-  const cartesiaKey = await readKey(path.join(configDir, "supabase.env"), "CARTESIA_API_KEY");
-  const routerKey = await readKey(path.join(configDir, "openrouter.env"), "OPENROUTER_API_KEY");
+  const cartesiaKey = readKey("CARTESIA_API_KEY");
+  const routerKey = readKey("OPENROUTER_API_KEY");
   const samples: number[] = [];
   let complete: (() => void) | undefined;
   let reject: ((error: Error) => void) | undefined;

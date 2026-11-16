@@ -43,14 +43,14 @@ pnpm verify
 pnpm test:db
 ```
 
-Para consumir os serviços reais usando as credenciais locais já existentes:
+Para consumir os serviços reais com as suas chaves:
 
 ```sh
 pnpm exec tsx scripts/medir-pipeline.ts --live
 ```
 
-A bancada lê Cartesia de `~/.config/dev-hub/supabase.env` e OpenRouter de
-`~/.config/dev-hub/openrouter.env`, ou do ambiente. Escreve apenas métricas. Isso é
+A bancada lê as chaves do ambiente: `CARTESIA_API_KEY` e `OPENROUTER_API_KEY` (por exemplo,
+`node --env-file=arquivo.env --import tsx scripts/medir-pipeline.ts --live`). Escreve apenas métricas. Isso é
 ferramenta de desenvolvimento: o motor de produção recebe credenciais por parâmetro.
 
 Medição em 2026-11-16 nesta VPS, três falas Cartesia e um pedido OpenRouter:
