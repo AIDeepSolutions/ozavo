@@ -1,0 +1,51 @@
+(node:42910) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> ozavo@0.0.0 test:db /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> vitest run --project db
+
+(node:42926) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio
+
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+No test files found, exiting with code 1
+
+projects: db
+
+|db| 
+
+include: packages/*/src/**/*.db.test.ts, packages/*/test/**/*.db.test.ts, apps/voice/src/**/*.db.test.ts, apps/routines/src/**/*.db.test.ts, apps/panel/src/**/*.db.test.ts, scripts/**/*.db.test.ts
+exclude:  **/node_modules/**, **/.git/**
+
+
+⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
+Error: Command failed: bash /home/dev/workspaces/clientes/ozavo-wt-core-audio/scripts/test-db.sh up
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+
+ ❯ genericNodeError node:internal/errors:983:15
+ ❯ wrappedFn node:internal/errors:537:14
+ ❯ checkExecSyncError node:child_process:882:11
+ ❯ execFileSync node:child_process:918:15
+ ❯ Object.setup scripts/test-db-setup.ts:35:43
+     33|   };
+     34|
+     35|   const ownerUrl = givenOwner ?? given ?? execFileSync("bash", [script…
+       |                                           ^
+     36|   const roleUrl = (role: string): string => {
+     37|     const url = new URL(ownerUrl);
+ ❯ TestProject._initializeGlobalSetup node_modules/.pnpm/vitest@5.1.0_@types+node@26.6.6_vite@8.3.7_@types+node@26.6.6_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.15_yaml@2.9.1_/node_modules/vitest/dist/chunks/index.Di8au7q4.js:6602:50
+ ❯ Vitest.initializeGlobalSetup node_modules/.pnpm/vitest@5.1.0_@types+node@26.6.6_vite@8.3.7_@types+node@26.6.6_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.15_yaml@2.9.1_/node_modules/vitest/dist/chunks/cli-api.COfZo8lK.js:13573:35
+ ❯ node_modules/.pnpm/vitest@5.1.0_@types+node@26.6.6_vite@8.3.7_@types+node@26.6.6_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.15_yaml@2.9.1_/node_modules/vitest/dist/chunks/cli-api.COfZo8lK.js:13413:6
+ ❯ node_modules/.pnpm/vitest@5.1.0_@types+node@26.6.6_vite@8.3.7_@types+node@26.6.6_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.15_yaml@2.9.1_/node_modules/vitest/dist/chunks/cli-api.COfZo8lK.js:13440:11
+ ❯ node_modules/.pnpm/vitest@5.1.0_@types+node@26.6.6_vite@8.3.7_@types+node@26.6.6_esbuild@0.28.2_jiti@2.7.0_tsx@4.23.15_yaml@2.9.1_/node_modules/vitest/dist/chunks/cli-api.COfZo8lK.js:13304:45
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { status: 1, signal: null, output: [ null, '', 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+' ], pid: 42953, stdout: '', stderr: 'permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+' }
+
+
+
+ ELIFECYCLE  Command failed with exit code 1.

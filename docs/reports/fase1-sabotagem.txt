@@ -1,0 +1,40 @@
+(node:46446) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:46457) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio-sabotage
+
+(node:46484) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ |unit| packages/voice-engine/src/pipeline/session.test.ts (26 tests | 1 failed | 25 skipped) 9ms
+   ❯ sessão do pipeline (24)
+     × limita respostas geradas a 160 caracteres sem impedir chamadas de ferramenta 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/voice-engine/src/pipeline/session.test.ts > sessão do pipeline > limita respostas geradas a 160 caracteres sem impedir chamadas de ferramenta
+AssertionError: expected 'Podemos ajudar com sua consulta. Pode…' to have a length of 160 but got 990
+
+- Expected
++ Received
+
+- 160
++ 990
+
+ ❯ packages/voice-engine/src/pipeline/session.test.ts:187:58
+    185|     t.streams[0]?.end();
+    186|     await until(() => t.toolCalls.length === 1);
+    187|     expect(t.spoken.map((piece) => piece.text).join("")).toHaveLength(…
+       |                                                          ^
+    188|   });
+    189|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 25 skipped (26)
+   Start at  08:11:07
+   Duration  598ms (transform 70%, import 27%, tests 2%, worker 1%)
+

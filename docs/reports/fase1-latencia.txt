@@ -1,0 +1,19 @@
+(node:36166) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:36177) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:36193) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:36193) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "cartesiaTtfbMs": [
+    267,
+    265,
+    266
+  ],
+  "cartesiaTargetMs": 100,
+  "openrouterFirstTokenMs": 617,
+  "fullRttMeasured": false,
+  "note": "RTT completo depende da chave Deepgram e áudio de entrada; estes valores medem TTS e LLM separadamente."
+}
