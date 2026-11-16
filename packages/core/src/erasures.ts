@@ -211,6 +211,9 @@ export async function eraseCaller(q: OrgQuery, options: { dir: string; phoneE164
        outcome_evidence = null,
        analysis = case when analysis is null or analysis ? 'purged' then analysis else ${PURGED_ANALYSIS_SQL} end,
        recording_pause_reason = null,
+       -- O contexto do lead que a API de saída gravou (nome, e-mail, documento, o que o sistema de
+       -- fora mandou) é dado da pessoa: sai junto.
+       request_context = null,
        from_e164 = case when from_e164 = $1 then null else from_e164 end,
        to_e164 = case when to_e164 = $1 then null else to_e164 end,
        erased_at = $3

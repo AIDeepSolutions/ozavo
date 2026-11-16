@@ -200,6 +200,24 @@ describe("callerHistory: a memória do número para a equipe", () => {
     }
   });
 
+  it("o apagamento tira também o contexto do lead que a API de saída gravou na chamada", async () => {
+    const org = await createOrganization(app, "apagamento contexto do lead");
+    const dir = await mkdtemp(path.join(tmpdir(), "ozavo-erase-context-"));
+    try {
+      const call = await callOf(org, { at: t(0), to: PHONE, direction: "outbound" });
+      const other = await callOf(org, { at: t(1), to: "+5531988880002", direction: "outbound" });
+      const context = JSON.stringify({ nome: "Fulana Inventada", email: "fulana@exemplo.test", cpf: "000.000.000-00" });
+      await withSystem(app, (q) => q.exec("update calls set request_context = $2 where id = any($1::uuid[])", [[call, other], context]));
+      await withOrg(app, org, (q) => eraseCaller(q, { dir, phoneE164: PHONE, now: t(10) }));
+      const rows = await withSystem(app, (q) => q.many<{ id: string; request_context: unknown }>("select id, request_context from calls where id = any($1::uuid[])", [[call, other]]));
+      expect(rows.find((row) => row.id === call)?.request_context).toBeNull();
+      // A chamada de outra pessoa fica como estava.
+      expect(rows.find((row) => row.id === other)?.request_context).toMatchObject({ nome: "Fulana Inventada" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("chamada marcada como apagada que ainda tenha o telefone aparece sem conteúdo", async () => {
     // Defesa a mais: `eraseCaller` tira o telefone, mas se uma linha apagada o mantiver, nada do resumo sai.
     const org = await createOrganization(app, "memoria apagada com numero");

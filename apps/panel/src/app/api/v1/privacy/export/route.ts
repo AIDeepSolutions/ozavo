@@ -27,7 +27,7 @@ const RECORD_SQL = `
              'outcome', c.outcome, 'outcomeConfidence', c.outcome_confidence, 'outcomeEvidence', c.outcome_evidence,
              'analysis', c.analysis, 'analysisScore', c.analysis_score,
              'recordingPausedAt', c.recording_paused_at, 'recordingPausedBy', c.recording_paused_by,
-             'recordingPauseReason', c.recording_pause_reason
+             'recordingPauseReason', c.recording_pause_reason, 'requestContext', c.request_context
            ) as line
       from calls c
      where ${callerSideSql("c.")}
