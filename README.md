@@ -16,7 +16,7 @@ quando precisa, transfere e deixa tarefas rodando depois que a chamada termina.
 
 **[ozavo.com.br](https://ozavo.com.br)** · [Instalar](https://ozavo.com.br/instalar) · [Guias](https://ozavo.com.br/guias) · [Notas de versão](https://ozavo.com.br/changelog)
 
-[![Site](https://img.shields.io/badge/site-ozavo.com.br-a2552f)](https://ozavo.com.br)
+[![Site](https://img.shields.io/badge/site-ozavo.com.br-0052CC)](https://ozavo.com.br)
 [![CI](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml/badge.svg)](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 [![Node 22](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)

@@ -16,7 +16,7 @@ it needs to, transfers the call, and leaves tasks running after the caller hangs
 
 **[ozavo.com.br](https://ozavo.com.br)** (in Portuguese) · [Install](https://ozavo.com.br/instalar) · [Guides](https://ozavo.com.br/guias) · [Release notes](https://ozavo.com.br/changelog)
 
-[![Website](https://img.shields.io/badge/website-ozavo.com.br-a2552f)](https://ozavo.com.br)
+[![Website](https://img.shields.io/badge/website-ozavo.com.br-0052CC)](https://ozavo.com.br)
 [![CI](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml/badge.svg)](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node 22](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)

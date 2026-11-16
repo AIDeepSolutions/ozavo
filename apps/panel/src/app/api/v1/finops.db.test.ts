@@ -25,7 +25,7 @@ beforeAll(async () => {
 });
 // O teto do provedor da plataforma vale para a instalação inteira: o banco é de todos os testes.
 afterAll(async () => {
-  await withOrg(panel.app, org, (q) => q.exec("update organizations set platform = false where id = $1", [org]));
+  await withSystem(panel.app, (q) => q.exec("update organizations set platform = false where id = $1", [org]));
   await panel.close();
 });
 
