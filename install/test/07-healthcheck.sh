@@ -7,13 +7,26 @@ line() { printf '%s\n' "$out" | grep "$1" | head -n 1; }
 
 # Instalação nova: tudo no ar, linha e motor ainda por configurar.
 out="$(bash "$H" 2>&1)"; equal "instalação nova sem linha nem chave: sai com zero" 0 "$?"
-equal "uma linha por peça (16 peças)" 16 "$(printf '%s\n' "$out" | grep -cE '^  (ok|aviso|falha) ')"
-for piece in Painel Banco "Painel → banco" Asterisk "Worker de voz" Rotinas "Rotinas → fila" "Linha telefônica" "Motor de voz" WhatsApp "Portas UDP locais" Disco; do contains "tem a linha de: $piece" "$out" "$piece"; done
+equal "uma linha por peça (17 peças)" 17 "$(printf '%s\n' "$out" | grep -cE '^  (ok|aviso|falha) ')"
+for piece in Painel Banco "Painel → banco" Asterisk "Worker de voz" Rotinas "Rotinas → fila" "Linha telefônica" "Motor de voz" WhatsApp "Portas UDP locais" Disco "Certificado TLS"; do contains "tem a linha de: $piece" "$out" "$piece"; done
 contains "linha não cadastrada é aviso, não falha" "$(line 'Linha telefônica')" "aviso"
 contains "linha não cadastrada traz o detalhe" "$(line 'Linha telefônica')" "nenhuma linha cadastrada ainda"
 contains "motor sem chave é aviso, não falha" "$(line 'Motor de voz')" "aviso"
 contains "portas: honesto sobre o que não prova" "$(line 'Portas UDP')" "não prova que o provedor deixa passar"
 lacks "não resume tudo num ok" "$out" "tudo ok"
+contains "certificado novo e chave fechada: ok" "$(line 'Certificado TLS')" "ok "
+
+# Certificado do SIP sobre TLS: perto do fim é aviso, vencido é falha, chave aberta é aviso.
+TLS="$OZAVO_DEPLOY_DIR/asterisk/generated/tls"
+cp "$TLS/server.crt" "$SANDBOX/server.crt.ok"
+openssl req -x509 -newkey rsa:2048 -nodes -days 10 -subj "/CN=203.0.113.10" -keyout "$SANDBOX/k" -out "$TLS/server.crt" >/dev/null 2>&1
+out="$(bash "$H" 2>&1)"
+contains "certificado a menos de 30 dias do fim é aviso" "$(line 'Certificado TLS')" "aviso"
+contains "e diz como renovar" "$(line 'Certificado TLS')" "install/update.sh"
+cp "$SANDBOX/server.crt.ok" "$TLS/server.crt"; chmod 644 "$TLS/server.key"
+out="$(bash "$H" 2>&1)"
+contains "chave legível por outros é aviso" "$(line 'Certificado TLS')" "aviso"
+chmod 600 "$TLS/server.key"
 
 # Linha cadastrada e quebrada: falha, mas não é peça essencial.
 printf '%s\n' 'panel|ok|respondendo' 'trunk|fail|registro recusado pela operadora (401)' 'engine|ok|gemini-live' > "$FAKE_DIR/panel_health"
@@ -157,7 +170,7 @@ lacks "tudo certo: nenhuma falha" "$out" "falha "
 json="$(bash "$H" --json 2>&1)"
 contains "json: código de saída" "$json" '{"exit_code":0,"checks":['
 contains "json: peça com estado e detalhe" "$json" '{"id":"trunk","name":"Linha telefônica","essential":false,"status":"ok","detail":"registrado"}'
-equal "json: dezesseis peças" 16 "$(printf '%s' "$json" | grep -o '"id":' | wc -l | tr -d ' ')"
+equal "json: dezessete peças" 17 "$(printf '%s' "$json" | grep -o '"id":' | wc -l | tr -d ' ')"
 if command -v python3 >/dev/null 2>&1; then check "json: é JSON válido" python3 -c 'import json,sys; json.loads(sys.argv[1])' "$json"; fi
 printf '%s\n' 'panel|ok|diz "aspas" e \barra' 'trunk|ok|x' 'engine|ok|y' > "$FAKE_DIR/panel_health"
 if command -v python3 >/dev/null 2>&1; then check "json: escapa aspas e barra" python3 -c 'import json,sys; json.loads(sys.argv[1])' "$(bash "$H" --json 2>&1)"; fi
