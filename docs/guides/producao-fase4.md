@@ -77,6 +77,12 @@ A checagem lê o relatório de saúde, não só HTTP 200. Sai 0 em `ok`, 1 em `w
 um estado por peça e sem configuração/segredos. O relatório mede banco, voz, Asterisk e a fila
 (listener/atraso). O healthcheck do contêiner é de disponibilidade do processo; não substitui isto.
 
+Monitor externo que só entende o código HTTP (o do Coolify, um serviço de uptime) aponta para
+`/api/v1/system/health?strict=1`: nesse modo, qualquer peça em falha (`worst: "fail"`) responde
+**503**, com o mesmo relatório no corpo. Sem `strict`, a rota responde 200 com `worst: "fail"`, e a
+central sem voz parece no ar. O healthcheck dos contêineres fica sem `strict` de propósito: a voz
+caída não deve marcar o painel como doente nem segurar o Caddy.
+
 Configurar o monitor externo e um destinatário antes da liberação. Não foram criados monitores nem
 enviados alertas externos nesta tarefa. Registrar em operação o destinatário e provar a entrega.
 Como ponto de partida a calibrar na bancada:

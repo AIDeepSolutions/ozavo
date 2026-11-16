@@ -127,5 +127,10 @@ describe("system health", () => {
     expect(["voice", "telephony", "trunk"].map((id) => line(report, id))).toEqual(["fail voice_down", "warn needs_voice", "warn needs_voice"]);
     expect(report.worst).toBe("fail");
     expect(report.checks.find((check) => check.id === "voice")?.action).toBe("voice_down");
+    // O monitor de fora que só olha o código HTTP pede o modo estrito: a falha vira 503.
+    expect((await call(health)).status).toBe(200);
+    const strict = await call(health, { query: "?strict=1" });
+    expect(strict.status).toBe(503);
+    expect(strict.data).toMatchObject({ worst: "fail" });
   });
 });
