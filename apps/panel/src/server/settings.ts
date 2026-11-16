@@ -2,6 +2,8 @@ import {
   DEFAULT_INBOUND_LIMIT,
   DEFAULT_VOICEMAIL_MAX_SECONDS,
   INBOUND_LIMIT_SETTING,
+  PLAN_ALERT_WEBHOOK_SETTING,
+  PLAN_ALERT_WHATSAPP_SETTING,
   DEFAULT_VOICEMAIL_LANGUAGE,
   VOICEMAIL_ENABLED_SETTING,
   VOICEMAIL_LANGUAGE_SETTING,
@@ -256,6 +258,10 @@ export async function settingDefinition(key: string): Promise<Setting | undefine
     // Ausente vale `false`: o aviso de fim de ligação pelo WhatsApp nasce desligado.
     "whatsapp.notify_owner_on_call_end": plain(z.boolean()),
     "webhooks.allowed": webhooks,
+    // O aviso de franquia (80% e 100%) também pelo WhatsApp do dono e por um webhook cadastrado.
+    // Ausentes: só o aviso no painel.
+    [PLAN_ALERT_WHATSAPP_SETTING]: { ...plain(z.boolean()), fallback: false },
+    [PLAN_ALERT_WEBHOOK_SETTING]: plain(z.string().trim().min(1).max(100)),
     // A agenda que as ferramentas de agenda usam. Ausente: elas não são oferecidas na ligação.
     [AGENDA_CONNECTOR_KEY]: agendaConnector,
     // O que vale quando ninguém responde a um pedido de aprovação. Ausente vale `denied`: é escolha

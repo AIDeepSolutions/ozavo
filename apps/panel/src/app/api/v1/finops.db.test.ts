@@ -4,6 +4,7 @@ import { call, createOrganization, createUser, startPanel } from "../../../../te
 import { GET as getPlan, PUT as putPlan } from "./finops/plan/route";
 import { GET as getSummary } from "./finops/route";
 import { GET as getLimits, PUT as putLimits } from "./finops/settings/route";
+import { GET as getSetting, PUT as putSetting } from "./settings/[key]/route";
 
 const panel = startPanel();
 let org: string;
@@ -75,5 +76,13 @@ describe("FinOps pela API", () => {
     expect((await call(putLimits, { cookie: owner, method: "PUT", body: limits })).data).toEqual(limits);
     expect(await call(putLimits, { cookie: owner, method: "PUT", body: { ...limits, ttsConcurrencyLimit: 0 } })).toMatchObject({ status: 400, code: "validation_error" });
     expect((await call(getSummary, { cookie: owner })).data).toMatchObject({ settings: limits, margin: { providerCostCents: 0, telephonyCostCents: 0, variableCostCents: 0 } });
+  });
+
+  it("a própria empresa escolhe por onde mais sai o aviso de franquia, e o padrão é só o painel", async () => {
+    expect((await call(getSetting, { cookie: tenantOwner, params: { key: "plan.alert_whatsapp" } })).data).toEqual({ key: "plan.alert_whatsapp", value: false });
+    expect((await call(putSetting, { cookie: tenantOwner, method: "PUT", params: { key: "plan.alert_whatsapp" }, body: { value: true } })).data).toMatchObject({ value: true });
+    expect((await call(putSetting, { cookie: tenantAdmin, method: "PUT", params: { key: "plan.alert_webhook" }, body: { value: "n8n" } })).data).toMatchObject({ value: "n8n" });
+    expect(await call(putSetting, { cookie: tenantOwner, method: "PUT", params: { key: "plan.alert_webhook" }, body: { value: "" } })).toMatchObject({ status: 400, code: "validation_error" });
+    expect(await call(putSetting, { cookie: operator, method: "PUT", params: { key: "plan.alert_whatsapp" }, body: { value: true } })).toMatchObject({ status: 403 });
   });
 });

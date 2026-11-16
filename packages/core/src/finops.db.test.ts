@@ -91,6 +91,33 @@ describe("plano e franquia", () => {
     expect(events.rows.map((row: { threshold: string }) => row.threshold)).toEqual(["80", "100"]);
     const deliveries = await owner.pool.query("select count(*)::int as n from tasks where organization_id = $1 and kind = 'deliver_notification'", [org]);
     expect(deliveries.rows[0].n).toBe(2);
+    // Sem escolha em FinOps, o aviso fica só no painel.
+    expect((await owner.pool.query("select 1 from tasks where organization_id = $1 and kind = 'deliver_webhook'", [org])).rows).toEqual([]);
+  });
+
+  it("com o WhatsApp e o webhook escolhidos, os avisos de 80% e 100% saem também por eles, uma vez", async () => {
+    const org = await createOrganization(app, "finops avisos fora");
+    await withOrg(app, org, (q) => setPlanSubscription(q, starter, at(5), "2030-05-05"));
+    await owner.pool.query(
+      `insert into settings (organization_id, key, value) values ($1, 'plan.alert_whatsapp', 'true'), ($1, 'plan.alert_webhook', '"n8n-franquia"'), ($1, 'whatsapp.connector', '{"type":"waha"}')`,
+      [org],
+    );
+    await owner.pool.query("insert into users (organization_id, email, name, password_hash, role, whatsapp_e164) values ($1, 'dono-franquia@exemplo.test', 'Dona', 'x', 'owner', '+5531999990000')", [org]);
+    await answeredCall(org, at(10), 301 * 60);
+    await withOrg(app, org, async (q) => {
+      expect(await checkUsageAlerts(q, at(11))).toEqual([80, 100]);
+      expect(await checkUsageAlerts(q, at(11, 16))).toEqual([]);
+    });
+    const whatsapp = await owner.pool.query("select target, body from notifications where organization_id = $1 and channel = 'whatsapp' order by body", [org]);
+    expect(whatsapp.rows.map((row: { target: string }) => row.target)).toEqual(["+5531999990000", "+5531999990000"]);
+    const hooks = await owner.pool.query("select payload from tasks where organization_id = $1 and kind = 'deliver_webhook' order by payload->'payload'->>'threshold'", [org]);
+    expect(hooks.rows.map((row: { payload: { name: string; payload: { event: string; threshold: number } } }) => [row.payload.name, row.payload.payload.event, row.payload.payload.threshold])).toEqual([
+      ["n8n-franquia", "plan_usage_alert", 100],
+      ["n8n-franquia", "plan_usage_alert", 80],
+    ]);
+    // Painel (2) e WhatsApp (2), cada um com a sua entrega.
+    const deliveries = await owner.pool.query("select count(*)::int as n from tasks where organization_id = $1 and kind = 'deliver_notification'", [org]);
+    expect(deliveries.rows[0].n).toBe(4);
   });
 });
 

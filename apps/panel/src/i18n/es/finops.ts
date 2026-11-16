@@ -76,6 +76,12 @@ const finops: FinopsDictionary = {
   usdBrlRate: "Cotización del dólar (R$)",
   usdBrlRateHint: "Los proveedores cobran en dólares. Vacío: su costo aparece solo en dólares.",
   saveLimits: "Guardar límites",
+  alertsTitle: "Avisos de la franquicia",
+  alertsLead: "El aviso del 80% y del 100% de la franquicia siempre aparece en el panel. También puede salir por el WhatsApp del dueño, con el conector de Configuración → WhatsApp y el número en el perfil, y a un webhook registrado en Configuración → Integraciones (n8n, por ejemplo). El mensaje lleva solo el consumo del plan.",
+  alertsWhatsapp: "Avisar también por el WhatsApp del dueño",
+  alertsWebhook: "Webhook que recibe el aviso",
+  alertsWebhookNone: "Ninguno",
+  alertsWebhookHint: "El cuerpo lleva event = plan_usage_alert, el umbral, el ciclo y los segundos usados y de la franquicia.",
 };
 
 export default finops;

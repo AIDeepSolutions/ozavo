@@ -14,6 +14,7 @@ import { useCanConfigure } from "../../../ui/me";
 import type { Finops, OperationSettings, OverageRule, PlanId, PlanState } from "../../../ui/types";
 import { ConsolidatedPanel } from "./consolidated-panel";
 import { TalkSharePanel } from "./talk-share-panel";
+import { AlertDeliveryPanel } from "./alert-delivery-panel";
 
 const PLAN_ORDER: PlanId[] = ["starter", "pro", "growth", "scale", "custom"];
 const RULES: OverageRule[] = ["pause_outbound", "bill_overage"];
@@ -350,6 +351,8 @@ export default function FinopsPage() {
           ) : null}
         </form>
       </Panel>
+
+      <AlertDeliveryPanel />
     </>
   );
 }

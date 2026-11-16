@@ -76,6 +76,12 @@ const finops: FinopsDictionary = {
   usdBrlRate: "Dollar exchange rate (R$)",
   usdBrlRateHint: "Providers charge in US dollars. Empty: their cost is shown in dollars only.",
   saveLimits: "Save limits",
+  alertsTitle: "Allowance alerts",
+  alertsLead: "The 80% and 100% allowance alerts always appear in the panel. They can also go to the owner’s WhatsApp, with the connector in Settings → WhatsApp and the number in the profile, and to a webhook registered in Settings → Integrations (n8n, for example). The message carries only the plan usage.",
+  alertsWhatsapp: "Also alert on the owner’s WhatsApp",
+  alertsWebhook: "Webhook that receives the alert",
+  alertsWebhookNone: "None",
+  alertsWebhookHint: "The body carries event = plan_usage_alert, the threshold, the cycle, and the seconds used and included.",
 };
 
 export default finops;
