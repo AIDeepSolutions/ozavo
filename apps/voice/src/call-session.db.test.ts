@@ -975,6 +975,20 @@ describe("gravação a pedido de quem ligou", { timeout: 120_000 }, () => {
 });
 
 
+describe("latência por turno", () => {
+  it("a medida que o motor emite vira turn_latency na linha do tempo", async () => {
+    const manual = manualEngine({ keyless: true });
+    const { callId, start } = await scene("turn-latency", { engine: "manual" }, manual);
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    manual.emit("turnMetrics", { turn: 1, endpointDelayMs: 200, llmFirstTokenMs: 380, ttfbMs: 270, rttMs: 650 });
+    await waitFor(async () => (await kindsOf(app, callId)).includes("turn_latency"), "the latency to be recorded");
+    expect((await eventsOf(app, callId)).find((event) => event.kind === "turn_latency")?.payload).toEqual({ turn: 1, rttMs: 650, ttfbMs: 270, llmFirstTokenMs: 380, endpointDelayMs: 200 });
+    session.stop("caller_hangup");
+    await session.done;
+  });
+});
+
 describe("AMD nas ligações de saída", () => {
   it.each(["machine", "unknown"] as const)("encerra saída com veredito %s e registra o motivo", async (verdict) => {
     const manual = manualEngine({ keyless: true });

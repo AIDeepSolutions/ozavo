@@ -216,6 +216,7 @@ const timeline: TimelineDictionary = {
       endpoint_refused: "the classification endpoint is not a public https address, or the network guard refused it",
       endpoint_key_missing: "the classification endpoint has no key saved",
     },
+    turn_latency: "The agent started answering {rtt} ms after the caller stopped speaking (model: {llm} ms; speech synthesis: {ttfb} ms).",
     caller_unanswered: {
       turn_closed: "The caller went {seconds} s without an answer, possibly because of noise on the line. The agent was asked to answer what it heard.",
       asked_to_repeat: "The agent was still silent {seconds} s after the caller last spoke, and asked them to repeat.",

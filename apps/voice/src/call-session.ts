@@ -585,6 +585,13 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       transport.clearAudio();
       recorder?.clear();
     });
+    // A latência de cada turno, medida pelo motor (o pipeline), fica na linha do tempo: é o número
+    // que diz se a meta de RTT da ligação real foi atingida.
+    session.on("turnMetrics", (metrics) =>
+      void event("turn_latency", { turn: metrics.turn, rttMs: metrics.rttMs, ttfbMs: metrics.ttfbMs, llmFirstTokenMs: metrics.llmFirstTokenMs, endpointDelayMs: metrics.endpointDelayMs }).catch(
+        logFailure("could not record a turn latency"),
+      ),
+    );
     session.on("transcript", (turn) => {
       if (turn.speaker === "user") amd?.pushTranscript(turn.text);
       void event(turn.speaker === "user" ? "transcript_user" : "transcript_agent", { text: turn.text }).catch(logFailure("could not record a transcript"));

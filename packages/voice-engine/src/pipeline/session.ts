@@ -1,7 +1,7 @@
 import type { Clock } from "@ozavo/core";
 import { SessionEmitter } from "../emitter";
 import { instructionsWithVocabulary } from "../vocabulary";
-import type { AnsweringMachineDetection, ToolSpec, Usage, VoiceSession, VoiceSessionConfig } from "../types";
+import type { AnsweringMachineDetection, ToolSpec, TurnLatency, Usage, VoiceSession, VoiceSessionConfig } from "../types";
 import { AnsweringMachineDetector, type AmdOptions } from "./amd";
 import type { CartesiaTts, TtsHandlers } from "./cartesia-tts";
 import type { DeepgramStt, SttHandlers } from "./deepgram-stt";
@@ -23,18 +23,8 @@ import { EnergyVad, type VadOptions } from "./vad";
  * escreve o resto, e a síntese entrega o áudio em pedaços.
  */
 
-/** O que a sessão mede por turno. Vai para `onMetrics`; os limites de latência do produto se conferem aqui. */
-export interface TurnMetrics {
-  turn: number;
-  /** Prazo do endpointing dinâmico usado neste turno. */
-  endpointDelayMs: number;
-  /** Do fim da fala de quem ligou (o último trecho final da transcrição) ao primeiro pedaço de texto do modelo. */
-  llmFirstTokenMs: number;
-  /** Do primeiro texto mandado à síntese ao primeiro áudio dela (TTFB). */
-  ttfbMs: number;
-  /** Do último final de STT ao primeiro áudio; inclui endpointing local, exclui atraso da STT. */
-  rttMs: number;
-}
+/** O que a sessão mede por turno. Vai para `onMetrics` e para o evento `turnMetrics` da sessão. */
+export type TurnMetrics = TurnLatency;
 
 export type SttPort = Pick<DeepgramStt, "sendAudio" | "finalize" | "drainSeconds" | "close">;
 export type TtsPort = Pick<CartesiaTts, "speak" | "cancel" | "drainCharacters" | "close">;
@@ -373,13 +363,15 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (current && contextId === current.contextId && !current.measured && current.ttsStartedAt !== undefined) {
         current.measured = true;
         if (current.userEndedAt !== undefined) {
-          deps.onMetrics?.({
+          const metrics: TurnMetrics = {
             turn: current.id,
             endpointDelayMs: current.endpointDelayMs,
             llmFirstTokenMs: (current.firstTokenAt ?? at) - current.userEndedAt,
             ttfbMs: current.ttfbMs ?? at - current.ttsStartedAt,
             rttMs: at - current.userEndedAt,
-          });
+          };
+          deps.onMetrics?.(metrics);
+          emitter.emit("turnMetrics", metrics);
         }
       }
       playhead = Math.max(playhead, at) + pcm16.length / BYTES_PER_MS;

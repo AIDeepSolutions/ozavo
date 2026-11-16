@@ -415,6 +415,10 @@ export function Timeline({
         const seconds = (Number(p.waitedMs) / 1000).toLocaleString(locale, { maximumFractionDigits: 1 });
         return { ...base, tone: "neutral", icon: ClockCountdown, body: <Quiet>{fill(said, { seconds })}</Quiet> };
       }
+      case "turn_latency": {
+        const ms = (value: unknown): string => Math.round(Number(value)).toLocaleString(locale);
+        return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency, { rtt: ms(p.rttMs), ttfb: ms(p.ttfbMs), llm: ms(p.llmFirstTokenMs) })}</Quiet> };
+      }
       default:
         return { ...base, tone: "neutral", body: <Quiet>{e.unknown} <span className="data">{event.kind}</span></Quiet> };
     }

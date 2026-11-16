@@ -217,6 +217,7 @@ const timeline = {
       endpoint_refused: "o endpoint da classificação não é um endereço https público, ou a guarda de rede o recusou",
       endpoint_key_missing: "o endpoint da classificação não tem a chave dele cadastrada",
     } as Record<string, string>,
+    turn_latency: "O agente começou a responder {rtt} ms depois de quem ligou parar de falar (modelo: {llm} ms; síntese de voz: {ttfb} ms).",
     caller_unanswered: {
       turn_closed: "Quem ligou ficou {seconds} s sem resposta, talvez por barulho na linha. O agente foi chamado a responder ao que ouviu.",
       asked_to_repeat: "O agente seguia calado {seconds} s depois da última fala de quem ligou e pediu para a pessoa repetir.",

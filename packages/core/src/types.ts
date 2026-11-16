@@ -58,6 +58,7 @@ export const CALL_EVENT_KINDS = [
   "call_analyzed",
   "analysis_not_done",
   "caller_unanswered",
+  "turn_latency",
 ] as const;
 
 export type CallEventKind = (typeof CALL_EVENT_KINDS)[number];
