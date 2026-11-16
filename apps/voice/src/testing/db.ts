@@ -239,6 +239,8 @@ export interface ManualTransport extends CallTransport {
   sentDtmf: string[];
   /** Áudio de quem ligou por `ms`; `peak` acima de zero manda fala em vez de silêncio. */
   callerAudio(ms: number, peak?: number): void;
+  /** Áudio de quem ligou, como está (PCM16 8 kHz), em quadros de 20 ms. */
+  callerPcm(pcm: Buffer): void;
   callerHangup(): void;
 }
 
@@ -264,6 +266,9 @@ export function manualTransport(): ManualTransport {
       const frame = Buffer.alloc(320);
       if (peak > 0) for (let i = 0; i + 1 < frame.length; i += 2) frame.writeInt16LE(i % 4 === 0 ? peak : -peak, i);
       for (let sent = 0; sent < ms; sent += 20) audio?.(frame);
+    },
+    callerPcm(pcm) {
+      for (let at = 0; at < pcm.length; at += 320) audio?.(pcm.subarray(at, at + 320));
     },
     callerHangup: () => hangup?.(),
   };

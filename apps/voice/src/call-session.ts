@@ -1,6 +1,6 @@
 import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
-import { EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
+import { AnsweringMachineDetector, EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type AnsweringMachineDetection, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
 import { messageOf, silentLogger, type Logger } from "./log";
 import { panelNotice } from "./panel-notice";
@@ -560,14 +560,19 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     });
     guard = silenceGuard;
     session.on("callerActivity", (signal) => silenceGuard.callerActivity(signal));
-    session.on("answeringMachine", (detection) => {
+    const answeredBy = (detection: AnsweringMachineDetection): void => {
       if (call.direction !== "outbound" || detection.verdict === "human" || ending) return;
       transport.clearAudio();
       void finish({
         status: "completed",
         endReason: detection.verdict === "machine" ? "answering_machine" : "no_human_response",
       });
-    });
+    };
+    session.on("answeringMachine", answeredBy);
+    // Motor que não detecta caixa postal sozinho (Gemini Live, OpenAI Realtime): o mesmo detector do
+    // pipeline roda aqui, sobre o áudio e a transcrição de quem atendeu. O simulado fica de fora: ele
+    // não tem áudio de verdade para medir.
+    const amd = call.direction === "outbound" && !engine.detectsAnsweringMachine && !engine.keyless ? new AnsweringMachineDetector(answeredBy) : undefined;
     session.on("audio", (pcm) => {
       silenceGuard.agentAudio(pcm.length / PCM16_8K_BYTES_PER_MS);
       if (ending) return;
@@ -580,7 +585,10 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       transport.clearAudio();
       recorder?.clear();
     });
-    session.on("transcript", (turn) => void event(turn.speaker === "user" ? "transcript_user" : "transcript_agent", { text: turn.text }).catch(logFailure("could not record a transcript")));
+    session.on("transcript", (turn) => {
+      if (turn.speaker === "user") amd?.pushTranscript(turn.text);
+      void event(turn.speaker === "user" ? "transcript_user" : "transcript_agent", { text: turn.text }).catch(logFailure("could not record a transcript"));
+    });
     session.on("toolCall", (toolCall) => {
       // Ferramenta em curso, aprovação em espera inclusive: a guarda não age até ela acabar.
       silenceGuard.toolStarted();
@@ -613,6 +621,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     });
     transport.onAudio((pcm) => {
       recorder?.caller(pcm);
+      if (amd && !amd.decided && !ending) amd.pushAudio(pcm);
       if (!ending && !wrappingUp) session.sendAudio(pcm);
     });
     const answered = [

@@ -9,4 +9,5 @@ export { createSimulatedEngine, setSimulatedScript, SIMULATED_PREFIX } from "./e
 export type { SimulatedScript, SimulatedStep } from "./engines/simulated";
 
 export type { PipelineSessionDeps, SttPort, TtsPort, TurnMetrics } from "./pipeline/session";
+export { AnsweringMachineDetector, type AmdOptions } from "./pipeline/amd";
 export type { ChatMessage, ChatToolCall, LlmEvent, LlmUsage } from "./pipeline/openrouter-llm";

@@ -302,6 +302,12 @@ export interface VoiceEngine {
   defaultVoice?: string;
   /** Verdadeiro para motores que não precisam de chave (o simulado). */
   keyless?: boolean;
+  /**
+   * Verdadeiro para motor que detecta caixa postal sozinho e emite `answeringMachine` (o pipeline).
+   * Para os outros, quem conduz a chamada roda o mesmo detector sobre o áudio e a transcrição de
+   * quem atendeu (`apps/voice/src/call-session.ts`), então toda ligação de saída tem AMD.
+   */
+  detectsAnsweringMachine?: boolean;
   pricing: EnginePricing;
   connect(config: VoiceSessionConfig, apiKey: string, options?: ConnectOptions): Promise<VoiceSession>;
   /**

@@ -167,6 +167,7 @@ const engine: VoiceEngine = {
   processingLocation: { kind: "undeclared" },
   voices: CARTESIA_PT_VOICES,
   acceptsCustomVoices: true,
+  detectsAnsweringMachine: true,
   defaultVoice: CARTESIA_DEFAULT_VOICE,
   pricing: {
     centsPerMinute: 0.77,
