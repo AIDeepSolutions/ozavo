@@ -146,3 +146,23 @@ registro da liberação. Ainda não existem números de capacidade para esta com
   WAV e conferir seu SHA-256 com a linha do tempo. Provar isolamento e fazer chamada com consentimento.
 - [ ] Registrar duração real, contagens e diferenças. Declarar recuperação concluída só depois
   dessas comparações. Não usar `install/backup.sh` do banco local para este Compose Supabase.
+
+### Ensaio registrado em 16/11/2026
+
+O backup lógico do schema `public` da produção (`pg_dump` 17, formato custom, tirado às 19:58 UTC)
+foi restaurado num Postgres 17 descartável, fora do Supabase:
+
+1. Recriar o schema `public` vazio com as extensões que o Supabase traz prontas
+   (`create extension citext schema public; create extension pgcrypto schema public;`) e os papéis
+   `ozavo_app` e `ozavo_system` sem login.
+2. `pg_restore -l` e tirar da lista a entrada `SCHEMA - public`; depois
+   `pg_restore --no-owner --exit-on-error -L <lista>`.
+3. Conferir as contagens de todas as tabelas contra as tiradas no momento do backup, e o RLS.
+4. Rodar o `migrate` da versão nova sobre a cópia.
+
+Resultado: restauração em cerca de 1 segundo, as 31 tabelas com contagens iguais às de origem,
+RLS ligado em 31 e forçado em 30, como na produção, e as 6 migrations ainda não aplicadas na
+produção entraram na cópia sem erro. O áudio não entrou no ensaio: a produção ainda não tem
+destino S3 configurado nem gravações. Falta, e fica como item aberto desta lista: backup agendado
+com retenção conferida no plano contratado do Supabase, ensaio do áudio cifrado e o cofre da
+`OZAVO_SECRET_KEY`.
