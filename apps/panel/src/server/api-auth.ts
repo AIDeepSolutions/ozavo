@@ -4,7 +4,7 @@ import { ApiError, failure, serverDeps, type ServerDeps } from "./context";
 import { createRateLimiter } from "./rate-limit";
 
 /**
- * A entrada de sistemas de fora (o n8n, um CRM): `Authorization: Bearer ozk_…`. A chave é da
+ * A entrada de sistemas de fora (um CRM ou outro integrador): `Authorization: Bearer ozk_…`. A chave é da
  * empresa e só faz o que o escopo dela diz. A resposta tem o mesmo envelope das rotas do painel.
  */
 

@@ -1,0 +1,20 @@
+export default {
+  "title": "Asaas",
+  "lead": "Cobrança nativa da plataforma. Configure o mesmo token no webhook do Asaas. Campos secretos em branco mantêm o valor salvo; mudar de ambiente exige as duas credenciais.",
+  "environment": "Ambiente",
+  "sandbox": "Sandbox",
+  "production": "Produção",
+  "apiKey": "Chave da API",
+  "webhookToken": "Token do webhook (mínimo de 32 caracteres)",
+  "kept": "Já configurado",
+  "mappings": "Vínculos de assinaturas (JSON)",
+  "mappingHelp": "Sem vínculo explícito, o valor mensal identifica Starter (497), Pro (997), Growth (1.497) ou Scale (1.997). Para Personalizado use [{\"subscriptionId\":\"sub_exemplo\",\"plan\":\"custom\",\"includedMinutes\":300,\"maxConcurrentCalls\":2}]. O preço vem da assinatura.",
+  "invalidMappings": "Confira o JSON dos vínculos de assinaturas.",
+  "save": "Salvar Asaas",
+  "retry": "Reprocessar eventos pendentes",
+  "invites": "Convites de donos",
+  "ownerInvite": "Abrir convite do dono",
+  "events": "Últimos 50 eventos",
+  "processed": "Processado",
+  "pending": "Pendente; confira a fila e a configuração"
+};

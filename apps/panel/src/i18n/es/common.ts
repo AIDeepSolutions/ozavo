@@ -79,6 +79,7 @@ const common: CommonDictionary = {
     invalid_credentials: "Correo o contraseña incorrectos.",
     too_many_attempts: "Demasiados intentos de entrada. Espera unos minutos e intenta de nuevo.",
     voice_unavailable: "El proceso de voz no respondió. Mira en el indicador de salud, en el menú, qué está detenido. Lo que guardaste sigue guardado.",
+    tenant_suspended: "Esta empresa está suspendida. Solicite a la plataforma que revise la facturación.",
     engine_not_configured: "Este agente usa un motor de voz sin clave. Registra la clave en Configuración → Inteligencia artificial.",
     engine_key_missing: "Este motor no tiene clave guardada. Pega la clave y guárdala antes de probar.",
     too_many_key_checks: "Demasiadas pruebas de la clave de este motor en poco tiempo. Espera unos minutos y vuelve a probar.",

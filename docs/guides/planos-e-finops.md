@@ -31,7 +31,8 @@ franquia ilimitada ou afrouxaria a cadência reduzida. O provisionamento por API
 mesma função quando o `plan.code` é do catálogo (`starter`, `pro`, `growth`, `scale`): a empresa já
 nasce com a franquia, na regra de pausar as ligações de saída. Um código fora do catálogo fica só
 como vínculo no perfil da empresa, e ela segue sem plano. Ainda não existe tela da plataforma para
-trocar o plano de outra empresa: hoje isso se faz pelo provisionamento. Cada troca
+trocar o plano de outra empresa: hoje isso se faz pelo provisionamento. A [integração nativa com o Asaas](asaas-nativo.md) também contrata e troca planos, inclusive
+Personalizado, pela mesma função e sem orquestrador externo. Cada troca
 grava o evento de organização `plan_changed`.
 
 O ciclo é mensal e começa no dia de `cycle_started_on`. Quem começou no dia 31 renova no último dia

@@ -17,7 +17,7 @@ let platformOrg: string;
 let platformOwner: Awaited<ReturnType<typeof createUser>>;
 
 const bearer = (token: string): Record<string, string> => ({ authorization: `Bearer ${token}` });
-const newKey = async (cookie: string, scopes: string[], name = "n8n"): Promise<{ id: string; token: string; prefix: string }> => {
+const newKey = async (cookie: string, scopes: string[], name = "crm"): Promise<{ id: string; token: string; prefix: string }> => {
   const created = await call(createKey, { method: "POST", cookie, body: { name, scopes } });
   expect(created.status).toBe(200);
   return created.data as { id: string; token: string; prefix: string };

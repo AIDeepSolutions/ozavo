@@ -60,9 +60,9 @@
 > Aguardando conexão do Supabase para parte do schema
 - [ ] 2.1 `tenant_id` estrito em todas as tabelas + voice_id/persona/prompt/credenciais por tenant
 - [x] ~~2.2 White-label~~ (em execução no pane-6) White-label Ozavo (navy `#071D3A`, cyber `#0052CC`, teal `#00B4D8`, branco/gelo; SEM gradiente, SEM roxo; Inter; caixa baixa `ozavo`)
-- [ ] 2.3 Conectores MVP: Google Calendar (OAuth), Cal.com (API key), Webhooks (n8n)
+- [ ] 2.3 Conectores MVP: Google Calendar (OAuth), Cal.com (API key), Webhooks universais
 - [ ] 2.4 `POST /api/v1/calls/outbound` (Bearer, fila prioritária < 5 s)
-- [ ] 2.5 `POST /api/v1/tenants/provision` (n8n + Asaas → tenant ativo em segundos)
+- [ ] 2.5 `POST /api/v1/tenants/provision` (stack própria + Asaas nativo → tenant com convite de dono)
 
 ### Fase 3 — Planos + FinOps + Regulatório
 - [ ] 3.1 Motor de planos: Starter 300min R$497 · Pro 750min R$997 · Growth 1.500min R$1.497 · Scale 2.500min R$1.997 · Personalizado

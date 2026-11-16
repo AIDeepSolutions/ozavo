@@ -223,6 +223,7 @@ const timeline: TimelineDictionary = {
     unknown: "Event",
   },
   reasons: {
+    tenant_suspended: "This company is suspended. Ask the platform to review billing.",
     engine_not_configured: "The agent uses a voice engine with no key.",
     engine_not_responding: "The voice engine provider did not answer in time. Check the provider status and the key in Settings → Artificial intelligence.",
     process_restarted: "The voice process restarted in the middle of the call.",

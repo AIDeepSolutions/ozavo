@@ -10,7 +10,7 @@ import { withSystem } from "./with-org";
 /**
  * A empresa (o "tenant" da especificação do Ozavo) é a organização. Este arquivo cuida do que a
  * organização ganhou para ser vendida como serviço: o perfil (dados societários, persona, voz e
- * prompt base), o vínculo com o plano e o provisionamento automático pelo n8n.
+ * prompt base), o vínculo com o plano e o provisionamento automático nativo.
  */
 
 export const DEFAULT_PERSONA_NAME = "Nico";
@@ -172,8 +172,9 @@ async function issueOwnerInvite(q: OrgQuery, organizationId: string, owner: { na
   return { token, expiresAt };
 }
 
-async function findProvisioned(db: Db, input: ProvisionInput, now: Date): Promise<ProvisionResult | null> {
-  return withSystem(db, async (q) => {
+async function findProvisioned(db: Db, input: ProvisionInput, now: Date, transaction?: OrgQuery): Promise<ProvisionResult | null> {
+  const run = <T>(fn: (q: OrgQuery) => Promise<T>): Promise<T> => transaction ? fn(transaction) : withSystem(db, fn);
+  return run(async (q) => {
     const row = await q.one<{ organizationId: string; agentId: string | null; ownerUserId: string | null }>(
       `select p.organization_id as "organizationId", p.default_agent_id as "agentId",
               (select u.id from users u where u.organization_id = p.organization_id and u.role = 'owner' order by u.created_at limit 1) as "ownerUserId"
@@ -189,20 +190,21 @@ async function findProvisioned(db: Db, input: ProvisionInput, now: Date): Promis
 /**
  * Cria a empresa inteira numa transação: a organização, o perfil com o plano, o convite de dono
  * (o token volta uma vez, nunca uma senha), a política de saída desligada e o agente com a persona.
- * O mesmo `source` + `externalRef` devolve a empresa já criada: o n8n pode repetir.
+ * O mesmo `source` + `externalRef` devolve a empresa já criada: o chamador pode repetir.
  *
  * Atravessa organizações porque a organização ainda não existe. As ligações de saída nascem
  * desligadas aqui também: quem liga é o dono, na tela, depois de dizer o propósito.
  */
-export async function provisionTenant(db: Db, input: ProvisionInput, now: Date): Promise<ProvisionResult> {
-  const existing = await findProvisioned(db, input, now);
+export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, transaction?: OrgQuery): Promise<ProvisionResult> {
+  const run = <T>(fn: (q: OrgQuery) => Promise<T>): Promise<T> => transaction ? fn(transaction) : withSystem(db, fn);
+  const existing = await findProvisioned(db, input, now, transaction);
   if (existing) return existing;
 
-  const emailTaken = await withSystem(db, async (q) => (await q.one("select 1 as hit from users where email = $1", [input.owner.email])) !== null);
+  const emailTaken = await run(async (q) => (await q.one("select 1 as hit from users where email = $1", [input.owner.email])) !== null);
   if (emailTaken) return { refused: "email_taken" };
 
   try {
-    return await withSystem(db, async (q) => {
+    return await run(async (q) => {
       const id = async (sql: string, params: unknown[]): Promise<string> => {
         const row = await q.one<{ id: string }>(sql, params);
         if (!row) throw new Error("Insert returned no row");
@@ -261,9 +263,19 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date):
     // Dois pedidos iguais ao mesmo tempo: o índice único deixa um passar, e o outro devolve o dele.
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
     if (code === "23505") {
-      const raced = await findProvisioned(db, input, now);
+      const raced = await findProvisioned(db, input, now, transaction);
       if (raced) return raced;
     }
     throw error;
   }
+}
+
+/** A instrução de quem não mandou a dele: a persona, a empresa e o jeito de atender por telefone. */
+export function defaultProvisionInstructions(persona: string, company: string): string {
+  return [
+    `Você é ${persona}, assistente virtual de ${company}, e atende ligações em português do Brasil.`,
+    "Fale de forma calma, cordial e direta, com frases curtas, como numa conversa por telefone.",
+    "Descubra o que a pessoa precisa. Se souber responder, responda. Se não souber, não invente: anote o recado e avise a equipe.",
+    "Se a pessoa pedir para falar com alguém, transfira a ligação. Antes de encerrar, pergunte se pode ajudar em mais alguma coisa.",
+  ].join("\n");
 }

@@ -79,6 +79,7 @@ const common: CommonDictionary = {
     invalid_credentials: "E-mail or password is incorrect.",
     too_many_attempts: "Too many sign-in attempts. Wait a few minutes and try again.",
     voice_unavailable: "The voice process did not answer. See in the health indicator, in the menu, what is stopped. What you saved is still saved.",
+    tenant_suspended: "This company is suspended. Ask the platform to review billing.",
     engine_not_configured: "This agent uses a voice engine with no key. Add the key in Settings → Artificial intelligence.",
     engine_key_missing: "This engine has no saved key. Paste the key and save it before testing.",
     too_many_key_checks: "Too many tests of this engine's key in a short time. Wait a few minutes and test again.",

@@ -77,6 +77,7 @@ const common = {
     invalid_credentials: "E-mail ou senha incorretos.",
     too_many_attempts: "Muitas tentativas de entrada. Espere alguns minutos e tente de novo.",
     voice_unavailable: "O processo de voz não respondeu. Veja no indicador de saúde, no menu, o que está parado. O que você salvou continua salvo.",
+    tenant_suspended: "Esta empresa está suspensa. Peça à plataforma para conferir a cobrança.",
     engine_not_configured: "Este agente usa um motor de voz sem chave cadastrada. Cadastre a chave em Configurações → Inteligência artificial.",
     engine_key_missing: "Este motor não tem chave salva. Cole a chave e salve antes de testar.",
     too_many_key_checks: "Muitos testes da chave deste motor em pouco tempo. Espere alguns minutos e teste de novo.",
