@@ -1,7 +1,8 @@
 # Preparar e conferir a produção da Fase 4
 
 Este roteiro prepara uma VPS dedicada. Não substitui a implantação Coolify que já existe, nem deve
-ser executado contra ela durante a revisão. O Compose usa 80/443; a integração com um proxy já
+ser executado contra ela durante a revisão. Para subir as peças que faltam na implantação Coolify, veja
+[Produção no Coolify](producao-coolify.md). O Compose usa 80/443; a integração com um proxy já
 instalado exige conferir redes e portas antes de liberar o deploy. Não houve deploy nesta entrega.
 
 ## Preparo reproduzível
@@ -54,6 +55,10 @@ de iniciar as aplicações. Não use as imagens de uma versão anterior para tes
 - [ ] Cadastro RCD rejeita nome com acentos ou acima de 32 caracteres; exporta PNG RGBA 256×256 até
   300 KB. RGB tem 24 bits mais alfa de 8 bits (RGBA 32): “alfa de 24 bits” não é um modo de PNG.
   O conversor preserva o alfa existente e cria margem transparente; não remove fundo de logo opaco.
+- [ ] Entregar à operadora o PNG baixado em Linha > Logo de origem verificada. O Ozavo guarda o
+  logo (`trunks.rcd_logo_png`) só para esse cadastro: ele **não** vai em nenhum cabeçalho SIP. O que
+  sai na ligação é o PAI com o DID em E.164 e o nome de exibição (até 32 caracteres ASCII). O
+  processo de cadastro do logo é da operadora e não foi conferido aqui.
 - [ ] Aviso de gravação e hipótese de tratamento definidos pela organização, acesso por função,
   gravação desligada por padrão; áudio cifrado em disco/MinIO, prazo próprio confirmado na tela.
 - [ ] Provar expurgo de uma gravação vencida e preservação de uma recente/de outra organização,

@@ -37,9 +37,17 @@ export type AcceptInviteResult = { ok: true; userId: string; organizationId: str
 // outro dono e foi rebaixado não deixa para trás um convite que hoje não poderia emitir.
 // A expressão abaixo é `canManageRole` escrita em SQL; o teste dos nove pares de papel compara as
 // duas, para que nunca divirjam.
-const CREATOR_STILL_MANAGES = `exists (select from users c
+//
+// O convite de dono que o provisionamento pela API emite (`provisioned`) não tem criador: vale só
+// enquanto a organização não tem nenhum dono ativo. Aceito o primeiro, os outros param de valer.
+const CREATOR_STILL_MANAGES = `(exists (select from users c
    where c.organization_id = i.organization_id and c.id = i.created_by and c.disabled_at is null
-     and (c.role = 'owner' or (c.role = 'admin' and i.role <> 'owner')))`;
+     and (c.role = 'owner' or (c.role = 'admin' and i.role <> 'owner')))
+  or (i.provisioned and i.role = 'owner' and not exists (select from users d
+   where d.organization_id = i.organization_id and d.role = 'owner' and d.disabled_at is null)))`;
+
+/** Por quantos dias o convite de dono do provisionamento vale. */
+export const PROVISIONED_INVITE_DAYS = 7;
 
 /**
  * O convite que este token abre, ou `null`. Inexistente, vencido, já aceito, revogado e de

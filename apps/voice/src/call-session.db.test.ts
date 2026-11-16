@@ -811,7 +811,7 @@ describe("tetos da chamada", { timeout: 120_000 }, () => {
     const events = await eventsOf(app, callId);
     expect(events.map((event) => event.kind)).toEqual(["call_started", "call_answered", "recording_notice", "cost_ceiling_reached", "call_ended", "task_queued"]);
     expect(events[3]?.payload).toEqual({ costCents: 150, ceilingCents: 150 });
-    expect(events[4]?.payload).toEqual({ status: "completed", reason: "cost_ceiling", costCents: 160, seconds: 96 });
+    expect(events[4]?.payload).toEqual({ status: "completed", reason: "cost_ceiling", costCents: 160, seconds: 96, agentSpeechSeconds: 0 });
     // O extrato tem uma linha por medição, e a soma dele é o custo da chamada.
     expect(await ledgerOf(app, callId)).toEqual([
       { engine: "manual", seconds: 6, input_tokens: 0, output_tokens: 0, cost_cents: 10 },

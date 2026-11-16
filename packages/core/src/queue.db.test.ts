@@ -145,15 +145,18 @@ describe("queue", () => {
   });
 
   it("health counts the processes listening to the queue, and stops counting the one that left", async () => {
-    // Em série com os outros arquivos, e cada um fecha as próprias escutas: a conta parte de zero.
-    expect((await queueHealth(app, t0)).listeners).toBe(0);
+    // A conexão destruída ao parar sai da lista do Postgres em instantes, não na hora: a escuta que
+    // o arquivo anterior fechou pode ainda aparecer quando este teste começa.
+    const settled = async (): Promise<number> => {
+      const deadline = performance.now() + 5000;
+      while ((await queueHealth(app, t0)).listeners !== 0 && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+      return (await queueHealth(app, t0)).listeners;
+    };
+    expect(await settled()).toBe(0);
     const stop = await listenTasks(app, () => undefined);
     expect((await queueHealth(app, t0)).listeners).toBe(1);
     await stop();
-    // A conexão é destruída ao parar; o Postgres tira a sessão da lista em instantes.
-    const deadline = performance.now() + 5000;
-    while ((await queueHealth(app, t0)).listeners !== 0 && performance.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
-    expect((await queueHealth(app, t0)).listeners).toBe(0);
+    expect(await settled()).toBe(0);
   });
 
   it("health reports since when the oldest due task waits, ignoring future, running and finished ones", async () => {

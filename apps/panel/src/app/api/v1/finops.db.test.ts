@@ -1,4 +1,4 @@
-import { withOrg } from "@ozavo/core";
+import { withSystem } from "@ozavo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET as getPlan, PUT as putPlan } from "./finops/plan/route";
@@ -15,7 +15,7 @@ let tenantAdmin: string;
 // Plano e limites são comerciais: só a organização que administra a instalação (`platform`) os grava.
 beforeAll(async () => {
   org = await createOrganization(panel.app, "finops api");
-  await withOrg(panel.app, org, (q) => q.exec("update organizations set platform = true where id = $1", [org]));
+  await withSystem(panel.app, (q) => q.exec("update organizations set platform = true where id = $1", [org]));
   owner = (await createUser(panel.app, org, "owner")).cookie;
   operator = (await createUser(panel.app, org, "operator")).cookie;
   const tenant = await createOrganization(panel.app, "finops tenant");

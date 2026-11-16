@@ -5,6 +5,7 @@ import { DELETE as revokeKey } from "./api-keys/[id]/route";
 import { GET as listKeys, POST as createKey } from "./api-keys/route";
 import { POST as outbound } from "./calls/outbound/route";
 import { GET as getProfile, PUT as putProfile } from "./tenant-profile/route";
+import { POST as acceptInvite } from "./invites/[token]/accept/route";
 import { POST as provision } from "./tenants/provision/route";
 
 const panel = startPanel();
@@ -28,7 +29,7 @@ beforeAll(async () => {
   operator = await createUser(panel.app, org, "operator");
   agent = await insert(panel.app, org, "insert into agents (organization_id, name, engine) values ($1, 'Nico', 'simulated') returning id", [org]);
   platformOrg = await createOrganization(panel.app, "api access platform");
-  await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
+  await withSystem(panel.app, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
   platformOwner = await createUser(panel.app, platformOrg, "owner");
 });
 afterAll(() => panel.close());
@@ -147,9 +148,12 @@ describe("POST /api/v1/tenants/provision", () => {
     const ref = `sub_${crypto.randomUUID()}`;
     const created = await call(provision, { method: "POST", headers: bearer(key.token), body: request(ref, email) });
     expect(created.status).toBe(201);
-    const data = created.data as { organizationId: string; ownerUserId: string; agentId: string; initialPassword: string; created: boolean; loginUrl: string };
-    expect(data).toMatchObject({ created: true, loginUrl: "https://panel.test/login" });
-    expect(data.initialPassword.length).toBeGreaterThanOrEqual(20);
+    const data = created.data as { organizationId: string; ownerUserId: string | null; agentId: string; ownerInviteUrl: string; ownerInviteExpiresAt: string; created: boolean; loginUrl: string };
+    expect(data).toMatchObject({ created: true, ownerUserId: null, loginUrl: "https://panel.test/login" });
+    // Nenhuma senha no corpo: o dono recebe um convite de uso único e escolhe a senha (auditoria A18).
+    expect(created.text).not.toMatch(/password/i);
+    expect(data.ownerInviteUrl).toMatch(/^https:\/\/panel\.test\/invite\/[A-Za-z0-9_-]{40,}$/);
+    expect(Number.isNaN(Date.parse(data.ownerInviteExpiresAt))).toBe(false);
 
     const state = await withOrg(panel.app, data.organizationId, async (q) => ({
       profile: await q.one("select plan_code, monthly_minutes, persona_name, base_prompt, default_agent_id, status from tenant_profiles"),
@@ -168,10 +172,24 @@ describe("POST /api/v1/tenants/provision", () => {
     // O plano "pro" é do catálogo: a empresa já nasce com a franquia contratada (motor de planos).
     expect(state.events.map((event) => event.kind)).toEqual(["tenant_provisioned", "plan_changed"]);
 
+    // Quem perdeu a primeira resposta repete: o dono ainda não entrou, então sai um link novo e o antigo morre.
     const repeated = await call(provision, { method: "POST", headers: bearer(key.token), body: request(ref, email) });
     expect(repeated.status).toBe(200);
-    expect(repeated.data).toMatchObject({ created: false, organizationId: data.organizationId, agentId: data.agentId, ownerUserId: data.ownerUserId });
-    expect(repeated.text).not.toContain("initialPassword");
+    const again = repeated.data as { ownerInviteUrl: string };
+    expect(repeated.data).toMatchObject({ created: false, organizationId: data.organizationId, agentId: data.agentId, ownerUserId: null });
+    expect(again.ownerInviteUrl).not.toBe(data.ownerInviteUrl);
+    const tokenOf = (link: string): string => link.slice(link.lastIndexOf("/") + 1);
+    const stale = await call(acceptInvite, { method: "POST", params: { token: tokenOf(data.ownerInviteUrl) }, body: { name: "Dona", password: "a-long-enough-password" } });
+    expect(stale.status).not.toBe(200);
+    const accepted = await call(acceptInvite, { method: "POST", params: { token: tokenOf(again.ownerInviteUrl) }, body: { name: "Dona", password: "a-long-enough-password" } });
+    expect(accepted.status).toBe(200);
+    const ownerRow = await withSystem(panel.app, (q) => q.one<{ id: string; role: string; organization_id: string }>("select id, role, organization_id from users where email = $1", [email]));
+    expect(ownerRow).toMatchObject({ role: "owner", organization_id: data.organizationId });
+
+    // Com o dono dentro, a repetição devolve o dono e nenhum convite.
+    const afterOwner = await call(provision, { method: "POST", headers: bearer(key.token), body: request(ref, email) });
+    expect(afterOwner.data).toMatchObject({ created: false, ownerUserId: ownerRow?.id });
+    expect(afterOwner.text).not.toContain("ownerInviteUrl");
     const count = await withSystem(panel.app, (q) => q.one<{ n: number }>("select count(*)::int as n from tenant_profiles where external_ref = $1", [ref]));
     expect(count?.n).toBe(1);
   });
@@ -183,12 +201,12 @@ describe("POST /api/v1/tenants/provision", () => {
     const badEngine = await call(provision, { method: "POST", headers: bearer(key.token), body: { ...request(`sub_${crypto.randomUUID()}`, "x@example.test"), agent: { engine: "made-up" } } });
     expect([badEngine.status, badEngine.code]).toEqual([400, "validation_error"]);
     // A chave com o escopo, mas de uma empresa que deixou de ser a plataforma, não provisiona.
-    await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = false where id = $1", [platformOrg]));
+    await withSystem(panel.app, (q) => q.exec("update organizations set platform = false where id = $1", [platformOrg]));
     try {
       const notPlatform = await call(provision, { method: "POST", headers: bearer(key.token), body: request(`sub_${crypto.randomUUID()}`, "y@example.test") });
       expect([notPlatform.status, notPlatform.code]).toEqual([403, "forbidden"]);
     } finally {
-      await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
+      await withSystem(panel.app, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
     }
   });
 

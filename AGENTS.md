@@ -82,7 +82,7 @@ compartilhados". Mudou um contrato? Mude lá primeiro.
 
 | Comando | O que faz |
 |---|---|
-| `pnpm verify` | Lint, tipos, cercas e testes. Rode antes de abrir PR |
+| `pnpm verify` | Lint, tipos (da raiz e do painel), cercas e testes. Rode antes de abrir PR |
 | `pnpm test` | Testes de unidade |
 | `pnpm test:db` | Testes que usam Postgres real. Pede Docker |
 | `pnpm test:e2e` | Testes de tela: dirigem o Chromium contra um painel no ar (`OZAVO_E2E_URL`, `OZAVO_E2E_EMAIL`, `OZAVO_E2E_PASSWORD`). Moram em `apps/panel/test/e2e`. Não rode contra uma instalação em uso: eles criam convites, chamadas simuladas e números na lista de não ligar |
@@ -190,7 +190,8 @@ Rode `pnpm verify` e, se tocou em banco, `pnpm test:db`. Isso cobre:
 - tabela sem `organization_id`;
 - migration fora do padrão de nome ou com carimbo repetido;
 - variável de ambiente sem padrão;
-- SQL cru fora de `packages/core`;
+- conexão direta com o Postgres fora de `packages/core` (`import pg` ou `.query(`). SQL escrito
+  na consulta que `withOrg` entrega (`q.one`, `q.many`, `q.exec`) é permitido em qualquer pacote;
 - texto de tela fora de dicionário;
 - marcador de conflito esquecido;
 - workflow sem permissões declaradas;

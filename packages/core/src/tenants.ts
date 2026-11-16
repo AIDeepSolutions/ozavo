@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { recordOrgEvent } from "./events";
 import { localDay } from "./metering";
-import { hashPassword } from "./password";
+import { PROVISIONED_INVITE_DAYS } from "./invites";
+import { hashToken } from "./password";
 import { PLAN_CATALOG, setPlanSubscription, type CatalogPlanId } from "./plans";
 import type { Db, OrgQuery } from "./types";
 import { withSystem } from "./with-org";
@@ -141,45 +142,64 @@ export interface ProvisionInput {
   requestedBy: string;
 }
 
+/** O convite de dono: o token em claro só existe aqui e no link que a rota monta. */
+export interface OwnerInvite {
+  token: string;
+  expiresAt: Date;
+}
+
+/**
+ * Nenhum resultado traz senha. A empresa nasce com um convite de dono de uso único (`ownerInvite`):
+ * a pessoa abre o link e escolhe a senha. A repetição de uma empresa cujo dono ainda não aceitou
+ * emite um convite novo e revoga o anterior, para quem perdeu a primeira resposta.
+ */
 export type ProvisionResult =
-  | { created: true; organizationId: string; ownerUserId: string; agentId: string; initialPassword: string }
-  | { created: false; organizationId: string; ownerUserId: string | null; agentId: string | null }
+  | { created: true; organizationId: string; ownerUserId: null; agentId: string; ownerInvite: OwnerInvite }
+  | { created: false; organizationId: string; ownerUserId: string | null; agentId: string | null; ownerInvite?: OwnerInvite }
   | { refused: "email_taken" };
 
-const INITIAL_PASSWORD_BYTES = 18;
+const INVITE_TOKEN_BYTES = 32;
 
-async function findProvisioned(db: Db, source: string, externalRef: string): Promise<ProvisionResult | null> {
+/** Revoga o convite de dono pendente e emite outro. Corre dentro da transação de sistema. */
+async function issueOwnerInvite(q: OrgQuery, organizationId: string, owner: { name: string; email: string }, now: Date): Promise<OwnerInvite> {
+  const token = randomBytes(INVITE_TOKEN_BYTES).toString("base64url");
+  const expiresAt = new Date(now.getTime() + PROVISIONED_INVITE_DAYS * 86_400_000);
+  await q.exec("update invites set revoked_at = $2 where organization_id = $1 and accepted_at is null and revoked_at is null", [organizationId, now]);
+  await q.exec(
+    "insert into invites (organization_id, email, name, role, token_hash, expires_at, provisioned, created_at) values ($1, $2, $3, 'owner', $4, $5, true, $6)",
+    [organizationId, owner.email, owner.name, hashToken(token), expiresAt, now],
+  );
+  return { token, expiresAt };
+}
+
+async function findProvisioned(db: Db, input: ProvisionInput, now: Date): Promise<ProvisionResult | null> {
   return withSystem(db, async (q) => {
     const row = await q.one<{ organizationId: string; agentId: string | null; ownerUserId: string | null }>(
       `select p.organization_id as "organizationId", p.default_agent_id as "agentId",
               (select u.id from users u where u.organization_id = p.organization_id and u.role = 'owner' order by u.created_at limit 1) as "ownerUserId"
          from tenant_profiles p where p.external_source = $1 and p.external_ref = $2`,
-      [source, externalRef],
+      [input.source, input.externalRef],
     );
-    return row && { created: false as const, ...row };
+    if (!row) return null;
+    if (row.ownerUserId !== null) return { created: false as const, ...row };
+    return { created: false as const, ...row, ownerInvite: await issueOwnerInvite(q, row.organizationId, input.owner, now) };
   });
 }
 
-class EmailTaken extends Error {}
-
 /**
- * Cria a empresa inteira numa transação: a organização, o perfil com o plano, o dono (com uma
- * senha inicial devolvida uma vez), a política de saída desligada e o agente com a persona. O
- * mesmo `source` + `externalRef` devolve a empresa já criada, sem senha: o n8n pode repetir.
+ * Cria a empresa inteira numa transação: a organização, o perfil com o plano, o convite de dono
+ * (o token volta uma vez, nunca uma senha), a política de saída desligada e o agente com a persona.
+ * O mesmo `source` + `externalRef` devolve a empresa já criada: o n8n pode repetir.
  *
  * Atravessa organizações porque a organização ainda não existe. As ligações de saída nascem
  * desligadas aqui também: quem liga é o dono, na tela, depois de dizer o propósito.
  */
 export async function provisionTenant(db: Db, input: ProvisionInput, now: Date): Promise<ProvisionResult> {
-  const existing = await findProvisioned(db, input.source, input.externalRef);
+  const existing = await findProvisioned(db, input, now);
   if (existing) return existing;
 
   const emailTaken = await withSystem(db, async (q) => (await q.one("select 1 as hit from users where email = $1", [input.owner.email])) !== null);
   if (emailTaken) return { refused: "email_taken" };
-
-  // Antes da transação: o hash é caro de propósito e não deve segurar conexão.
-  const initialPassword = randomBytes(INITIAL_PASSWORD_BYTES).toString("base64url");
-  const passwordHash = await hashPassword(initialPassword);
 
   try {
     return await withSystem(db, async (q) => {
@@ -189,15 +209,7 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date):
         return row.id;
       };
       const organizationId = await id("insert into organizations (name, created_at) values ($1, $2) returning id", [input.company.tradeName ?? input.company.legalName, now]);
-      const ownerUserId = await q
-        .one<{ id: string }>(
-          "insert into users (organization_id, email, name, password_hash, role, created_at) values ($1, $2, $3, $4, 'owner', $5) on conflict (email) do nothing returning id",
-          [organizationId, input.owner.email, input.owner.name, passwordHash, now],
-        )
-        .then((row) => {
-          if (!row) throw new EmailTaken();
-          return row.id;
-        });
+      const ownerInvite = await issueOwnerInvite(q, organizationId, input.owner, now);
       await q.exec("insert into outbound_policy (organization_id, enabled) values ($1, false)", [organizationId]);
       for (const secret of input.secrets) {
         await q.exec("insert into settings (organization_id, key, value, secret, updated_at) values ($1, $2, $3, true, $4)", [organizationId, secret.key, JSON.stringify(secret.valueEnc), now]);
@@ -243,14 +255,13 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date):
         const { day } = await localDay(scoped, now);
         await setPlanSubscription(scoped, { plan: input.plan.code as CatalogPlanId, overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 }, now, day);
       }
-      return { created: true as const, organizationId, ownerUserId, agentId, initialPassword };
+      return { created: true as const, organizationId, ownerUserId: null, agentId, ownerInvite };
     });
   } catch (error) {
-    if (error instanceof EmailTaken) return { refused: "email_taken" };
     // Dois pedidos iguais ao mesmo tempo: o índice único deixa um passar, e o outro devolve o dele.
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
     if (code === "23505") {
-      const raced = await findProvisioned(db, input.source, input.externalRef);
+      const raced = await findProvisioned(db, input, now);
       if (raced) return raced;
     }
     throw error;

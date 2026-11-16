@@ -178,7 +178,9 @@ describe("chamada de ponta a ponta", { timeout: 120_000 }, () => {
     const seconds = (1000 + spoken.reduce((sum, ms) => sum + ms, 0)) / 1000;
     const cost = Math.ceil(seconds);
     expect(cost).toBeGreaterThan(5);
-    expect(payloads[15]).toEqual({ status: "transferred", reason: "transferred", costCents: cost, seconds: Math.round(seconds) });
+    // A fala da IA vai no fim da chamada: o FinOps mede a parte do agente no tempo da ligação.
+    const agentSpeechSeconds = Math.round(spoken.reduce((sum, ms) => sum + ms, 0) / 1000);
+    expect(payloads[15]).toEqual({ status: "transferred", reason: "transferred", costCents: cost, seconds: Math.round(seconds), agentSpeechSeconds });
     expect(await ledgerOf(app, callId)).toEqual([{ engine: "simulated", seconds: Math.round(seconds), input_tokens: 0, output_tokens: 0, cost_cents: cost }]);
     expect(await callOf(app, callId)).toMatchObject({ status: "transferred", end_reason: "transferred", engine: "simulated", cost_cents: cost, answered_at: expect.any(Date), ended_at: clock.now() });
 

@@ -3,7 +3,7 @@
 (node:46457) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
- RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio-sabotage
+ RUN  v5.1.0 <pasta-de-trabalho>/ozavo-wt-core-audio-sabotage
 
 (node:46484) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)

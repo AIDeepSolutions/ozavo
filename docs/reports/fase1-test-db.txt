@@ -1,13 +1,13 @@
 (node:42910) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
-> ozavo@0.0.0 test:db /home/dev/workspaces/clientes/ozavo-wt-core-audio
+> ozavo@0.0.0 test:db <pasta-de-trabalho>/ozavo-wt-core-audio
 > vitest run --project db
 
 (node:42926) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
 (Use `node --trace-warnings ...` to show where the warning was created)
 
- RUN  v5.1.0 /home/dev/workspaces/clientes/ozavo-wt-core-audio
+ RUN  v5.1.0 <pasta-de-trabalho>/ozavo-wt-core-audio
 
 permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
 No test files found, exiting with code 1
@@ -21,7 +21,7 @@ exclude:  **/node_modules/**, **/.git/**
 
 
 ⎯⎯⎯⎯⎯⎯ Unhandled Error ⎯⎯⎯⎯⎯⎯⎯
-Error: Command failed: bash /home/dev/workspaces/clientes/ozavo-wt-core-audio/scripts/test-db.sh up
+Error: Command failed: bash <pasta-de-trabalho>/ozavo-wt-core-audio/scripts/test-db.sh up
 permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
 
  ❯ genericNodeError node:internal/errors:983:15

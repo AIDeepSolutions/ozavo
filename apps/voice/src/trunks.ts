@@ -100,17 +100,33 @@ const value = (text: string): string => text.replaceAll(";", "\\;");
  * Seções PJSIP de um tronco. Portadas do `pjsip.conf.example` do DeskcommCRM (MIT, mesmo autor;
  * ver CREDITS.md), com as lições de lá: `from_domain` com o IP público (sem ele o cabeçalho From
  * leva o IP privado do contêiner e há provedor que derruba a ligação) e `ulaw`/`alaw`, que casam
- * com o AudioSocket sem transcodificar.
+ * com o AudioSocket sem transcodificar. Na linha TLS por nome o `from_domain` é o da operadora
+ * (ver `fromDomain`).
  */
 function tlsDestination(uri: string): string {
+  // A 5060 é a porta do SIP sem cifra: escrita numa linha TLS, é engano de cadastro, e o TLS
+  // nunca abriria nela. Vira a porta TLS padrão. Outra porta explícita é da operadora e fica.
+  const plain = uri.replace(/(\]|^[^:]+):5060$/, "$1");
   // Nome/IPv4 sem porta e IPv6 entre colchetes usam a porta TLS padrão.
-  return /\]:\d+$|^[^:]+:\d+$/.test(uri) ? uri : `${uri}:5061`;
+  return /\]:\d+$|^[^:]+:\d+$/.test(plain) ? plain : `${plain}:5061`;
+}
+
+/**
+ * O domínio do `From` e do P-Asserted-Identity. Na linha TLS com endereço por nome é o domínio
+ * da operadora (o PAI sai `sip:+E164@sip.operadora`, como pede a identidade de chamada); nos
+ * demais casos, o IP público, para o `From` não levar o IP privado do contêiner.
+ */
+function fromDomain(trunk: TrunkConfig, publicIp: string | null): string | null {
+  const host = parseTrunkHost(trunk.host);
+  if (trunk.sipTls !== false && host?.kind === "name") return host.uri.replace(/:\d+$/, "");
+  return publicIp;
 }
 
 function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): string {
   const name = trunkEndpointName(trunk.id);
   const withAuth = trunk.username !== null && trunk.password !== null;
   const publicIp = trunk.publicIp !== null && IPV4.test(trunk.publicIp) ? trunk.publicIp : null;
+  const domain = fromDomain(trunk, publicIp);
   const lines = [
     `[${name}]`,
     "type=endpoint",
@@ -121,7 +137,7 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
     "allow=alaw",
     `aors=${name}`,
     ...(withAuth ? [`outbound_auth=${name}-auth`, `from_user=${value(trunk.username ?? "")}`] : []),
-    ...(publicIp ? [`from_domain=${publicIp}`] : []),
+    ...(domain ? [`from_domain=${domain}`] : []),
     "send_pai=yes",
     "send_rpid=no",
     "trust_id_inbound=no",
