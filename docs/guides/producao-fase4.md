@@ -28,7 +28,11 @@ pedia autenticação. Ele serve para bancada, e o preparo só o liga com `localM
 sem `s3` nem `localMinio`, o preparo recusa. Nesse caso ele gera as credenciais do MinIO interno.
 Credenciais S3 externas devem permitir apenas o bucket do Ozavo. Não habilite versionamento ou
 retenção imutável sem um mecanismo que também apague versões antigas no prazo e a pedido do titular.
-O aplicativo não remove versões anteriores nem remove backups fora desse bucket.
+O aplicativo não remove versões anteriores nem remove backups fora desse bucket. Uma vez por semana
+por organização, a manutenção das gravações lista o bucket e apaga a cópia que o banco não sustenta:
+de chamada vencida ou apagada a pedido (o caso do banco restaurado de um backup mais antigo que o
+bucket) e a cópia sem chamada nenhuma, depois do prazo de guarda. A credencial precisa de
+`s3:ListBucket` no prefixo do bucket, além de ler, gravar e apagar objetos.
 
 O preparo recusa sobrescrever diretório existente, confere certificado/chave/hostname e gera
 `app.env`, `migrate.env`, `archive.env`, `minio.env`, `.env`, configurações do Asterisk e Compose.

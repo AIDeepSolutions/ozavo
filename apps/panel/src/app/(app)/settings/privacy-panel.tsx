@@ -89,6 +89,8 @@ function describe(entry: Entry, t: PrivacyDictionary, locale: Locale): string {
       return fill(t.history.recording_retention_changed, { who, from: span(p.from), to: span(p.to) });
     case "recordings_purged":
       return fill(t.history.recordings_purged, { days: numberOf(p.retentionDays), count: numberOf(p.recordings) });
+    case "remote_recordings_orphans_purged":
+      return fill(t.history.remote_recordings_orphans_purged, { days: numberOf(p.retentionDays), count: numberOf(p.copies) });
     case "transcript_retention_changed":
       return fill(t.history.transcript_retention_changed, { who, from: span(p.from), to: span(p.to) });
     case "transcripts_purged": {

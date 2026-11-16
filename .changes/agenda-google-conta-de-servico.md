@@ -1,5 +1,5 @@
 ---
-impact: nothing_changes
+impact: new_capability
 section: added
 title: Google Agenda também por conta de serviço, sem autorização OAuth
 ---

@@ -72,6 +72,7 @@ const privacy = {
   history: {
     recording_retention_changed: "{who} mudou o prazo do áudio de {from} para {to}.",
     recordings_purged: "Gravações com mais de {days} dias apagadas: {count}.",
+    remote_recordings_orphans_purged: "Cópias remotas de gravação sem ligação em vigor apagadas (vencidas, de ligação apagada a pedido ou sem registro com mais de {days} dias): {count}.",
     transcript_retention_changed: "{who} mudou o prazo de guarda de {from} para {to}.",
     transcripts_purged: "O texto das falas e o resumo das chamadas com mais de {days} dias foram apagados pelo prazo. Falas e resumos apagados: {count}.",
     caller_data_exported: "{who} exportou os dados de {phone}. Chamadas: {calls}. Eventos: {events}.",

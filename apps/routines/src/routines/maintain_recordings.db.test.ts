@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { recordingPath, readRecording, withOrg, withSystem } from "@ozavo/core";
 import { afterAll, expect, it } from "vitest";
 import { createCall, createOrganization, depsFor, openTestDbs, task, t0 } from "../../test/helpers";
-import maintenance from "./maintain_recordings";
+import maintenance, { isOrphanSweepDay } from "./maintain_recordings";
 const { app, owner } = openTestDbs();
 afterAll(async () => { await app.close(); await owner.close(); });
 
@@ -116,5 +116,55 @@ it.each(["remove", "put"] as const)("falha S3 em %s não bloqueia expurgo local 
     expect(events.map(event => event.payload.recordings)).toEqual([2]);
     const scheduled = await withOrg(app, org, q => q.many("select id from tasks where kind = 'maintain_recordings' and status = 'queued'"));
     expect(scheduled).toHaveLength(1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it("varredura semanal apaga do bucket a cópia vencida, a de chamada apagada e a sem chamada fora do prazo, e preserva o resto", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-orphans-"));
+  try {
+    const org = await createOrganization(app, "remote orphans");
+    const foreign = await createOrganization(app, "remote orphans foreign");
+    // O dia da varredura sai do id da organização: o teste anda até ele, sem depender de sorte.
+    const day = [0, 1, 2, 3, 4, 5, 6].map(offset => new Date(t0.getTime() + offset * 86400000)).find(at => isOrphanSweepDay(org, at));
+    if (!day) throw new Error("no sweep day in a week");
+    const old = new Date(day.getTime() - 120 * 86400000);
+    const live = await createCall(app, org, day);
+    const expired = await createCall(app, org, old);
+    const erased = await createCall(app, org, day);
+    const otherOrg = await createCall(app, foreign, old);
+    await withOrg(app, org, async q => {
+      await q.exec("update calls set ended_at = $2 where id = $1", [live, day]);
+      // A marca de cópia apagada se perdeu: o banco veio de um backup mais antigo que o bucket.
+      await q.exec("update calls set ended_at = $2, recording_remote_purged_at = $2 where id = $1", [expired, old]);
+      await q.exec("update calls set ended_at = $2, erased_at = $2, recording_remote_purged_at = $2 where id = $1", [erased, day]);
+    });
+    const noRowOld = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const noRowNew = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const bucket = new Map<string, Date>([[live, day], [expired, old], [erased, day], [noRowOld, old], [noRowNew, day], [otherOrg, old]]);
+    const removed: string[] = [];
+    const deps = depsFor(app, { recordingsDir: dir, clock: { now: () => day }, recordingArchive: {
+      async put() { throw new Error("nothing to copy in this test"); },
+      async remove(organizationId, callId) { expect(organizationId).toBe(org); removed.push(callId); bucket.delete(callId); },
+      async *list(organizationId) {
+        expect(organizationId).toBe(org);
+        // A cópia da outra organização mora em outro prefixo: a lista desta não a traz, e ela fica.
+        for (const [callId, modifiedAt] of bucket) if (callId !== otherOrg) yield { callId, modifiedAt };
+      },
+    } });
+    await maintenance.run(task(org, "maintain_recordings"), deps);
+    expect(removed.sort()).toEqual([erased, expired, noRowOld].sort());
+    expect([...bucket.keys()].sort()).toEqual([live, noRowNew, otherOrg].sort());
+    const events = await withOrg(app, org, q => q.many<{ payload: { copies: number } }>("select payload from organization_events where kind = 'remote_recordings_orphans_purged'"));
+    expect(events.map(event => event.payload.copies)).toEqual([3]);
+
+    // Fora do dia da varredura, o bucket não é listado.
+    let listed = 0;
+    const otherDay = new Date(day.getTime() + 86400000);
+    await maintenance.run(task(org, "maintain_recordings"), depsFor(app, { recordingsDir: dir, clock: { now: () => otherDay }, recordingArchive: {
+      async put() { throw new Error("nothing to copy in this test"); },
+      async remove() { throw new Error("nothing to remove"); },
+      async *list() { listed += 1; yield* []; },
+    } }));
+    expect(listed).toBe(0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

@@ -1,14 +1,21 @@
 import { createReadStream } from "node:fs";
 import { stat, open } from "node:fs/promises";
-import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { z } from "zod";
 
 export interface RecordingArchive {
   put(organizationId: string, callId: string, file: string): Promise<void>;
   remove(organizationId: string, callId: string): Promise<void>;
+  /**
+   * As cópias que existem no destino para a organização, com a data da última escrita. Serve à
+   * varredura de órfãos (cópia sem chamada, ou de chamada vencida que o banco já dá como apagada,
+   * o caso de uma restauração do banco mais antiga que o bucket). Chave fora do padrão é ignorada.
+   */
+  list?(organizationId: string): AsyncIterable<{ callId: string; modifiedAt: Date }>;
 }
 const uuid = z.uuid();
 const keyOf = (org: string, call: string): string => `${uuid.parse(org)}/${uuid.parse(call)}.wav.enc`;
+const ARCHIVED_KEY = /^([0-9a-f-]{36})\.wav\.enc$/i;
 
 /** Destino de infraestrutura gerado no preparo. Sem destino, a instalação usa só disco cifrado. */
 export function recordingArchiveFromEnv(env: NodeJS.ProcessEnv): RecordingArchive | undefined {
@@ -43,6 +50,18 @@ export function recordingArchiveFromEnv(env: NodeJS.ProcessEnv): RecordingArchiv
     },
     async remove(org, call) {
       await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: keyOf(org, call) }), { abortSignal: AbortSignal.timeout(10_000) });
+    },
+    async *list(org) {
+      const prefix = `${uuid.parse(org)}/`;
+      let token: string | undefined;
+      do {
+        const page = await client.send(new ListObjectsV2Command({ Bucket: config.bucket, Prefix: prefix, ContinuationToken: token }), { abortSignal: AbortSignal.timeout(30_000) });
+        for (const object of page.Contents ?? []) {
+          const callId = object.Key === undefined ? undefined : ARCHIVED_KEY.exec(object.Key.slice(prefix.length))?.[1];
+          if (callId && object.LastModified) yield { callId: callId.toLowerCase(), modifiedAt: object.LastModified };
+        }
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
     },
   };
 }
