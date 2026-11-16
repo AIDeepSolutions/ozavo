@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Baixa o Ozavo e abre o instalador. É o comando de uma linha do README:
+#
+#   curl -fsSL https://raw.githubusercontent.com/DeskLabs-OpenSource/Ozavo/main/install/get.sh | bash
+#
+# Prefere ler antes de rodar? Faça o que este arquivo faz, à mão:
+#   git clone https://github.com/DeskLabs-OpenSource/Ozavo.git && cd Ozavo && bash install/install.sh
+# (se já houver versão publicada, o instalador diz o `git checkout` a fazer antes)
+#
+# Variáveis opcionais:
+#   OZAVO_DIR   pasta de destino (padrão: ~/Ozavo)
+#   OZAVO_REPO  endereço do repositório (padrão: o oficial)
+#   OZAVO_REF   ramo ou versão a baixar (padrão: a última versão publicada; sem nenhuma, a main)
+set -euo pipefail
+
+repo="${OZAVO_REPO:-https://github.com/DeskLabs-OpenSource/Ozavo.git}"
+dir="${OZAVO_DIR:-$HOME/Ozavo}"
+ref="${OZAVO_REF:-main}"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'Não deu para continuar: %s\n  O que fazer: %s\n' "$1" "$2" >&2; exit 1; }
+
+if ! command -v git >/dev/null 2>&1; then
+  say "O git não está instalado. Vou instalar (é o único programa necessário antes do instalador)."
+  # apt-get no Ubuntu e no Debian; dnf no AlmaLinux e no Rocky Linux.
+  if command -v apt-get >/dev/null 2>&1; then manager=apt-get
+  elif command -v dnf >/dev/null 2>&1; then manager=dnf
+  else die "não sei instalar o git neste sistema." "Instale o git pelo gerenciador de pacotes do seu sistema e rode de novo."; fi
+  as_root=""
+  if [ "$(id -u)" != 0 ]; then
+    command -v sudo >/dev/null 2>&1 || die "preciso de permissão de administrador para instalar o git." "Entre como root ou instale o git e rode de novo."
+    as_root="sudo"
+  fi
+  if [ "$manager" = apt-get ]; then $as_root apt-get update -qq && $as_root apt-get install -y -qq git
+  else $as_root dnf install -y -q git; fi
+  command -v git >/dev/null 2>&1 || die "o git não ficou disponível depois da instalação." "Instale o git à mão e rode de novo."
+fi
+
+if [ -d "$dir/.git" ]; then
+  say "Já existe um Ozavo em $dir: vou aproveitar o que está lá (rodar de novo não quebra nada)."
+elif [ -e "$dir" ]; then
+  die "a pasta $dir já existe e não é um Ozavo." "Escolha outra pasta: OZAVO_DIR=/outro/caminho e rode de novo."
+else
+  say "Baixando o Ozavo em $dir..."
+  git clone --quiet --branch "$ref" "$repo" "$dir" || die "não consegui baixar o repositório." "Confira a conexão da VPS com a internet e rode de novo."
+  # Sem pedido explícito, o código fica na última versão publicada: é dela que o instalador baixa
+  # as imagens, e código da main com imagem de versão anterior é uma combinação que ninguém testou.
+  if [ -z "${OZAVO_REF:-}" ]; then
+    latest="$(git -C "$dir" tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+    if [ -n "$latest" ]; then
+      git -C "$dir" checkout --quiet "$latest" || die "não consegui ir para a versão $latest." "Apague a pasta $dir e rode de novo."
+      say "Versão baixada: ${latest#v}"
+    fi
+  fi
+fi
+
+[ -f "$dir/install/install.sh" ] || die "o instalador não está em $dir/install/install.sh." "Apague a pasta $dir e rode de novo."
+cd "$dir"
+
+# Este script chega por `curl | bash`: a entrada padrão é o próprio download, não o teclado.
+# O instalador faz perguntas, então ele precisa ler do terminal de verdade.
+unattended=0
+for arg in "$@"; do [ "$arg" = "--yes" ] && unattended=1; done
+
+if [ -t 0 ]; then
+  exec bash install/install.sh "$@"
+elif [ "$unattended" = 1 ]; then
+  # Sem perguntas não há o que ler do teclado; a entrada do download não pode vazar para o instalador.
+  exec bash install/install.sh "$@" </dev/null
+elif [ -r /dev/tty ] && : </dev/tty 2>/dev/null; then
+  exec bash install/install.sh "$@" </dev/tty
+else
+  say "Não há terminal para as perguntas do instalador."
+  say "Rode num terminal interativo, ou sem perguntas:  cd $dir && bash install/install.sh --yes"
+  say "(as respostas vão por variáveis OZAVO_*; a lista está no começo de install/install.sh)"
+  exit 1
+fi

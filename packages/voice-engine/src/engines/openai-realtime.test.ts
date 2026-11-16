@@ -1,0 +1,391 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { pcm16ToUlaw } from "../resample";
+import { nextEvent, startFakeProvider } from "../testing/fake-provider";
+import { expireAtOnce, startFakeHttp } from "../testing/fake-http";
+import type { ClassifyOptions, KeyCheckOptions, VoiceSessionConfig } from "../types";
+import { estimateCostCents } from "../pricing";
+import engine, { usageOf } from "./openai-realtime";
+
+const config: VoiceSessionConfig = {
+  instructions: "Você atende a clínica.",
+  greeting: "Clínica Bela, bom dia!",
+  language: "pt-BR",
+  tools: [{ name: "end_call", description: "Encerra a ligação", parameters: { type: "object", properties: {} } }],
+};
+const ofType = (type: string) => (message: Record<string, unknown>) => message.type === type;
+
+let fake: Awaited<ReturnType<typeof startFakeProvider>>;
+beforeEach(async () => {
+  fake = await startFakeProvider();
+});
+afterEach(() => fake.stop());
+
+async function openSession(overrides: Partial<VoiceSessionConfig> = {}) {
+  const connecting = engine.connect({ ...config, ...overrides }, "sk-teste", { baseUrl: fake.url, model: "modelo-x" });
+  const update = await fake.waitFor(ofType("session.update"));
+  fake.send({ type: "session.updated", session: {} });
+  return { session: await connecting, update };
+}
+
+describe("openai-realtime (contrato com servidor falso)", () => {
+  it("abre e configura a sessão: chave, modelo, μ-law, voz, idioma, instruções e ferramentas", async () => {
+    const { update } = await openSession({ voiceId: "cedar" });
+    expect(fake.request.url).toBe("/?model=modelo-x");
+    expect(fake.request.authorization).toBe("Bearer sk-teste");
+    expect(update).toMatchObject({
+      session: {
+        type: "realtime",
+        instructions: expect.stringMatching(/^Você atende a clínica\.[\s\S]*pt-BR/),
+        output_modalities: ["audio"],
+        audio: {
+          input: { format: { type: "audio/pcmu" }, transcription: { language: "pt" }, turn_detection: { interrupt_response: true } },
+          output: { format: { type: "audio/pcmu" }, voice: "cedar" },
+        },
+        tools: [{ type: "function", name: "end_call", description: "Encerra a ligação", parameters: { type: "object" } }],
+      },
+    });
+  });
+
+  // A abertura de hoje, gravada como texto: agente sem termos não pode mandar ao provedor nada além disto.
+  const SESSAO_SEM_VOCABULARIO =
+    '{"type":"session.update","session":{"type":"realtime","instructions":"Você atende a clínica.\\n\\nSpeak only in pt-BR.","output_modalities":["audio"],' +
+    '"audio":{"input":{"format":{"type":"audio/pcmu"},"transcription":{"model":"gpt-4o-mini-transcribe","language":"pt"},' +
+    '"turn_detection":{"type":"server_vad","create_response":true,"interrupt_response":true}},"output":{"format":{"type":"audio/pcmu"},"voice":"marin"}},' +
+    '"tools":[{"type":"function","name":"end_call","description":"Encerra a ligação","parameters":{"type":"object","properties":{}}}]}}';
+
+  it.each([["ausente", undefined], ["vazio", []]])("vocabulário %s: a abertura é byte a byte a de antes", async (_, vocabulary) => {
+    const { update } = await openSession({ vocabulary });
+    expect(JSON.stringify(update)).toBe(SESSAO_SEM_VOCABULARIO);
+  });
+
+  it("vocabulário: os termos vão ao prompt da transcrição e às instruções, antes do idioma", async () => {
+    const { update } = await openSession({ vocabulary: ["Melgaço", "Ozavo"] });
+    expect(update).toMatchObject({
+      session: {
+        instructions: "Você atende a clínica.\n\nNames and terms that may come up in this call, spelled as written: Melgaço; Ozavo.\n\nSpeak only in pt-BR.",
+      },
+    });
+    const session = update.session as { audio: { input: { transcription: unknown } } };
+    expect(session.audio.input.transcription).toEqual({
+      model: "gpt-4o-mini-transcribe",
+      language: "pt",
+      prompt: "Names and terms that may appear: Melgaço, Ozavo.",
+    });
+  });
+
+  it.each([["ausente", undefined], ["normal", "normal" as const]])("ambiente %s: a abertura é byte a byte a de antes", async (_, listeningEnvironment) => {
+    const { update } = await openSession({ listeningEnvironment });
+    expect(JSON.stringify(update)).toBe(SESSAO_SEM_VOCABULARIO);
+  });
+
+  it("ambiente barulhento: redução de ruído near_field e fim de turno pelo sentido, com a interrupção do provedor", async () => {
+    const { update } = await openSession({ listeningEnvironment: "noisy" });
+    const session = update.session as { audio: { input: Record<string, unknown> } };
+    expect(session.audio.input).toEqual({
+      format: { type: "audio/pcmu" },
+      transcription: { model: "gpt-4o-mini-transcribe", language: "pt" },
+      noise_reduction: { type: "near_field" },
+      turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: true, interrupt_response: true },
+    });
+    // Só a entrada de áudio muda: o resto da abertura é o de sempre.
+    const { audio: _audio, ...rest } = update.session as Record<string, unknown>;
+    const { audio: _today, ...todayRest } = (JSON.parse(SESSAO_SEM_VOCABULARIO) as { session: Record<string, unknown> }).session;
+    expect(rest).toEqual(todayRest);
+  });
+
+  it("custo separa áudio, texto e cache, como a OpenAI cobra", () => {
+    // Uma resposta no meio da conversa: o prompt e a conversa anterior voltam como entrada, quase tudo em cache.
+    const usage = usageOf({
+      input_tokens: 9000,
+      output_tokens: 300,
+      input_token_details: { text_tokens: 3000, audio_tokens: 6000, cached_tokens: 8000, cached_tokens_details: { text_tokens: 2800, audio_tokens: 5200 } },
+      output_token_details: { text_tokens: 60, audio_tokens: 240 },
+    });
+    expect(usage).toEqual({ inputTokens: 800, textInputTokens: 200, cachedInputTokens: 8000, outputTokens: 240, textOutputTokens: 60 });
+    // 800×32 + 200×4 + 8000×0,40 + 240×64 + 60×24 por milhão = US$ 0,0472: 5 centavos, e não os 31
+    // de cobrar toda a entrada como áudio novo.
+    expect(estimateCostCents(engine.pricing, usage)).toBe(5);
+    expect(estimateCostCents(engine.pricing, { inputTokens: 9000, outputTokens: 300 })).toBe(31);
+    // Sem o detalhe, tudo vai no preço cheio de áudio.
+    expect(usageOf({ input_tokens: 9000, output_tokens: 300 })).toEqual({ inputTokens: 9000, outputTokens: 300 });
+  });
+
+  it("usa o modelo padrão e faz o agente falar primeiro", async () => {
+    const connecting = engine.connect(config, "sk", { baseUrl: fake.url });
+    await fake.waitFor(ofType("session.update"));
+    expect(fake.request.url).toBe("/?model=gpt-realtime-2.1");
+    fake.send({ type: "session.updated", session: {} });
+    await connecting;
+    const greeting = await fake.waitFor(ofType("response.create"));
+    expect(greeting).toMatchObject({ response: { instructions: expect.stringContaining("Clínica Bela, bom dia!") } });
+  });
+
+  it("envia o áudio de quem ligou em μ-law 8 kHz, sem reamostrar", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    const pcm = Buffer.from(new Int16Array([0, 1000, -1000, 20000]).buffer);
+    session.sendAudio(pcm);
+    const append = await fake.waitFor(ofType("input_audio_buffer.append"));
+    expect(Buffer.from(append.audio as string, "base64").equals(pcm16ToUlaw(pcm))).toBe(true);
+  });
+
+  it("fala recebida em μ-law vira audio PCM16 8 kHz; transcrições e uso são repassados", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    const transcripts: string[] = [];
+    session.on("transcript", (turn) => transcripts.push(`${turn.speaker}: ${turn.text}`));
+    const audio = nextEvent(session, "audio");
+    const usage = nextEvent(session, "usage");
+    fake.send({ type: "conversation.item.input_audio_transcription.completed", transcript: "quero remarcar\n" });
+    fake.send({ type: "response.output_audio.delta", delta: Buffer.alloc(160, 0xff).toString("base64") });
+    fake.send({ type: "response.output_audio_transcript.done", transcript: "Claro, para quando?" });
+    fake.send({ type: "response.done", response: { usage: { input_tokens: 300, output_tokens: 80 } } });
+    expect((await audio)[0].equals(Buffer.alloc(320))).toBe(true);
+    expect((await usage)[0]).toEqual({ inputTokens: 300, outputTokens: 80 });
+    expect(transcripts).toEqual(["user: quero remarcar", "agent: Claro, para quando?"]);
+  });
+
+  it("chamada de ferramenta vira toolCall; o resultado é devolvido e a continuação é pedida", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    const call = nextEvent(session, "toolCall");
+    fake.send({ type: "response.function_call_arguments.done", call_id: "call_1", name: "end_call", arguments: '{"reason":"fim"}' });
+    expect((await call)[0]).toEqual({ id: "call_1", name: "end_call", args: { reason: "fim" } });
+    session.sendToolResult("call_1", { ok: true });
+    expect(await fake.waitFor(ofType("conversation.item.create"))).toEqual({
+      type: "conversation.item.create",
+      item: { type: "function_call_output", call_id: "call_1", output: '{"ok":true}' },
+    });
+    expect(await fake.waitFor(ofType("response.create"))).toEqual({ type: "response.create", response: {} });
+  });
+
+  it("say() durante uma resposta em curso espera o response.done", async () => {
+    const { session } = await openSession();
+    await fake.waitFor(ofType("response.create")); // saudação
+    session.say("Esta ligação é gravada");
+    const interrupted = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started" });
+    await interrupted; // tudo o que o motor enviaria antes disto já chegou ao servidor falso
+    fake.send({ type: "response.done", response: {} });
+    const queued = await fake.waitFor(ofType("response.create"));
+    expect(queued).toMatchObject({ response: { instructions: expect.stringContaining("Esta ligação é gravada") } });
+  });
+
+  it("interrupção do usuário vira interrupted", async () => {
+    const { session } = await openSession();
+    const interrupted = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started", audio_start_ms: 10, item_id: "item_1" });
+    await expect(interrupted).resolves.toEqual([]);
+  });
+
+  it("sinal de fala de quem ligou: início de fala vira { words: false } e transcrição parcial com texto vira { words: true }", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    const signals: Array<{ words: boolean }> = [];
+    session.on("callerActivity", (signal) => signals.push(signal));
+    const interrupted = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started", audio_start_ms: 100, item_id: "i1" });
+    await interrupted;
+    fake.send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", content_index: 0, delta: "   " });
+    const words = nextEvent(session, "callerActivity");
+    fake.send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", content_index: 0, delta: "quero marcar" });
+    await words;
+    // O pedaço só de espaço não conta como palavra.
+    expect(signals).toEqual([{ words: false }, { words: true }]);
+  });
+
+  it("transcrição atrasada de uma fala que já teve resposta não vira callerActivity; a de um item novo vira", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    const signals: Array<{ words: boolean }> = [];
+    session.on("callerActivity", (signal) => signals.push(signal));
+    fake.send({ type: "input_audio_buffer.committed", previous_item_id: null, item_id: "i1" });
+    fake.send({ type: "response.created", response: {} });
+    // A referência: a transcrição corre em paralelo à resposta e pode chegar depois dela.
+    fake.send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", content_index: 0, delta: "quero marcar" });
+    const fresh = nextEvent(session, "callerActivity");
+    fake.send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i2", content_index: 0, delta: "e mais uma coisa" });
+    await fresh;
+    expect(signals).toEqual([{ words: true }]);
+  });
+
+  it("closeCallerTurn fecha o áudio de quem ligou num item e pede a resposta", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    session.closeCallerTurn();
+    const commit = await fake.waitFor((message) => message.type === "input_audio_buffer.commit" || message.type === "response.create");
+    expect(commit).toEqual({ type: "input_audio_buffer.commit" });
+    expect(await fake.waitFor(ofType("response.create"))).toEqual({ type: "response.create", response: {} });
+  });
+
+  it("closeCallerTurn com uma resposta em curso não manda commit nem pede outra resposta", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    fake.send({ type: "input_audio_buffer.committed", previous_item_id: null, item_id: "i1" });
+    fake.send({ type: "response.created", response: {} });
+    const interrupted = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started" });
+    await interrupted; // o motor já processou o response.created
+    session.closeCallerTurn();
+    fake.send({ type: "response.done", response: {} });
+    const done = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started" });
+    await done; // o motor já processou o response.done (e soltaria a fila aqui)
+    session.say("marcador");
+    // A primeira mensagem de commit ou de resposta é a do say: closeCallerTurn não deixou nada.
+    const first = await fake.waitFor((m) => m.type === "input_audio_buffer.commit" || m.type === "response.create");
+    expect(first).toMatchObject({ type: "response.create", response: { instructions: expect.stringContaining("marcador") } });
+  });
+
+  it("closeCallerTurn com o item já fechado pelo servidor, antes do response.created, não faz nada", async () => {
+    const { session } = await openSession({ greeting: undefined });
+    fake.send({ type: "input_audio_buffer.committed", previous_item_id: null, item_id: "i1" });
+    const interrupted = nextEvent(session, "interrupted");
+    fake.send({ type: "input_audio_buffer.speech_started" });
+    await interrupted;
+    session.closeCallerTurn();
+    session.say("marcador");
+    const first = await fake.waitFor((m) => m.type === "input_audio_buffer.commit" || m.type === "response.create");
+    expect(first).toMatchObject({ type: "response.create", response: { instructions: expect.stringContaining("marcador") } });
+  });
+
+  it("evento error do provedor vira error sem fechar; mensagem fora do formato é ignorada", async () => {
+    const { session } = await openSession();
+    const error = nextEvent(session, "error");
+    let closed = false;
+    session.on("closed", () => (closed = true));
+    fake.send("isto não é JSON");
+    fake.send({ type: "response.output_audio.delta", delta: 42 });
+    fake.send({ type: "evento.desconhecido" });
+    fake.send({ type: "error", error: { type: "invalid_request_error", message: "algo deu errado" } });
+    expect((await error)[0].message).toBe("OpenAI Realtime: algo deu errado");
+    expect(closed).toBe(false);
+  });
+
+  it("erro antes da sessão confirmada rejeita o connect", async () => {
+    const connecting = engine.connect(config, "sk", { baseUrl: fake.url });
+    await fake.waitFor(ofType("session.update"));
+    fake.send({ type: "error", error: { message: "modelo inexistente" } });
+    await expect(connecting).rejects.toThrow("OpenAI Realtime: modelo inexistente");
+  });
+
+  it("queda do socket vira error seguido de closed", async () => {
+    const { session } = await openSession();
+    const order: string[] = [];
+    session.on("error", (error) => order.push(`error ${error.message}`));
+    const closed = nextEvent(session, "closed");
+    session.on("closed", (reason) => order.push(`closed ${reason}`));
+    fake.drop();
+    await closed;
+    expect(order).toHaveLength(2);
+    expect(order[0]).toMatch(/^error OpenAI Realtime: a conexão caiu/);
+    expect(order[1]).toBe("closed socket_closed");
+  });
+
+  it("close() é idempotente e não gera erro", async () => {
+    const { session } = await openSession();
+    const order: string[] = [];
+    session.on("error", () => order.push("error"));
+    session.on("closed", (reason) => order.push(`closed ${reason}`));
+    await Promise.all([session.close(), session.close()]);
+    await session.close();
+    expect(order).toEqual(["closed client"]);
+  });
+});
+
+describe("openai-realtime: teste da chave (contrato com servidor HTTP falso)", () => {
+  let http: Awaited<ReturnType<typeof startFakeHttp>>;
+  beforeEach(async () => {
+    http = await startFakeHttp();
+  });
+  afterEach(() => http.stop());
+  const check = (options: KeyCheckOptions = {}) => engine.checkKey("sk-de-teste", { baseUrl: http.url, ...options });
+
+  it("lê o modelo da sessão de voz com a chave no cabeçalho Authorization", async () => {
+    http.respond({ status: 200, body: { id: "gpt-realtime-2.1", object: "model", created: 1, owned_by: "system" } });
+    expect(await check()).toEqual({ result: "accepted", model: "gpt-realtime-2.1" });
+    expect(http.requests).toHaveLength(1);
+    expect(http.requests[0]).toMatchObject({ method: "GET", url: "/models/gpt-realtime-2.1", headers: { authorization: "Bearer sk-de-teste" } });
+  });
+
+  it.each([
+    ["401", "rejected", { status: 401, body: { error: { code: "invalid_api_key", type: "invalid_request_error" } } }],
+    ["403 de região não atendida", "region_unavailable", { status: 403, body: { error: { code: "unsupported_country_region_territory", type: "request_forbidden" } } }],
+    ["403 sem código de região", "rejected", { status: 403, body: { error: { code: "invalid_api_key" } } }],
+    ["404", "model_unavailable", { status: 404, body: { error: { code: "model_not_found" } } }],
+    ["429 por limite de pedidos", "rate_limited", { status: 429, body: { error: { code: "rate_limit_exceeded", type: "requests" } } }],
+    ["429 sem crédito", "no_credit", { status: 429, body: { error: { code: "credit_balance_exhausted", type: "insufficient_quota" } } }],
+    ["429 com teto de gasto", "no_credit", { status: 429, body: { error: { code: "project_spend_limit_exceeded" } } }],
+    ["429 de cota (só o tipo)", "no_credit", { status: 429, body: { error: { code: null, type: "insufficient_quota" } } }],
+    ["500", "unreachable", { status: 500, body: { error: { code: "server_error" } } }],
+    ["400", "unexpected_response", { status: 400, body: { error: { code: "invalid_value" } } }],
+    ["200 fora do formato", "unexpected_response", { status: 200, body: { id: "x", object: "list" } }],
+  ] as const)("%s vira %s", async (_, result, reply) => {
+    http.respond(reply);
+    expect(await check({ model: "modelo-x" })).toEqual({ result, model: "modelo-x" });
+  });
+
+  it("sem resposta no prazo, ou sem servidor, é provedor fora do ar", async () => {
+    http.respond({ status: 200, hang: true });
+    expect((await check({ schedule: expireAtOnce })).result).toBe("unreachable");
+    await http.stop();
+    expect((await check()).result).toBe("unreachable");
+  });
+});
+
+
+/**
+ * O destino da classificação: com `baseUrl` e `model` no pedido, o motor vai ao provedor compatível;
+ * sem eles, vai à OpenAI com o modelo de sempre. O corpo é lido do próprio pedido, não do servidor.
+ */
+describe("openai-realtime: desfecho da ligação (o destino vem de quem chama)", () => {
+  const palpite = { outcome: "booked", confidence: 0.9, evidence: "Pode marcar quinta." };
+  const usar = (uso: object = { prompt_tokens: 1_000_000, completion_tokens: 0 }) => {
+    const pedidos: Array<{ url: string; model: string }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { model: string };
+      pedidos.push({ url, model: body.model });
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(palpite) } }], usage: uso }), { status: 200 });
+    }) as unknown as typeof fetch;
+    return { pedidos, fetch: fetchFalso };
+  };
+  const classify = (options: ClassifyOptions = {}) => {
+    const run = engine.classifyOutcome;
+    if (!run) throw new Error("openai-realtime classifies the outcome");
+    return run("chave-de-teste", { transcript: "Cliente: Pode marcar quinta.", tools: [] }, options);
+  };
+
+  it("provedor compatível: o endpoint e o modelo configurados são os do pedido, e o preço não é inventado", async () => {
+    const { pedidos, fetch } = usar();
+    const result = await classify({ fetch, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" });
+
+    expect(pedidos).toEqual([{ url: "https://api.deepseek.com/v1/chat/completions", model: "deepseek-chat" }]);
+    // O preço do modelo configurado não é conhecido: o consumo entra, o custo fica zero.
+    expect(result).toEqual({ ok: true, guess: palpite, model: "deepseek-chat", usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 }, costCents: 0, costMicrocents: 0 });
+  });
+
+  it("sem configuração: o pedido é o de hoje, na OpenAI e no modelo de sempre", async () => {
+    const { pedidos, fetch } = usar();
+    const result = await classify({ fetch });
+
+    expect(pedidos).toEqual([{ url: "https://api.openai.com/v1/chat/completions", model: "gpt-5-nano" }]);
+    // 1 milhão de entrada a US$ 0,05 por milhão: 5 centavos, como antes de o modelo ser configurável.
+    expect(result).toEqual({ ok: true, guess: palpite, model: "gpt-5-nano", usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 }, costCents: 5, costMicrocents: 5_000_000 });
+  });
+
+  it("sem endpoint, o modelo de tabela é o do pedido, e o preço é o dele", async () => {
+    const { pedidos, fetch } = usar();
+    const result = await classify({ fetch, model: "gpt-5-nano" });
+
+    expect(pedidos).toEqual([{ url: "https://api.openai.com/v1/chat/completions", model: "gpt-5-nano" }]);
+    expect(result).toEqual({ ok: true, guess: palpite, model: "gpt-5-nano", usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 }, costCents: 5, costMicrocents: 5_000_000 });
+  });
+
+  it("sem endpoint, modelo fora da tabela de preço cai no modelo medido: o provedor não cobra sem medida", async () => {
+    const { pedidos, fetch } = usar();
+    // Configuração que já estava gravada antes da recusa no painel: `gpt-5-mini` não está na tabela.
+    const result = await classify({ fetch, model: "gpt-5-mini" });
+
+    expect(pedidos).toEqual([{ url: "https://api.openai.com/v1/chat/completions", model: "gpt-5-nano" }]);
+    expect(result).toMatchObject({ model: "gpt-5-nano", costCents: 5, costMicrocents: 5_000_000 });
+  });
+
+  it("a tabela de preço do motor só tem o modelo conferido: é o que o painel consulta ao salvar", () => {
+    expect(engine.classifyPricing?.("gpt-5-nano")).toMatchObject({ centsPerMillionInputTokens: 5 });
+    expect(engine.classifyPricing?.("gpt-5-mini")).toBeUndefined();
+    expect(engine.classifyPricing?.("deepseek-chat")).toBeUndefined();
+  });
+});

@@ -1,0 +1,9 @@
+name: publish-image
+on: { workflow_dispatch: {} }
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: docker push "registro.example/projeto/ozavo-panel:v1.0.0"

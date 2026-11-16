@@ -1,0 +1,46 @@
+# Texto do bloco "Saída do atualizador" (Configurações → Versão e atualização), copiado da tela às 13:06 de
+# 12/11/2026 (-03), depois da atualização 0.4.0 → 0.5.0 pelo botão. A tela mostra o fim da saída.
+A atualização terminou em 12 de nov., 13:05: o servidor está na versão 0.5.0.
+
+✓ Banco atualizado
+▶ Subindo e conferindo
+Container ozavo-postgres-1 Running
+Container ozavo-asterisk-1 Running
+Container ozavo-caddy-1 Running
+Container ozavo-migrate-1 Recreate
+Container ozavo-migrate-1 Recreated
+Container ozavo-panel-1 Recreate
+Container ozavo-voice-1 Recreate
+Container ozavo-routines-1 Recreate
+Container ozavo-panel-1 Recreated
+Container ozavo-routines-1 Recreated
+Container ozavo-voice-1 Recreated
+Container ozavo-asterisk-1 Waiting
+Container ozavo-postgres-1 Waiting
+Container ozavo-postgres-1 Healthy
+Container ozavo-migrate-1 Starting
+Container ozavo-asterisk-1 Healthy
+Container ozavo-migrate-1 Started
+Container ozavo-migrate-1 Waiting
+Container ozavo-migrate-1 Exited
+Container ozavo-panel-1 Starting
+Container ozavo-voice-1 Starting
+Container ozavo-routines-1 Starting
+Container ozavo-panel-1 Started
+Container ozavo-panel-1 Waiting
+Container ozavo-routines-1 Started
+Container ozavo-voice-1 Started
+Container ozavo-panel-1 Healthy
+✓ Agente de atualização agendado (systemd: ozavo-agent.timer, a cada minuto, como root)
+✓ Atualizado para 0.5.0, com todas as peças essenciais respondendo.
+✓ O painel responde pela porta publicada (http://127.0.0.1:3080)
+✓ Imagens de versões antigas do Ozavo removidas, para liberar disco:
+ghcr.io/desklabs-opensource/ozavo-panel:0.3.0
+ghcr.io/desklabs-opensource/ozavo-voice:0.3.0
+ghcr.io/desklabs-opensource/ozavo-routines:0.3.0
+A imagem da versão 0.4.0 fica, para voltar a ela sem internet.
+O atualizador da versão 0.5.0 assumiu a atualização a partir da 0.4.0.
+Backup de antes da atualização: /root/Ozavo/backups/20261112-130407
+Relatório completo: bash install/healthcheck.sh
+
+Este servidor está na versão publicada mais recente.

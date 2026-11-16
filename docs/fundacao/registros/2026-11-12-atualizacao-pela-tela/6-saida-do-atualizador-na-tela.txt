@@ -1,0 +1,46 @@
+# Texto do bloco "Saída do atualizador", em Configurações → Versão e atualização, copiado da tela
+# (get_page_text) às 11:59 de 12/11/2026 (-03). A tela mostra o fim da saída do update.sh, não ela inteira.
+A atualização terminou em 12 de nov., 11:50: o servidor está na versão 0.4.0.
+
+Container ozavo-migrate-run-9a7ac7807d06 Created
+> @ozavo/***@0.0.0 migrate /app/apps/routines
+> tsx src/cli/migrate.ts
+Nenhuma migration nova: o banco já estava em dia.
+Senha do papel ozavo_app definida.
+Senha do papel ozavo_system definida.
+✓ Banco atualizado
+▶ Subindo e conferindo
+Container ozavo-postgres-1 Running
+Container ozavo-asterisk-1 Running
+Container ozavo-caddy-1 Running
+Container ozavo-migrate-1 Recreate
+Container ozavo-migrate-1 Recreated
+Container ozavo-panel-1 Recreate
+Container ozavo-voice-1 Recreate
+Container ozavo-routines-1 Recreate
+Container ozavo-panel-1 Recreated
+Container ozavo-routines-1 Recreated
+Container ozavo-voice-1 Recreated
+Container ozavo-postgres-1 Waiting
+Container ozavo-asterisk-1 Waiting
+Container ozavo-postgres-1 Healthy
+Container ozavo-migrate-1 Starting
+Container ozavo-asterisk-1 Healthy
+Container ozavo-migrate-1 Started
+Container ozavo-migrate-1 Waiting
+Container ozavo-migrate-1 Exited
+Container ozavo-panel-1 Starting
+Container ozavo-voice-1 Starting
+Container ozavo-routines-1 Starting
+Container ozavo-panel-1 Started
+Container ozavo-panel-1 Waiting
+Container ozavo-voice-1 Started
+Container ozavo-routines-1 Started
+Container ozavo-panel-1 Healthy
+✓ Agente de atualização agendado (systemd: ozavo-agent.timer, a cada minuto, como root)
+✓ Atualizado para 0.4.0, com todas as peças essenciais respondendo.
+✓ O painel responde pela porta publicada (http://127.0.0.1:3080)
+Backup de antes da atualização: /root/Ozavo/backups/20261112-114915
+Relatório completo: bash install/healthcheck.sh
+
+Este servidor não encontrou versão publicada mais nova que a instalada.

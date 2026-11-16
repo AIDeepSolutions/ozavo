@@ -1,0 +1,286 @@
+# Ozavo: uma VPS, um comando.
+#
+# Quem publica porta no host: só o Caddy (a entrada única do painel e da voz do navegador) e o
+# Asterisk (SIP e RTP, UDP). Postgres, painel, voz, rotinas, o WAHA (WhatsApp), o WaCalls (ligação
+# pelo WhatsApp) e a ARI do Asterisk ficam na rede interna, e painel e voz NUNCA publicam porta:
+# tudo o que é web entra pelo Caddy.
+#
+# As portas do Caddy não estão neste arquivo. O instalador as grava em
+# `docker-compose.override.yml`, porque dependem da máquina: 80/443 quando estão livres, ou
+# uma porta local única quando já são de outro proxy. Sem esse arquivo o Caddy sobe sem porta
+# publicada: nada fica exposto por engano.
+#
+# Os valores vêm de três arquivos gerados por `install/install.sh`, separados por menor
+# privilégio. Não há variável para preencher à mão: o que é escolha de quem opera fica no painel.
+#   .env         só o que o próprio Compose interpola (senha do Postgres, portas, versão, o
+#                segredo do agente de atualização, entregue só ao painel, a chave do WAHA,
+#                entregue a painel, voz e rotinas, as chaves do WaCalls, entregues só a ele e à
+#                voz, e as marcas de que cada serviço de WhatsApp foi instalado pela tela)
+#   app.env      o que painel, voz e rotinas recebem; não contém a senha do dono do banco
+#   migrate.env  credenciais do dono do schema; só o serviço `migrate` recebe
+#
+# O endereço das imagens do Ozavo vem de `images.env`, a fonte única, que o kit passa ao
+# Compose junto com o `.env`. A versão é sempre um número (X.Y.Z), gravado pelo instalador, ou
+# `local` quando as imagens foram construídas na própria máquina. Sem o kit (`docker compose`
+# direto, para desenvolver), o nome cai em `localhost/...:dev`: não existe em registro nenhum,
+# então só se constrói.
+
+name: ozavo
+
+x-app: &app
+  restart: unless-stopped
+  env_file: app.env
+  networks: [internal]
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  # Peça de terceiros, com versão exata e resumo: a instalação de amanhã baixa a mesma imagem de
+  # hoje. Trocar a versão de correção do Postgres 17 não pede migração de dados; a versão maior
+  # não se troca sem plano.
+  postgres:
+    image: postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ozavo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ozavo
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ozavo -d ozavo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+    logging: *logging
+
+  # Aplica as migrations e sai. Os processos só sobem depois que ele termina bem:
+  # instalar e atualizar passam pelo mesmo caminho de schema.
+  migrate:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-routines:${OZAVO_VERSION:-dev}
+    build: { context: .., target: routines, args: { APP_VERSION: "${OZAVO_VERSION:-dev}" } }
+    restart: "no"
+    # Único serviço com as credenciais do dono do schema.
+    env_file: [app.env, migrate.env]
+    command: ["pnpm", "--filter", "@ozavo/routines", "run", "migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  panel:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-panel:${OZAVO_VERSION:-dev}
+    build: { context: .., target: panel, args: { APP_VERSION: "${OZAVO_VERSION:-dev}" } }
+    # O segredo do agente de atualização chega só a este serviço: vem do `.env`, que o Compose
+    # interpola, e não do `app.env`, que voz e rotinas também recebem. Vazio (instalação que ainda
+    # não tem o agente), a rota do agente não aceita ninguém.
+    # A chave do WAHA também vem do `.env`: chega a painel, voz e rotinas, que são os três que
+    # falam com ele, e não ao `migrate`, que só usa o `app.env`.
+    environment:
+      UPDATE_AGENT_TOKEN: "${UPDATE_AGENT_TOKEN:-}"
+      WAHA_API_KEY: "${WAHA_API_KEY:-}"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    volumes:
+      # Gravações das chamadas: a voz grava, o painel toca na tela da chamada.
+      - recordings:/recordings:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  voice:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-voice:${OZAVO_VERSION:-dev}
+    build: { context: .., target: voice, args: { APP_VERSION: "${OZAVO_VERSION:-dev}" } }
+    # A ferramenta `send_whatsapp` roda neste processo, durante a ligação. E só este processo fala
+    # com o WaCalls (ligação pelo WhatsApp): o token dele não chega ao painel nem às rotinas.
+    environment:
+      WAHA_API_KEY: "${WAHA_API_KEY:-}"
+      WACALLS_API_TOKEN: "${WACALLS_API_TOKEN:-}"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      asterisk: { condition: service_healthy }
+    volumes:
+      # O worker escreve aqui os troncos cadastrados no painel; o Asterisk lê.
+      - asterisk-generated:/asterisk-generated
+      - recordings:/recordings
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  routines:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-routines:${OZAVO_VERSION:-dev}
+    build: { context: .., target: routines, args: { APP_VERSION: "${OZAVO_VERSION:-dev}" } }
+    # A entrega dos avisos por WhatsApp (`deliver_notification`) roda neste processo.
+    environment:
+      WAHA_API_KEY: "${WAHA_API_KEY:-}"
+    volumes:
+      # O prazo de guarda (`purge_transcripts`) apaga também as gravações antigas.
+      - recordings:/recordings
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  # WhatsApp por QR Code: o WAHA (github.com/devlikeapro/waha, Apache-2.0) mantém a sessão do
+  # número conectado em Configurações. Peça de terceiros: referenciada, nunca republicada, com
+  # versão exata e resumo. A etiqueta `noweb-*` é a imagem sem navegador, e só existe para amd64;
+  # em ARM o instalador grava WAHA_IMAGE com a etiqueta `noweb-arm-*` da mesma versão.
+  #
+  # Só na rede interna, sem porta publicada: quem fala com ele são painel, voz e rotinas. O painel
+  # consulta o estado; nesta versão o WAHA não chama ninguém (nenhum webhook configurado).
+  #
+  # Fica num perfil: NÃO sobe nem é baixado por padrão. Medido em 11/11/2026 numa VPS de 8 GB, com
+  # esta imagem e sem sessão nenhuma: 3,19 GB em disco e 363 MiB de memória parado (431 MiB logo
+  # ao subir), contra cerca de 320 MiB do Ozavo inteiro. Subir sempre dobraria a memória de
+  # quem nunca vai usar WhatsApp. Quem liga o perfil é o agente do kit (install/agent.sh), quando
+  # um dono ou administrador pede pela tela; a marca fica em deploy/.env (OZAVO_WHATSAPP=on).
+  waha:
+    profiles: ["whatsapp"]
+    image: ${WAHA_IMAGE:-devlikeapro/waha:noweb-2026.10.1@sha256:0d64cce14a922f61bb9a620474086d1f5695f2522e7e1088704e6eca3a085d0c}
+    restart: unless-stopped
+    # Teto, e não reserva: 1280m é o que o DeskcommCRM usa, onde o pico medido foi de 893 MiB com
+    # uma sessão em uso. Aqui, parado, usa 363 MiB (medido); com um número conectado ainda NÃO foi
+    # medido. Sem teto, um serviço que cresce leva a máquina inteira; com ele, cai só quem estourou
+    # e o `restart` o traz de volta.
+    mem_limit: 1280m
+    environment:
+      # O contêiner só conhece o hash da chave: com o prefixo `sha512:` o WAHA faz o hash do
+      # `X-Api-Key` recebido e compara. O texto puro fica com quem chama. Sem chave (instalação que
+      # ainda não passou pelo instalador desta versão) o valor é `sha512:` e nenhuma chave confere.
+      WAHA_API_KEY: "sha512:${WAHA_API_KEY_SHA512:-}"
+      # O nome é WHATSAPP_DEFAULT_ENGINE. Com o nome errado o WAHA cai no motor com navegador
+      # (WEBJS), que esta imagem nem tem. NOWEB fala direto com o WhatsApp, sem Chromium.
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+      # Nem painel nem documentação da API do WAHA: nada dele é tela neste produto.
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      # Depois de reiniciar, o WAHA retoma as sessões que estavam rodando, sem pedir QR Code de
+      # novo. É o padrão dele; fica escrito para não depender disso. (A outra variável,
+      # WHATSAPP_RESTART_ALL_SESSIONS, iniciaria também a sessão que alguém desconectou de propósito.)
+      WAHA_WORKER_RESTART_SESSIONS: "true"
+      # O QR Code não vai para o log do contêiner: quem lê o log não pareia o número.
+      WAHA_PRINT_QR: "false"
+      # Padrão das sessões: não processar nem guardar estados, grupos, canais e listas de difusão.
+      # O painel também pede isso ao criar a sessão.
+      WAHA_SESSION_CONFIG_IGNORE_STATUS: "true"
+      WAHA_SESSION_CONFIG_IGNORE_GROUPS: "true"
+      WAHA_SESSION_CONFIG_IGNORE_CHANNELS: "true"
+      WAHA_SESSION_CONFIG_IGNORE_BROADCAST: "true"
+    volumes:
+      # O pareamento do número. Perder este volume obriga a ler o QR Code de novo.
+      - waha-sessions:/app/.sessions
+    healthcheck:
+      # `/ping` responde 200 sem chave (medido). A imagem traz o Node.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ping').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [internal]
+    logging: *logging
+
+  # Ligação pelo WhatsApp: o WaCalls (github.com/JotaDev66/WaCalls, MIT) conecta o número como mais
+  # um aparelho vinculado e entrega as ligações. Peça de terceiros: referenciada, nunca republicada,
+  # fixada por resumo. Não há versão publicada: só o canal `develop` tem imagem e autenticação, e o
+  # resumo é o da imagem desse canal criada em 27/07/2026 (commit d16a076), a mesma que o DeskcommCRM
+  # fixa. Índice multiarquitetura (amd64 e arm64): uma referência serve às duas.
+  #
+  # Só na rede interna, sem porta publicada: quem fala com ele é o processo de voz, com o token.
+  # A API escuta em 8080 dentro da rede; `/healthz` é a única rota sem token.
+  #
+  # Porta UDP do áudio: nenhuma, e de propósito. O DeskcommCRM publica uma porque lá o par WebRTC é o
+  # navegador de quem atende, fora da máquina. Aqui o par vai ser o processo de voz, na mesma rede
+  # interna, e a perna até o WhatsApp é de saída. Isso é leitura de código, e o teste de contrato
+  # passa no loopback; a prova numa VPS ainda falta. Se ela mostrar que o WaCalls precisa de porta
+  # fixa, o caminho é WACALLS_WEBRTC_UDP_PORT sem publicá-la (desenho, seção 4.3).
+  #
+  # Fica num perfil: NÃO sobe nem é baixado por padrão. Quem liga o perfil é o agente do kit
+  # (install/agent.sh), quando um dono ou administrador pede pela tela; a marca fica em deploy/.env
+  # (OZAVO_WHATSAPP_CALLS=on). Memória e disco com o serviço de pé ainda NÃO foram medidos.
+  wacalls:
+    profiles: ["whatsapp-calls"]
+    # Imagem do fork DeskLabs-OpenSource/WaCalls: d16a076 dos autores mais o conserto do caller_pn
+    # (9507c56, proposto em JotaDev66/WaCalls#69), até eles publicarem o conserto. O resto é igual.
+    image: ghcr.io/desklabs-opensource/wacalls@sha256:74612a1d175bca3eed00cc5a6958fc7c0d593f44b8f8cbe01e59b228ba867508
+    restart: unless-stopped
+    # Teto, e não medição: é o que o DeskcommCRM usa com a mesma imagem. Sem teto, um serviço que
+    # cresce leva a máquina inteira; com ele, cai só quem estourou e o `restart` o traz de volta.
+    mem_limit: 256m
+    # O comando da imagem (`-addr=:8080 -db=/data/wacalls.db`, Dockerfile do WaCalls em d16a076) mais
+    # o teto de ligações por número. O padrão dele é 8, e acima do teto ele RECUSA a ligação no
+    # WhatsApp (`internal/voip/call/client.go:100-102`), contando também as que tocam sem ninguém
+    # atender. Quem limita é o Ozavo (o limite de recebidas, de 1 a 50, em Configurações); o do
+    # WaCalls fica no máximo dessa faixa, como segunda trava (desenho, seção 5.1).
+    command: ["-addr=:8080", "-db=/data/wacalls.db", "-max-calls-per-session=50"]
+    environment:
+      # O serviço não sobe sem administrador. Usuário e senha são gerados pelo instalador e nunca
+      # mostrados: ninguém entra na tela do WaCalls, que nem é alcançável de fora.
+      WACALLS_ADMIN_USER: "${WACALLS_ADMIN_USER:-}"
+      WACALLS_ADMIN_PASSWORD: "${WACALLS_ADMIN_PASSWORD:-}"
+      # O token com que o processo de voz fala com ele, sempre no cabeçalho.
+      WACALLS_API_TOKEN: "${WACALLS_API_TOKEN:-}"
+    volumes:
+      # O pareamento do número. Perder este volume obriga a ler o QR Code de novo. Não entra no backup.
+      - wacalls-data:/data
+    networks: [internal]
+    logging: *logging
+
+  # Asterisk é peça de terceiros: referenciada, nunca republicada. Fixada por digest
+  # porque neste registro nem as tags de versão são imutáveis (medido no DeskcommCRM).
+  asterisk:
+    image: ${ASTERISK_IMAGE:-andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27}
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      # Só UDP. A ARI (8088) é o controle total das chamadas e nunca sai da rede interna.
+      - "5060:5060/udp"
+      # Faixa de RTP: precisa ser idêntica à de asterisk/generated/rtp.conf.
+      - "${RTP_START:-10000}-${RTP_END:-10200}:${RTP_START:-10000}-${RTP_END:-10200}/udp"
+    volumes:
+      # Tudo sai de asterisk/generated, que o instalador escreve com a permissão certa: o Asterisk
+      # lê com outro usuário, e arquivo montado direto do repositório herdava o umask de quem baixou.
+      - ./asterisk/generated/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./asterisk/generated/http.conf:/etc/asterisk/http.conf:ro
+      - ./asterisk/generated/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./asterisk/generated/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./asterisk/generated/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - asterisk-generated:/etc/asterisk/generated
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show uptime"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    logging: *logging
+
+  # Sobe sempre, em todo modo de instalação. Onde escuta (CADDY_SITE), em quem confia
+  # (CADDY_TRUSTED_PROXIES) e as portas publicadas vêm de docker-compose.override.yml.
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      panel: { condition: service_healthy }
+    networks: [internal]
+    logging: *logging
+
+networks:
+  internal:
+
+volumes:
+  postgres-data:
+  waha-sessions:
+  wacalls-data:
+  asterisk-generated:
+  recordings:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,295 @@
+@import "tailwindcss";
+@import "../design/tokens.css";
+
+/* Ponte token -> utilitário. A paleta padrão do Tailwind sai: cor só entra pelos tokens. */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--oz-bg);
+  --color-surface: var(--oz-surface);
+  --color-sunken: var(--oz-sunken);
+  --color-line: var(--oz-line);
+  --color-line-strong: var(--oz-line-strong);
+  --color-ink: var(--oz-text);
+  --color-muted: var(--oz-muted);
+  --color-accent: var(--oz-accent);
+  --color-accent-strong: var(--oz-accent-strong);
+  --color-accent-soft: var(--oz-accent-soft);
+  --color-on-accent: var(--oz-on-accent);
+  --color-ok: var(--oz-ok);
+  --color-ok-soft: var(--oz-ok-soft);
+  --color-warn: var(--oz-warn);
+  --color-warn-soft: var(--oz-warn-soft);
+  --color-fail: var(--oz-fail);
+  --color-fail-soft: var(--oz-fail-soft);
+  --color-qr-surface: var(--oz-qr-surface);
+  --color-qr-ink: var(--oz-qr-ink);
+
+  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --radius-xs: var(--oz-radius-xs);
+  --radius-sm: var(--oz-radius-sm);
+  --radius-md: var(--oz-radius-md);
+  --shadow-sm: var(--oz-shadow-sm);
+  --shadow-md: var(--oz-shadow-md);
+  --ease-out: var(--oz-ease-out);
+}
+
+html {
+  background: var(--oz-bg);
+  color: var(--oz-text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  min-height: 100dvh;
+}
+:focus-visible {
+  outline: 2px solid var(--oz-accent);
+  outline-offset: 2px;
+  border-radius: var(--oz-radius-xs);
+}
+::selection {
+  background: var(--oz-accent-soft);
+}
+
+/* Dado (duração, custo, telefone, horário): mono, dígitos de largura igual. Em camada de
+   componente para que um utilitário de tamanho no mesmo elemento vença. */
+@layer components {
+  .data {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.92em;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Entrada de página: sobe 8 px junto com o fade, uma vez. */
+.rise {
+  animation: oz-rise var(--oz-slow) var(--oz-ease-enter) both;
+}
+@keyframes oz-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* O pulso do que está vivo: um anel de cobre que se abre e some. */
+.live-dot {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--oz-radius-full);
+  background: var(--oz-accent);
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--oz-accent);
+  animation: oz-pulse var(--oz-pulse) var(--oz-ease-out) infinite;
+}
+@keyframes oz-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70%,
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/*
+ * A linha do tempo: um fio contínuo com os eventos presos nele. Em tela larga o fio corre pelo
+ * meio, quem ligou fala à esquerda e o agente à direita; no celular o fio encosta na margem.
+ */
+.thread {
+  --node: 28px;
+  position: relative;
+  display: grid;
+  row-gap: var(--oz-space-5);
+}
+.thread::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: calc(var(--node) / 2 - 1px);
+  width: 2px;
+  border-radius: 1px;
+  background: var(--oz-line-strong);
+}
+.thread[data-live="true"]::before {
+  background: linear-gradient(to bottom, var(--oz-line-strong) calc(100% - 96px), var(--oz-accent));
+}
+.thread-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--node) minmax(0, 1fr);
+  column-gap: var(--oz-space-3);
+  align-items: start;
+}
+.thread-node {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  border-radius: var(--oz-radius-full);
+  background: var(--oz-bg);
+  border: 2px solid var(--oz-line-strong);
+  color: var(--oz-muted);
+}
+.thread-node[data-tone="accent"] {
+  border-color: var(--oz-accent);
+  color: var(--oz-accent);
+  background: var(--oz-accent-soft);
+}
+.thread-node[data-tone="ok"] {
+  border-color: var(--oz-ok);
+  color: var(--oz-ok);
+}
+.thread-node[data-tone="fail"] {
+  border-color: var(--oz-fail);
+  color: var(--oz-fail);
+  background: var(--oz-fail-soft);
+}
+/* Fala não leva ícone: é um ponto pequeno no fio, para a conversa não disputar com os eventos. */
+.thread-node[data-tone="speech"] {
+  width: 10px;
+  height: 10px;
+  margin: calc((var(--node) - 10px) / 2);
+  border-width: 2px;
+}
+.thread-node[data-tone="speech-agent"] {
+  width: 10px;
+  height: 10px;
+  margin: calc((var(--node) - 10px) / 2);
+  border-color: var(--oz-text);
+  background: var(--oz-text);
+}
+.thread-body {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.thread-time {
+  grid-column: 2;
+  grid-row: 2;
+  margin-top: var(--oz-space-1);
+  color: var(--oz-muted);
+}
+
+@media (min-width: 900px) {
+  .thread {
+    --node: 32px;
+  }
+  .thread::before {
+    left: calc(50% - 1px);
+  }
+  .thread-row {
+    grid-template-columns: minmax(0, 1fr) var(--node) minmax(0, 1fr);
+    column-gap: var(--oz-space-5);
+  }
+  .thread-node {
+    grid-column: 2;
+  }
+  .thread-body {
+    grid-column: 3;
+  }
+  .thread-time {
+    grid-column: 1;
+    grid-row: 1;
+    margin-top: 6px;
+    text-align: right;
+  }
+  /* Quem ligou fica do outro lado do fio. */
+  .thread-row[data-side="left"] .thread-body {
+    grid-column: 1;
+    justify-self: end;
+  }
+  .thread-row[data-side="left"] .thread-time {
+    grid-column: 3;
+    text-align: left;
+  }
+}
+
+/* A voz do agente na chamada pelo navegador: barras que respiram em cobre enquanto ele fala e
+   ficam baixas e neutras quando ele escuta. */
+.voice-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+}
+.voice-bars span {
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--oz-line-strong);
+  transform: scaleY(0.2);
+  transition: transform var(--oz-base) var(--oz-ease-out), background-color var(--oz-base) var(--oz-ease-out);
+}
+.voice-bars[data-active="true"] span {
+  background: var(--oz-accent);
+  animation: oz-voice 1.1s ease-in-out infinite;
+}
+.voice-bars span:nth-child(2) {
+  animation-delay: -0.35s;
+}
+.voice-bars span:nth-child(3) {
+  animation-delay: -0.7s;
+}
+.voice-bars span:nth-child(4) {
+  animation-delay: -0.2s;
+}
+.voice-bars span:nth-child(5) {
+  animation-delay: -0.55s;
+}
+@keyframes oz-voice {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* O mesmo fio fora da linha do tempo (tela de entrada): sempre encostado à esquerda. */
+.thread[data-layout="left"]::before {
+  left: calc(var(--node) / 2 - 1px);
+}
+.thread[data-layout="left"] .thread-node {
+  grid-column: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Sem movimento, a fala do agente vira barras paradas em cobre: o estado continua visível. */
+  .voice-bars[data-active="true"] span {
+    animation: none;
+    transform: scaleY(0.65);
+  }
+  .live-dot::after {
+    animation: none;
+    opacity: 0.45;
+    transform: scale(1.9);
+  }
+}

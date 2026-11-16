@@ -1,0 +1,42 @@
+
+▶ Conferindo o arquivo do backup
+  ✓ arquivo íntegro (sha256 confere)
+
+▶ Parando painel, voz e rotinas
+ Container ozavo-routines-1 Stopping 
+ Container ozavo-voice-1 Stopping 
+ Container ozavo-panel-1 Stopping 
+ Container ozavo-routines-1 Stopped 
+ Container ozavo-voice-1 Stopped 
+ Container ozavo-panel-1 Stopped 
+
+▶ Restaurando num banco ao lado
+
+▶ Comparando as contagens com o manifesto
+  ✓ todas as 20 tabelas com a mesma contagem do backup
+
+▶ Trocando o banco
+
+▶ Religando os serviços
+ Container ozavo-caddy-1 Running 
+ Container ozavo-postgres-1 Running 
+ Container ozavo-asterisk-1 Running 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-asterisk-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-1 Starting 
+ Container ozavo-asterisk-1 Healthy 
+ Container ozavo-migrate-1 Started 
+ Container ozavo-migrate-1 Waiting 
+ Container ozavo-migrate-1 Exited 
+ Container ozavo-panel-1 Starting 
+ Container ozavo-voice-1 Starting 
+ Container ozavo-routines-1 Starting 
+ Container ozavo-panel-1 Started 
+ Container ozavo-panel-1 Waiting 
+ Container ozavo-voice-1 Started 
+ Container ozavo-routines-1 Started 
+ Container ozavo-panel-1 Healthy 
+  ✓ Restaurado: o banco agora é o do backup de 2026-11-12T15:49:12Z, com as contagens conferidas.
+  Confira o sistema com: bash install/healthcheck.sh
+saída: 0

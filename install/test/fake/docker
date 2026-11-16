@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Docker de mentira para os testes: registra cada chamada em $FAKE_DIR/calls.log e
+# responde a partir de arquivos em $FAKE_DIR. Nunca fala com um Docker de verdade.
+echo "$*" >> "$FAKE_DIR/calls.log"
+args=" $* "
+last="${*: -1}"
+answer() { if [ -f "$FAKE_DIR/$1" ]; then cat "$FAKE_DIR/$1"; fi; }
+drain() { if [ ! -t 0 ]; then cat >/dev/null 2>&1 || true; fi; }
+case "$args" in
+  # O daemon: não responde com $FAKE_DIR/docker_down (o serviço parado). As opções de segurança vêm
+  # de $FAKE_DIR/docker_security (`name=selinux` = o daemon roda com o SELinux ligado).
+  " info "*) if [ -f "$FAKE_DIR/docker_down" ]; then exit 1; fi; case "$args" in *SecurityOptions*) answer docker_security ;; *) echo fake ;; esac; exit 0 ;;
+  " compose version "*|" --version "*) echo "fake"; exit 0 ;;
+  # Contêiner que existe, rodando ou parado: aqui, o que está na lista de rodando.
+  *" ps -aq "*) if grep -qx "$last" "$FAKE_DIR/running" 2>/dev/null; then echo "cid-$last"; fi; exit 0 ;;
+  # Remover o contêiner de um serviço opcional (waha, wacalls): sai da lista, salvo $FAKE_DIR/<serviço>_rm_fail.
+  *" rm -sf waha "*|*" rm -sf wacalls "*) if [ -f "$FAKE_DIR/${last}_rm_fail" ]; then exit 1; fi; grep -vx "$last" "$FAKE_DIR/running" > "$FAKE_DIR/running.next" 2>/dev/null; mv "$FAKE_DIR/running.next" "$FAKE_DIR/running"; exit 0 ;;
+  # Subir só um serviço opcional: passa a rodar, salvo $FAKE_DIR/<serviço>_up_fail.
+  *" up -d waha "*|*" up -d wacalls "*) if [ -f "$FAKE_DIR/${last}_up_fail" ]; then exit 1; fi; grep -qx "$last" "$FAKE_DIR/running" 2>/dev/null || echo "$last" >> "$FAKE_DIR/running"; exit 0 ;;
+  # De que pasta o Compose subiu os contêineres do projeto (o rótulo working_dir de cada um): o que
+  # estiver em $FAKE_DIR/project_dir (outra pasta); sem ele, a pasta do teste, se há contêiner na
+  # lista de rodando; lista vazia é máquina sem instalação.
+  *" ps -a --filter label=com.docker.compose.project=ozavo "*)
+    if [ -f "$FAKE_DIR/project_dir" ]; then cat "$FAKE_DIR/project_dir"
+    elif [ -s "$FAKE_DIR/running" ]; then echo "$OZAVO_DEPLOY_DIR"; fi; exit 0 ;;
+  # Tirar os contêineres do projeto: os que o `up` seguinte criar levam o rótulo da pasta do teste.
+  *" down "*) rm -f "$FAKE_DIR/project_dir"; exit 0 ;;
+  *" ps -q "*) if grep -qx "$last" "$FAKE_DIR/running" 2>/dev/null; then echo "cid-$last"; fi; exit 0 ;;
+  *" ps "*) answer ps_output; exit 0 ;;
+  *" pg_isready "*) exit "$(cat "$FAKE_DIR/pg_isready_exit" 2>/dev/null || echo 0)" ;;
+  *"core show uptime"*) echo "System uptime: 3 minutes"; exit 0 ;;
+  # A sonda da entrada única (painel, voz e a rota do agente, pelo Caddy). Vem antes da conversa do
+  # agente porque também cita a rota dele.
+  *" exec -T panel node "*"voice-ws"*) if [ -f "$FAKE_DIR/entry_probe" ]; then cat "$FAKE_DIR/entry_probe"; else printf 'panel|200\nvoice|426\nagent|404|0\n'; fi; exit 0 ;;
+  # O login de verdade no fim da instalação: guarda o que chegou pela entrada padrão (e-mail e
+  # senha) e responde o que estiver em $FAKE_DIR/login_probe; sem o arquivo, "entrou".
+  *" exec -T panel node "*"auth/login"*) cat > "$FAKE_DIR/login_stdin"; if [ -f "$FAKE_DIR/login_probe" ]; then cat "$FAKE_DIR/login_probe"; else echo 'ok|200'; fi; exit 0 ;;
+  # O Caddyfile que o contêiner do Caddy tem montado: por padrão, igual ao do disco.
+  *" exec -T caddy cat "*) if [ -f "$FAKE_DIR/caddy_mounted" ]; then cat "$FAKE_DIR/caddy_mounted"; else cat "$OZAVO_DEPLOY_DIR/Caddyfile" 2>/dev/null; fi; exit 0 ;;
+  # Os arquivos que o contêiner do Asterisk tem montados: os de $FAKE_DIR/asterisk_mounted/; sem
+  # eles, os do disco. Reiniciar o Asterisk monta de novo o que está no disco.
+  *" exec -T asterisk cat "*) f="$(basename "$last")"; if [ -f "$FAKE_DIR/asterisk_mounted/$f" ]; then cat "$FAKE_DIR/asterisk_mounted/$f"; else cat "$OZAVO_DEPLOY_DIR/asterisk/generated/$f" 2>/dev/null; fi; exit 0 ;;
+  # Recarregar módulos do Asterisk: cada um "reloaded successfully", salvo $FAKE_DIR/asterisk_reload_fail.
+  *" exec -T asterisk asterisk -rx module reload "*)
+    all="$*"; for m in ${all##*module reload }; do
+      if [ -f "$FAKE_DIR/asterisk_reload_fail" ]; then echo "The module '$m' reported a reload failure"; else echo "Module '$m' reloaded successfully."; fi
+    done; exit 0 ;;
+  *" restart asterisk "*) if [ -d "$FAKE_DIR/asterisk_mounted" ]; then cp "$OZAVO_DEPLOY_DIR/asterisk/generated/"*.conf "$FAKE_DIR/asterisk_mounted/"; fi; exit 0 ;;
+  # A conversa do agente de atualização com o painel. Cada chamada guarda o que recebeu pela
+  # entrada padrão em agent_call.<n>. A resposta vem da primeira linha de $FAKE_DIR/agent_replies
+  # (consumida a cada chamada; com `!` na frente, a chamada falha); sem o arquivo, "não há pedido".
+  # Com $FAKE_DIR/agent_hang, a chamada trava.
+  *" exec -T panel node "*"system/agent"*)
+    n=1; while [ -e "$FAKE_DIR/agent_call.$n" ]; do n=$((n + 1)); done; cat > "$FAKE_DIR/agent_call.$n"
+    if [ -f "$FAKE_DIR/agent_hang" ]; then exec sleep 60; fi   # o painel que aceita a conexão e não responde
+    reply="update=false"
+    if [ -s "$FAKE_DIR/agent_replies" ]; then
+      reply="$(head -n 1 "$FAKE_DIR/agent_replies")"; sed 1d "$FAKE_DIR/agent_replies" > "$FAKE_DIR/agent_replies.next"; mv "$FAKE_DIR/agent_replies.next" "$FAKE_DIR/agent_replies"
+    fi
+    case "$reply" in "!"*) echo "${reply#!}"; exit 1 ;; *) echo "$reply"; exit 0 ;; esac ;;
+  # A sonda do serviço de WhatsApp, feita a partir do painel: responde, salvo $FAKE_DIR/waha_down.
+  *" exec -T panel node "*"waha:3000/ping"*) if [ -f "$FAKE_DIR/waha_down" ]; then exit 1; fi; exit 0 ;;
+  # A sonda do serviço de ligação pelo WhatsApp, feita a partir da voz: responde, salvo $FAKE_DIR/wacalls_down.
+  *" exec -T voice node "*"wacalls:8080/healthz"*) if [ -f "$FAKE_DIR/wacalls_down" ]; then exit 1; fi; exit 0 ;;
+  *" exec -T panel node "*) answer panel_health; exit 0 ;;
+  *" exec -T voice node "*) answer voice_health; exit "$(cat "$FAKE_DIR/voice_exit" 2>/dev/null || echo 0)" ;;
+  *" pg_dump "*) if [ -f "$FAKE_DIR/pg_dump_fail" ]; then exit 1; fi; printf 'FAKE-DUMP-%s' "$(answer dump_seed)"; exit 0 ;;
+  *" pg_restore "*) drain; exit "$(cat "$FAKE_DIR/pg_restore_exit" 2>/dev/null || echo 0)" ;;
+  *"count(*) as c"*)
+    case "$args" in
+      *" -d ozavo_verify_"*) answer counts_backup ;;
+      *" -d ozavo_restore "*) answer counts_restore ;;
+      *) if [ -f "$FAKE_DIR/counts_live" ]; then cat "$FAKE_DIR/counts_live"; else answer counts_restore; fi ;;
+    esac; exit 0 ;;
+  *"select count(*) from users"*) answer users_count; exit 0 ;;
+  *" pull -q panel "*) if [ -f "$FAKE_DIR/pull_fail" ]; then echo "Error response from daemon: manifest unknown" >&2; cat "$FAKE_DIR/pull_fail" >&2; exit 1; fi; exit 0 ;;
+  # Baixar a imagem de um serviço opcional: passa a existir no disco ($FAKE_DIR/<serviço>_image).
+  # Com <serviço>_pull_hang, o download não termina; com <serviço>_pull_fail, falha.
+  *" pull -q waha "*|*" pull -q wacalls "*) if [ -f "$FAKE_DIR/${last}_pull_hang" ]; then exec sleep 60; fi; if [ -f "$FAKE_DIR/${last}_pull_fail" ]; then echo "Error response from daemon: toomanyrequests" >&2; exit 1; fi; echo "$last" > "$FAKE_DIR/${last}_image"; exit 0 ;;
+  # A imagem no disco: existe se foi baixada; sai com `image rm`, salvo <serviço>_image_busy. O
+  # serviço sai da referência (`.../wacalls@sha256:...` é o WaCalls; o resto, o WAHA).
+  " image inspect "*|" image rm "*) case "$last" in *wacalls*) svc=wacalls ;; *) svc=waha ;; esac
+    case "$args" in
+      " image inspect "*) [ -f "$FAKE_DIR/${svc}_image" ]; exit $? ;;
+      *) if [ -f "$FAKE_DIR/${svc}_image_busy" ]; then echo "conflict: image is being used" >&2; exit 1; fi; rm -f "$FAKE_DIR/${svc}_image"; exit 0 ;;
+    esac ;;
+  # As imagens no disco: uma referência completa (nome:etiqueta) por linha em $FAKE_DIR/images.
+  # Listar por nome devolve as etiquetas dele; `rmi` tira a linha, salvo as referências listadas em
+  # $FAKE_DIR/rmi_busy (imagem em uso por um contêiner, que o `rmi` sem força recusa).
+  " image ls "*) grep "^$last:" "$FAKE_DIR/images" 2>/dev/null | sed "s|^$last:||"; exit 0 ;;
+  # Por resumo (`nome@sha256:...`), a que não está no disco é recusada como o Docker recusa.
+  " rmi "*@sha256:*) if ! grep -qx "$last" "$FAKE_DIR/images" 2>/dev/null; then echo "Error response from daemon: No such image: $last" >&2; exit 1; fi
+    if grep -qx "$last" "$FAKE_DIR/rmi_busy" 2>/dev/null; then echo "Error response from daemon: conflict: unable to delete $last (must be forced) - image is being used by stopped container cid" >&2; exit 1; fi
+    grep -vx "$last" "$FAKE_DIR/images" > "$FAKE_DIR/images.next"; mv "$FAKE_DIR/images.next" "$FAKE_DIR/images"; exit 0 ;;
+  " rmi "*) if grep -qx "$last" "$FAKE_DIR/rmi_busy" 2>/dev/null; then echo "Error response from daemon: conflict: unable to remove repository reference \"$last\" (must force) - container cid is using its referenced image" >&2; exit 1; fi
+    grep -vx "$last" "$FAKE_DIR/images" > "$FAKE_DIR/images.next" 2>/dev/null; mv "$FAKE_DIR/images.next" "$FAKE_DIR/images"; exit 0 ;;
+  # As redes que existem: uma por linha em $FAKE_DIR/networks.
+  " network inspect "*) grep -qx "$last" "$FAKE_DIR/networks" 2>/dev/null; exit $? ;;
+  *" logs "*) answer logs; exit 0 ;;
+  # Criar o dono: guarda a senha que veio pela entrada padrão e passa a existir um usuário.
+  *"run create-owner"*) cat > "$FAKE_DIR/create_owner_stdin"; if [ -f "$FAKE_DIR/create_owner_fail" ]; then exit 1; fi; echo 1 > "$FAKE_DIR/users_count"; exit 0 ;;
+  *" run --rm migrate"*) drain; exit "$(cat "$FAKE_DIR/migrate_exit" 2>/dev/null || echo 0)" ;;
+  *"run reset-password"*) cat > "$FAKE_DIR/reset_stdin" 2>/dev/null || true; exit "$(cat "$FAKE_DIR/reset_exit" 2>/dev/null || echo 0)" ;;
+  # Instalação parada que volta a rodar: com $FAKE_DIR/running_after_up, o `up` põe os contêineres de pé.
+  *" up -d"*) if [ -f "$FAKE_DIR/running_after_up" ]; then cp "$FAKE_DIR/running_after_up" "$FAKE_DIR/running"; fi; if [ -f "$FAKE_DIR/entry_probe_after_up" ]; then cp "$FAKE_DIR/entry_probe_after_up" "$FAKE_DIR/entry_probe"; fi; drain; exit 0 ;;
+  *) drain; exit 0 ;;
+esac

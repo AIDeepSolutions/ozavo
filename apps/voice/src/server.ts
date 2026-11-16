@@ -1,0 +1,214 @@
+import { whatsappCallsWanted, type Clock, type Db } from "@ozavo/core";
+import type { Tool } from "@ozavo/tools";
+import type { VoiceEngine } from "@ozavo/voice-engine";
+import { createApprovalWaiter } from "./approvals";
+import type { AriClient, AriEvent } from "./ari";
+import { AsteriskCalls } from "./asterisk-transport";
+import { startAudioSocketServer } from "./audiosocket";
+import { startCallSession, stopRecordingOfLiveCall, type CallSession, type CallSessionDeps } from "./call-session";
+import { handleInbound } from "./inbound";
+import { startInternalApi } from "./internal-api";
+import { messageOf, silentLogger, type Logger } from "./log";
+import { startOutboundCall } from "./outbound";
+import { removePartialRecordings } from "./recording";
+import { closeOrphanCalls } from "./reconcile";
+import { startSimulatedCall } from "./simulate";
+import { realSchedule, type Schedule } from "./transport";
+import { applyTrunks, checkTrunks, type TrunksDeps } from "./trunks";
+import type { WacallsOptions } from "./wacalls-client";
+import { startVoicemailSession, type VoicemailSession } from "./voicemail";
+import { startWebCalls } from "./web-calls";
+import { createWhatsAppCalls } from "./whatsapp-calls";
+
+export interface VoiceServerDeps {
+  db: Db;
+  clock: Clock;
+  engines: Map<string, VoiceEngine>;
+  tools: Map<string, Tool>;
+  ari: AriClient;
+  secretKey: Buffer;
+  audioSocketPort: number;
+  internalPort: number;
+  /** Porta do WebSocket público da chamada pelo navegador. */
+  webPort: number;
+  internalToken: string | undefined;
+  trunksFile: string;
+  /** Pasta das gravações. Sem ela, nenhuma chamada é gravada. */
+  recordingsDir?: string;
+  publicIp: string | null;
+  /** Usuário do Asterisk, que precisa ler o arquivo de troncos. Sem ele, o dono do arquivo não é trocado. */
+  trunksOwner?: { uid: number; gid: number };
+  host?: string;
+  schedule?: Schedule;
+  /** Acesso ao WaCalls da instalação (ligação pelo WhatsApp). Sem token, o recurso não existe aqui. */
+  wacalls?: WacallsOptions;
+  /** Relógio monotônico da cadência de áudio, em ms. */
+  now?: () => number;
+  log?: Logger;
+}
+
+export interface VoiceServer {
+  audioSocketPort: number;
+  internalPort: number;
+  webPort: number;
+  /** As chamadas do Asterisk em curso; `inbound.ts` e `outbound.ts` registram nelas. */
+  calls: AsteriskCalls;
+  /** Encerra as chamadas em curso de forma limpa e solta portas e escutas. */
+  close(): Promise<void>;
+}
+
+/** Sobe o processo de voz: AudioSocket, eventos da ARI e a API interna, costurados às conversas. */
+export async function startVoiceServer(deps: VoiceServerDeps): Promise<VoiceServer> {
+  const { db, clock, ari } = deps;
+  const log = deps.log ?? silentLogger;
+  // Antes de atender qualquer coisa: o que o processo anterior deixou aberto não é de ninguém.
+  await closeOrphanCalls(db, clock, log);
+  // A gravação que um processo caído deixou pela metade (`.part`) não fecha mais: sai daqui.
+  if (deps.recordingsDir) {
+    const removed = await removePartialRecordings(deps.recordingsDir).catch((error: unknown) => {
+      log("error", "could not remove partial recordings", { error: messageOf(error) });
+      return 0;
+    });
+    if (removed > 0) log("info", "removed partial recordings left by a previous process", { removed });
+  }
+  const approvals = await createApprovalWaiter(db, { schedule: deps.schedule, log });
+  const sessionDeps: CallSessionDeps = { db, clock, engines: deps.engines, tools: deps.tools, secretKey: deps.secretKey, approvals, schedule: deps.schedule, log, recordingsDir: deps.recordingsDir };
+  const trunksDeps: TrunksDeps = { db, ari, clock, secretKey: deps.secretKey, file: deps.trunksFile, publicIp: deps.publicIp, owner: deps.trunksOwner, schedule: deps.schedule, log };
+  const calls = new AsteriskCalls({ ari, db, clock, log });
+  const sessions = new Set<CallSession>();
+  // Recados em curso, com o ciclo de vida próprio: não são conversas, e não atendem a pedido de
+  // parar gravação (`stopRecordingOfLiveCall`).
+  const voicemails = new Set<VoicemailSession>();
+
+  const track = (session: CallSession): void => {
+    sessions.add(session);
+    void session.done.then((outcome) => {
+      sessions.delete(session);
+      log("info", "call ended", { ...outcome });
+    });
+  };
+
+  const trackVoicemail = (session: VoicemailSession): void => {
+    voicemails.add(session);
+    void session.done.then((outcome) => {
+      voicemails.delete(session);
+      log("info", "voicemail ended", { ...outcome });
+    });
+  };
+
+  const audioSocket = await startAudioSocketServer({
+    port: deps.audioSocketPort,
+    host: deps.host,
+    schedule: deps.schedule,
+    now: deps.now,
+    log,
+    onConnection(connection) {
+      const attached = calls.attach(connection);
+      if (!attached) {
+        // Ninguém esperava esta chamada (o processo reiniciou no meio, ou não é o Asterisk).
+        // Fechar devolve o canal à Stasis, que o desliga.
+        log("error", "audiosocket connection for a call nobody expects; closing", { callId: connection.id });
+        connection.close();
+        return;
+      }
+      const { call, transport } = attached;
+      if (call.voicemail) {
+        trackVoicemail(
+          startVoicemailSession(
+            { db, clock, recordingsDir: deps.recordingsDir, schedule: deps.schedule, log },
+            { organizationId: call.organizationId, callId: call.callId, ...call.voicemail, transport },
+          ),
+        );
+        return;
+      }
+      if (!call.agentId) {
+        // Sem agente e sem recado: não deveria existir. Fechar devolve o canal à Stasis, que desliga.
+        log("error", "audiosocket connection for a call with neither agent nor voicemail; closing", { callId: call.callId });
+        connection.close();
+        return;
+      }
+      track(startCallSession(sessionDeps, { organizationId: call.organizationId, callId: call.callId, agentId: call.agentId, transport }));
+    },
+  });
+
+  const onEvent = async (event: AriEvent): Promise<void> => {
+    if (event.type === "Dial" && event.caller) return calls.transferDialed(event.caller.id, event.dialstatus ?? "");
+    const channel = event.channel;
+    if (!channel) return;
+    if (event.type === "ChannelDestroyed") return calls.channelDestroyed(channel.id, event.cause_txt);
+    if (event.type !== "StasisStart") return;
+    const [kind, detail] = event.args ?? [];
+    if (kind === "inbound") return handleInbound({ db, ari, clock, calls, log }, channel);
+    if (kind === "after-audio") return calls.afterAudio(channel.id);
+    if (kind === "transfer-ended") return calls.transferEnded(channel.id, detail ?? "");
+    // Canal na Stasis sem motivo conhecido ficaria pendurado para sempre.
+    log("error", "channel entered the app with an unknown argument; hanging up", { channelId: channel.id, args: event.args });
+    await ari.hangup(channel.id);
+  };
+  ari.onEvent((event) => void onEvent(event).catch((error: unknown) => log("error", "could not handle a telephony event", { type: event.type, error: messageOf(error) })));
+
+  // Na partida e a cada reconexão: o Asterisk pode ter reiniciado sem os troncos carregados.
+  const reapply = (): void =>
+    void applyTrunks(trunksDeps).then(
+      (result) => log(result.applied ? "info" : "error", "trunks applied", result),
+      (error: unknown) => log("error", "could not apply the trunks", { error: messageOf(error) }),
+    );
+  ari.onConnected(reapply);
+  reapply();
+
+  // Não depende do Asterisk: nem a chamada pelo navegador nem a ligação pelo WhatsApp passam por ele.
+  const whatsappCalls = createWhatsAppCalls(deps.wacalls ?? { token: "" }, {
+    schedule: deps.schedule ?? realSchedule,
+    log,
+    answer: { db, clock, now: deps.now ?? (() => performance.now()), session: sessionDeps, onSession: track },
+  });
+  // As ligações chegam pelo SSE do WaCalls: onde alguma organização pediu o serviço, ele abre já na
+  // partida, e não só quando alguém abre a tela. Se o WaCalls ainda está subindo, a escuta tenta de novo.
+  if (await whatsappCallsWanted(db)) whatsappCalls.listen();
+
+  const webCalls = await startWebCalls({ db, clock, session: sessionDeps, port: deps.webPort, host: deps.host, schedule: deps.schedule, now: deps.now, log, onSession: track });
+
+  const api = await startInternalApi({
+    port: deps.internalPort,
+    host: deps.host,
+    token: deps.internalToken,
+    log,
+    handlers: {
+      async health() {
+        const status = ari.status();
+        return { asterisk: { status: status.connected ? "ok" : "fail", detail: status.detail }, web: webCalls.health(), trunks: await checkTrunks(trunksDeps) };
+      },
+      // O arquivo é um só para a instalação: aplicar a linha de uma organização regrava todas.
+      applyTrunks: () => applyTrunks(trunksDeps),
+      outbound: (input) => startOutboundCall({ db, ari, clock, calls, log }, input),
+      web: (input) => webCalls.request(input),
+      stopRecording: (input) => stopRecordingOfLiveCall(sessions, input),
+      whatsappCalls,
+      async simulate(input) {
+        const started = await startSimulatedCall(sessionDeps, input);
+        if (!("callId" in started)) return started;
+        track(started.session);
+        return { callId: started.callId };
+      },
+    },
+  });
+
+  return {
+    audioSocketPort: audioSocket.port,
+    internalPort: api.port,
+    webPort: webCalls.port,
+    calls,
+    async close() {
+      ari.close();
+      whatsappCalls.close();
+      await api.close();
+      for (const session of sessions) session.stop("shutdown");
+      for (const session of voicemails) session.stop("shutdown");
+      await Promise.all([...sessions].map((session) => session.done));
+      await Promise.all([...voicemails].map((session) => session.done));
+      await audioSocket.close();
+      await webCalls.close();
+      await approvals.close();
+    },
+  };
+}

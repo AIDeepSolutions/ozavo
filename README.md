@@ -1,0 +1,357 @@
+<div align="center">
+
+Português · [English](README.en.md) · [Español](README.es.md)
+
+<h1>
+  <a href="https://ozavo.com.br"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/ozavo-logo-dark.svg">
+    <img src="brand/ozavo-logo-light.svg" alt="Ozavo" height="76">
+  </picture></a>
+</h1>
+
+**Central telefônica open source operada por agentes de IA, instalada na sua VPS.**
+
+O agente atende a ligação, executa ferramentas durante a conversa, pede aprovação a um humano
+quando precisa, transfere e deixa tarefas rodando depois que a chamada termina.
+
+**[ozavo.com.br](https://ozavo.com.br)** · [Instalar](https://ozavo.com.br/instalar) · [Guias](https://ozavo.com.br/guias) · [Notas de versão](https://ozavo.com.br/changelog)
+
+[![Site](https://img.shields.io/badge/site-ozavo.com.br-a2552f)](https://ozavo.com.br)
+[![CI](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml/badge.svg)](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
+[![Node 22](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Instalação própria](https://img.shields.io/badge/instala%C3%A7%C3%A3o-na%20sua%20VPS-orange)](install/install.sh)
+
+[Visão](VISION.md) · [Arquitetura](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · [Contribuir](CONTRIBUTING.md) · [Primeira ligação](docs/guides/primeira-ligacao.md)
+
+</div>
+
+---
+
+> **Estado do projeto: com versões publicadas.** A instalação, a atualização pela tela, o
+> backup, a restauração e a volta automática de uma atualização que falhou já rodaram numa VPS
+> real, e um contribuidor já fez ligações reais com o motor OpenAI Realtime. O que está provado, o
+> que é experimental e o que ainda é plano estão separados na seção "O que ele faz hoje". Não há
+> data prometida para nada do roadmap.
+
+## Instalar
+
+> **Parceria de infraestrutura: HostGator.** O Ozavo é gratuito, sem versão paga e sem recurso
+> travado. Quem sustenta o projeto é a parceria com a HostGator, e o kit de instalação foi feito
+> pensando na VPS dela: um comando, poucas perguntas, nenhuma variável para editar.
+>
+> **[Contratar a VPS da HostGator pelo link da parceria](https://www.hostgator.com.br/52708-141-3-52.html)**
+>
+> Usar esse link é o jeito de apoiar o projeto. Qualquer outra VPS com Docker funciona pelo mesmo
+> comando, sem nenhuma diferença de recurso.
+
+### Na sua VPS
+
+Entre na VPS por SSH e rode uma linha:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DeskLabs-OpenSource/Ozavo/main/install/get.sh | bash
+```
+
+Ela baixa o Ozavo em `~/Ozavo` e abre o instalador. Prefere ler antes de rodar? O mesmo
+resultado, passo a passo:
+
+```bash
+git clone https://github.com/DeskLabs-OpenSource/Ozavo.git && cd Ozavo && bash install/install.sh
+```
+
+O instalador confere a máquina e a rede, faz poucas perguntas (domínio, nome da empresa, seu
+nome, e-mail e senha), gera todos os segredos, sobe os serviços, cria o primeiro usuário e
+mostra o endereço do painel. Se faltar o Docker, ele pergunta e instala. Você não edita variável
+de ambiente à mão. Rodar de novo não quebra nada.
+
+Daí em diante tudo se configura pela tela: o tronco SIP, o número, a chave de IA e o agente.
+Nenhum recurso exige SSH para ser ligado.
+
+| O que ter em mãos | Observação |
+|---|---|
+| Uma VPS Ubuntu 22.04 ou mais nova (Debian 12+, AlmaLinux 9+ e Rocky Linux 9+ também são aceitos; o que foi provado em cada um está em [`install/README.md`](install/README.md#sistemas-aceitos)) | A [VPS da HostGator](https://www.hostgator.com.br/52708-141-3-52.html), parceira do projeto, é a recomendada. Qualquer VPS com Docker serve, pelo mesmo comando. Sobre memória, só o que foi medido: a instalação foi provada numa VPS de 8 GB e 4 vCPU, e o Ozavo parado usa cerca de 380 MiB de memória e ocupa cerca de 2,7 GB de disco (medidos na 0.3.0, sem o WhatsApp). O menor tamanho em que a instalação cabe ainda não foi medido. As imagens publicadas são para processador x86_64 (amd64) e, a partir da 0.12.0, também para ARM de 64 bits (arm64), pelo mesmo comando; ainda não houve prova numa máquina ARM de verdade ([por quê](docs/decisions/0017-imagens-para-amd64-e-arm64.md)). Em ARM, o instalador confere se a versão tem a imagem: se tem, puxa; se não tem, para e diz, e a instalação constrói na própria máquina, com `--build` |
+| Um domínio apontado para a VPS | Opcional para testar. Sem domínio não há HTTPS: o painel fica só dentro da VPS e você entra por túnel SSH (o instalador mostra o comando) |
+| Um tronco SIP com um número | Contratado com a operadora de telefonia de sua escolha. Autenticação por registro ou por IP; por IP, com um ou mais endereços ou blocos numéricos da operadora, até /16 no IPv4 e /32 no IPv6 |
+| Uma chave de IA de voz | Gemini (Google) ou OpenAI. Você paga o uso direto ao provedor |
+
+O passo a passo completo, do zero à primeira chamada, está em
+[`docs/guides/primeira-ligacao.md`](docs/guides/primeira-ligacao.md).
+
+### Instalando com um assistente de IA
+
+Usa Claude Code, Codex, Cursor ou outro assistente de código? Cole isto nele:
+
+```text
+Me ajude a instalar o Ozavo: https://github.com/DeskLabs-OpenSource/Ozavo
+Leia o AGENTS.md do repositório e siga a skill ozavo-instalar.
+```
+
+A primeira pergunta dele é se você já tem um servidor. Se não tiver, ele diz o tamanho de máquina
+que basta e mostra o link da VPS da HostGator, o mesmo do bloco acima, dizendo que é um link de
+parceria e que qualquer outra VPS com Docker funciona igual. Depois pergunta sobre o sistema da
+VPS, as portas, o domínio, o tronco SIP e a chave de IA, e acompanha até a primeira ligação.
+Senha e chave não vão para a conversa: entram pelo instalador ou pela tela.
+
+Prefere um comando a uma conversa? No seu computador (macOS ou Linux), antes de ter servidor:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DeskLabs-OpenSource/Ozavo/main/install/start.sh | bash
+```
+
+Ele só informa: o que é preciso, o tamanho da máquina, o link da parceria e o comando seguinte.
+Não instala nem coleta nada.
+
+### Ver uma chamada sem chave nem tronco
+
+O repositório traz um motor de voz simulado. Ele roda uma chamada inteira, com saudação,
+ferramenta, pedido de aprovação, transferência e tarefa pós-chamada, sem chave de IA e sem
+operadora. No seu computador:
+
+```bash
+git clone https://github.com/DeskLabs-OpenSource/Ozavo.git && cd Ozavo
+pnpm install && pnpm demo   # precisa de Docker: sobe um Postgres descartável e o remove ao sair
+```
+
+É o jeito mais rápido de entender o que o sistema faz antes de contratar qualquer coisa.
+
+## O que ele faz hoje
+
+O Ozavo publica versões desde 11/11/2026, e o que muda em cada uma está no
+[`CHANGELOG.md`](CHANGELOG.md). Para ninguém instalar esperando o que ainda não foi provado, cada
+capacidade abaixo diz até onde a prova foi:
+
+- **Provado em simulação:** coberto por teste de ponta a ponta com o motor simulado, que percorre a
+  chamada inteira sem operadora e sem chave.
+- **Provado numa instalação real:** rodou numa VPS de verdade (as de teste, em 11/11/2026, ou a
+  dedicada da parceira, em 12/11/2026), do jeito e até o ponto que a linha descreve. Cada prova,
+  com as saídas guardadas, está em [`docs/fundacao/instalacao-real.md`](docs/fundacao/instalacao-real.md).
+- **Aguardando prova real:** implementado e testado contra servidores falsos e contra um Asterisk
+  de verdade, mas ainda sem uma ligação feita por operadora real.
+
+| Capacidade | Até onde foi provado |
+|---|---|
+| Conversa da chamada: saudação, falas, ferramentas, encerramento | Provado em simulação |
+| Avisar um humano e pedir aprovação no meio da chamada, com prazo e resposta padrão | Provado em simulação |
+| Linha do tempo de cada chamada, evento por evento, com custo | Provado em simulação |
+| Na tela de cada chamada, as ligações anteriores do mesmo número (data, agente, desfecho e link) e as pendências abertas dele; o aviso de transferência e o de `notify_human` dizem quantas vezes o número já ligou. Nada disso chega ao agente da ligação | Testado com banco real, inclusive o isolamento entre empresas e que as instruções do agente não mudam; o teste de tela roda no CI, mas a tela não foi vista num navegador de verdade. O desempenho com muitas ligações do mesmo número não foi medido, e o mesmo número gravado de outro jeito (com e sem o nono dígito) conta como outro; o que a linha telefônica entrega não foi conferido. Desde a 0.14.0 |
+| Notas do agente sobre quem ligou (ferramenta `remember_caller_note`), vistas pela equipe no bloco "Este número" da tela da chamada; vem desligada e se marca na tela do agente. Até 10 notas por ligação, com prazo de 90 dias ajustável de 30 a 365 em Configurações, e entram na exportação e no apagamento a pedido de quem ligou. O agente ainda não recebe as notas na ligação seguinte | Testado com banco real, inclusive o isolamento entre empresas, o teto de 10, o prazo e o apagamento; o teste de tela passou no CI. Não foi conferido como o modelo de verdade usa a ferramenta, nem se ele evita anotar dado sensível. Desde a 0.15.0 |
+| Tarefas depois que a ligação termina (resumo, avisos, tarefas de acompanhamento) | Provado em simulação |
+| Teto de custo e de duração por chamada | Provado em simulação |
+| Teto por ligação nas ferramentas que gravam ou avisam: 5 pendências, 5 agendamentos, 5 chamadas de webhook, 3 avisos à equipe e 3 pedidos de aprovação; acima dele, a ferramenta não roda e o agente diz que o pedido não foi registrado | Testado com banco real, inclusive com chamadas em paralelo, que não passam do teto. Ainda sem ligação por operadora real. Desde a 0.13.0 |
+| Painel web em português, inglês e espanhol | Rotas testadas com banco real; telas conferidas em português |
+| Instalar numa VPS pelo kit de instalação | Provado numa instalação real, sem domínio: Ubuntu 22.04 em duas VPS de teste e AlmaLinux 9 na VPS da parceira (lá, antes de o instalador ligar o Docker sozinho, com o serviço ligado à mão). Debian e Rocky Linux ainda sem prova |
+| Painel e voz do navegador pelo mesmo endereço, a entrada única do Caddy | Provado numa instalação real, sem domínio |
+| Conversar por voz com o agente pela tela "Falar com o agente" | Provado numa instalação real com o motor OpenAI Realtime, por um cliente de teste que faz o papel do navegador com fala gravada. Ainda não por um navegador com microfone |
+| Painel com domínio e HTTPS | Aguardando prova real |
+| Atender ligação recebida por uma linha de operadora (tronco SIP) | Aguardando prova real |
+| Transferir a ligação para uma pessoa | Aguardando prova real (o caminho no Asterisk foi conferido, sem operadora). Desde a 0.9.0, a transferência que ninguém atende aparece como não atendida e gera um aviso no painel com o pedido de retorno, testado com banco real e com a telefonia simulada |
+| Caixa postal: a ligação pela linha telefônica para um número sem agente, ou com o agente desligado, é atendida com um aviso gravado e um bipe, e o recado fica na própria chamada; desligada de fábrica, liga em Configurações → Ligações e só funciona com a gravação ligada. A ligação pelo WhatsApp continua sem caixa postal | Testado com banco real e com um transporte de teste que leva o tempo do aviso para tocar. Ainda sem ligação por operadora real, e as telas não foram conferidas num navegador. Desde a 0.12.0 |
+| Motor de voz OpenAI Realtime | Provado numa instalação real, na conversa pela tela "Falar com o agente" descrita acima. Um contribuidor fez ligações reais com ele numa instalação própria, e, com a correção do custo ([#94](https://github.com/DeskLabs-OpenSource/Ozavo/pull/94)), a estimativa do Ozavo bateu com a fatura da OpenAI. A correção vale desde a 0.6.0 |
+| Motor de voz Gemini Live | Aguardando prova real (testado contra servidor falso, sem chave) |
+| Enviar WhatsApp durante a chamada, por conector | Aguardando prova real |
+| Conectar um WhatsApp por QR Code (Configurações → WhatsApp) e enviar por ele os avisos e as mensagens do agente | O serviço não vem instalado: instala-se pela tela, e custa cerca de 323 MiB de memória sem número conectado e 3,2 GB em disco (medido na 0.3.0, em 12/11/2026). Rotas testadas com banco real e com um serviço de WhatsApp falso; instalar e remover pelo agente, com Docker simulado. **Ainda sem prova com um número real:** nenhum QR Code foi lido e nenhuma mensagem saiu. É um cliente não oficial do WhatsApp; veja o [guia](docs/guides/whatsapp-por-qr-code.md) |
+| Atender pelo agente a ligação feita para o número no WhatsApp (Configurações → WhatsApp, no bloco Ligação pelo WhatsApp: conectar o número e escolher o agente) | O serviço (WaCalls) não vem instalado: instala-se pela tela; memória e disco ainda não medidos. **Provado com um número real** em quatro ligações recebidas em 12 e 13/11/2026 (a mais longa com 2 min 7 s), com áudio nos dois sentidos e transcrição, sem transferência para humano neste canal. O agente responde entre 0,6 e 2,4 s depois que quem ligou para de falar (nove respostas medidas nas gravações de duas ligações em 13/11; antes do ajuste que preenche o silêncio que o WhatsApp não manda, eram 4 a 5 s). Quando o WhatsApp esconde o número (`@lid`, hoje o caso comum), vale o telefone que a chamada informa, sem confirmação do WhatsApp, repassado pela imagem do WaCalls que o kit usa (fork com o conserto, até os autores o publicarem). **Provado numa ligação real com o número oculto** em 13/11/2026: o telefone chegou à linha do tempo sem nada gravado no cadastro do WaCalls. Cliente não oficial do WhatsApp; veja o [guia](docs/guides/ligacao-pelo-whatsapp.md) |
+| Desfecho da ligação (agendou, pediu retorno, deixou recado, sem interesse, só informação), classificado pelo motor depois da chamada; desligado de fábrica, liga em Configurações → Inteligência artificial | Testado com banco real e com uma resposta do provedor simulada, com o custo no limite de gasto e a falha na linha do tempo. Ainda sem prova numa instalação real nem com OpenAI ou Gemini de verdade. Desde a 0.8.0 |
+| Análise da ligação no fim, na mesma chamada paga do desfecho: a nota, que é sempre a soma de uma régua de cinco critérios com a fala que sustenta cada um quando ela aparece na conversa, a temperatura de quem ligou, as objeções com a resposta do agente e o próximo passo; desligada de fábrica, liga em Configurações → Inteligência artificial, e a nota aparece na lista de chamadas | Testado com banco real e com respostas do provedor simuladas: custo uma vez no extrato e no teto, motivo na linha do tempo quando a análise não é feita, nenhum texto de fala depois do apagamento a pedido de quem ligou. A tela foi conferida num painel contra um banco descartável, com análises gravadas direto no banco. Ainda sem prova numa instalação real nem com OpenAI ou Gemini de verdade. Desde a 0.11.0 |
+| Desfecho e análise num provedor compatível com OpenAI (DeepSeek, Qwen, OpenRouter, Groq), com endpoint, modelo e chave próprios em Configurações → Inteligência artificial; o provedor precisa aceitar resposta em `json_schema`; sem configurar, nada muda. O custo no provedor configurado não é estimado: aparece como zero e não conta no teto do agente | Testado com banco real e com respostas do provedor simuladas, inclusive a recusa de endereço interno e de endpoint sem chave própria. Ainda sem prova com um provedor compatível de verdade. Desde a 0.11.0 |
+| Ambiente de quem liga, normal ou barulhento, na tela do agente: no Barulhento o agente fica menos sensível a ruído para começar a ouvir. Por enquanto só no OpenAI Realtime; num agente que troca para outro motor, a tela avisa e oferece voltar para Normal | A sessão em Barulhento foi aceita pelo OpenAI Realtime numa instalação real, sem ligação. A tela foi conferida num painel contra um banco descartável. Ainda sem prova no Gemini Live, e o efeito no reconhecimento de fala não foi medido. Desde a 0.11.0 |
+| Aviso de fim de ligação no WhatsApp de quem opera, com texto fixo (sem fala nem telefone de quem ligou); desligado de fábrica, liga em Configurações → WhatsApp | Testado com banco real e um WhatsApp falso. Ainda sem prova com um número real. Desde a 0.8.0 |
+| Chamar um webhook durante a chamada | Aguardando prova real (sem um receptor de verdade) |
+| Apertar as teclas de um menu automático (URA) durante a chamada, com a ferramenta `send_dtmf` | Medido num Asterisk local, com a imagem e o dialplan da instalação, contra outro Asterisk no papel da URA: o menu que reconhece o tom no áudio leu as teclas; o que só aceita tecla por RFC 4733 não leu. Ainda sem prova com a URA de uma operadora |
+| Atualização, checagem de saúde, backup e restauração | Provado numa instalação real, na VPS da parceira: instalador rodado duas vezes sem regerar segredo, backup conferido, restauração que devolve as contagens do backup e a volta automática de uma atualização que falhou. Restaurar em outro servidor, ou entre versões com migration nova, ainda sem prova |
+| Atualizar pela tela (Configurações → Sistema), por um agente do kit no servidor | Provado numa instalação real: duas vezes na VPS da parceira (0.3.0 → 0.4.0 e 0.4.0 → 0.5.0), sem ninguém no terminal do servidor, com a passagem para o atualizador da versão nova e a remoção das imagens antigas |
+| Aviso de versão nova na lateral do painel, destacado só para dono e administrador, que levam direto à tela de atualização; o operador vê a versão em execução, sem destaque | Testado em unidade, inclusive que o operador não vê o destaque. A lateral não foi conferida num navegador. Logo depois de uma versão sair, a lateral pode avisar antes de a tela de atualização oferecer o botão. Desde a 0.13.0 |
+| Gravar o áudio da chamada, desligado de fábrica e ligado pela tela (Configurações → Privacidade → Gravação das chamadas) | Testado com banco real e numa chamada pelo navegador, em teste de ponta a ponta. Ainda sem prova numa instalação real. Desde a 0.6.0 |
+| Impressão digital (SHA-256) de cada gravação e de cada recado, na linha do tempo da chamada, para conferir se uma cópia do áudio é igual à gravada. Não prova nada contra quem administra o servidor, porque a impressão fica na mesma máquina que o áudio | Testado com banco real; a linha do tempo foi conferida por um teste que gera a tela, e não num navegador. Gravações anteriores à atualização não têm impressão. Desde a 0.13.0 |
+| Parar a gravação a pedido de quem liga, pelo agente (ferramenta `stop_recording`, marcada em cada agente) ou pelo botão na tela da chamada ao vivo; a parada fica na linha do tempo | Testado com banco real, na sessão de chamada de verdade, com motor e telefonia simulados. Ainda sem prova numa instalação real. Desde a 0.9.0 |
+| Transcrever a gravação de uma chamada que ficou sem texto, pelo provedor do agente, com cada lado da ligação separado; desligado de fábrica, liga em Configurações → Inteligência artificial, e o botão fica na tela da chamada, com o aviso de que, com o desfecho ou a análise ligados, transcrever também dispara a classificação paga | Testado com banco real e com respostas do provedor simuladas: custo no extrato e no teto, a falha do provedor com o motivo na linha do tempo, recusa de chamada apagada, fora do prazo de guarda, ou longa demais para o provedor sem a gravação ser carregada na memória. Ainda sem prova numa instalação real nem com OpenAI ou Gemini de verdade. Desde a 0.10.0 |
+| Transcrever sozinha, ao fim da chamada, a gravação que ficou sem fala nenhuma, antes do resumo final, do desfecho e do aviso; chave própria, desligada de fábrica, em Configurações → Inteligência artificial, que só funciona com a transcrição a pedido também ligada. Cada chamada transcrita é um pedido pago ao provedor, no custo e no teto | Testado com banco real e com respostas do provedor simuladas: chamada que já tem fala não é transcrita de novo, gravação longa demais nem é lida. Ainda sem prova numa instalação real nem com OpenAI ou Gemini de verdade. Desde a 0.11.0 |
+| Prazo de guarda da transcrição e exportação do que a organização guarda sobre um telefone (Configurações) | Testado com banco real e conferido na tela, num painel contra um banco descartável. Ainda sem prova numa instalação real. Desde a 0.6.0 |
+| Apagar a pedido de quem ligou (Configurações → Privacidade): prévia do que sai, confirmação que nomeia o telefone, recibo; sai toda a fala e o texto sobre a pessoa, inclusive a gravação, e fica o registro do serviço. Cópias de backup já feitas não são alcançadas | Testado com banco real, incluindo a volta pela exportação. Ainda sem prova numa instalação real. Desde a 0.9.0 |
+| Link temporário para quem ligou baixar a gravação da própria chamada, criado na tela da chamada pelo dono ou administrador: vale 72 horas e 10 downloads, sem login, e a tela revoga na hora; cada criação, revogação e download fica no registro de Privacidade | Testado com banco real, inclusive downloads simultâneos que não passam do limite. Nem a tela da chamada nem a página /s/<token> que quem ligou abre foram conferidas num navegador, e sem domínio o link só abre de dentro do servidor. Desde a 0.12.0 |
+| Ligações feitas pelo agente | Aguardando prova real, e desligado de fábrica. Veja "Ligações de saída", abaixo |
+
+Se você atender uma ligação por uma linha de operadora, conte como foi numa issue: a entrada por
+tronco SIP ainda não tem registro público, e é a contribuição mais valiosa neste momento.
+
+O que **não** existe ainda: várias empresas na mesma tela, construtor visual de fluxos,
+URA por voz, filas de atendimento. Parte disso está no [roadmap](ROADMAP.md), aberta para a comunidade.
+
+## Como funciona
+
+```
+        tronco SIP (operadora)
+               │ SIP + RTP (UDP)
+        ┌──────▼──────┐
+        │  Asterisk   │  borda de telefonia; nunca fala com a internet por HTTP
+        └──┬───────┬──┘
+   ARI (WS)│       │AudioSocket (TCP, PCM16 8 kHz)
+        ┌──▼───────▼──┐        ┌──────────────────┐
+        │  apps/voice │◄──────►│ motor de voz     │ Gemini Live / OpenAI Realtime / simulado
+        │             │        └──────────────────┘
+        │  ferramentas│──► avisar humano, pedir aprovação, transferir, webhook, WhatsApp
+        └──────┬──────┘
+               │ eventos + tarefas
+        ┌──────▼──────┐   LISTEN/NOTIFY   ┌──────────────┐
+        │  Postgres   │◄─────────────────►│ apps/routines │ tarefas pós-chamada
+        └──────▲──────┘                   └──────────────┘
+               │
+        ┌──────┴──────┐
+        │  apps/panel │  Next.js: painel + API; publicado pelo Caddy
+        └─────────────┘
+```
+
+Em palavras: a operadora entrega a ligação ao Asterisk. O Asterisk passa o controle e o áudio
+para o processo de voz, que conversa com o modelo de IA e executa as ferramentas que o agente
+pedir. Cada coisa que acontece vira um evento no Postgres, e é desses eventos que o painel
+monta a linha do tempo. Quando a ligação termina, um terceiro processo continua o trabalho.
+
+Stack: Node 22, TypeScript, pnpm, Next.js, Postgres 17 dentro da VPS, Asterisk 20, Docker
+Compose e Caddy. O caminho de uma ligação, passo a passo, está em
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Relação com o DeskcommCRM
+
+O Ozavo é irmão do [DeskcommCRM](https://github.com/melgarafael/DeskcommCRM), do mesmo
+criador. A primeira pergunta costuma ser esta, então a resposta vai direta:
+
+- **O DeskcommCRM já tem um módulo de ligações, e ele continua existindo.** A meta pública das
+  500 estrelas foi cumprida lá.
+- **O Ozavo é um sistema independente em que a telefonia é o centro.** Você não precisa do
+  Deskcomm para usar o Ozavo, nem o contrário.
+- **Mais adiante, o módulo do Deskcomm vira um conector para o Ozavo.** Quem usa os dois
+  terá a ligação e o CRM conversando. Isso é roadmap, sem data.
+
+O motivo da separação está em
+[`docs/decisions/0001-fronteira-com-o-deskcomm.md`](docs/decisions/0001-fronteira-com-o-deskcomm.md).
+
+## Custos
+
+O software é gratuito. Não existe versão paga nem recurso travado. Você paga três coisas, todas
+direto ao fornecedor:
+
+1. **A VPS.**
+2. **A telefonia.** Depende do tronco que você contratar.
+3. **A IA de voz.** Nos motores de voz direta, a estimativa fica na casa de alguns centavos de
+   dólar por minuto, conforme o modelo.
+
+São estimativas, e preços mudam. O painel mostra o custo medido de cada chamada, e cada agente
+tem um teto de custo por chamada. Como estimar a sua conta está em
+[`docs/guides/custos.md`](docs/guides/custos.md).
+
+## Ligações de saída
+
+O agente pode fazer ligações. **O recurso vem desligado.** Quem é dono da instalação liga pela
+tela, depois de declarar a finalidade, e a partir daí valem:
+
+- teto diário de chamadas por linha;
+- lista de não ligar;
+- janela de horário;
+- limite de tentativas por pessoa;
+- aviso de gravação no início da chamada.
+
+O motivo: no Brasil, a Anatel bloqueia linhas com padrão de chamadas curtas em massa, e a
+regulamentação de telemarketing está mudando. O Ozavo não foi feito para disparo em massa
+e não aceita contribuição que facilite isso. Quem opera a instalação responde pelo uso que faz
+dela. Leia [`docs/guides/conformidade-brasil.md`](docs/guides/conformidade-brasil.md) antes de
+ligar o recurso.
+
+## Contatos que a instalação faz sozinha
+
+O Ozavo não tem telemetria: nenhum dado de uso, de chamada ou da instalação vai para o
+projeto. Estes são todos os contatos com fora que a instalação faz sem você pedir:
+
+| Quem | Com quem | Quando | O que envia |
+|---|---|---|---|
+| Painel | API pública de versões do GitHub (`api.github.com/repos/DeskLabs-OpenSource/Ozavo/releases`) | Quando alguém abre Configurações → Sistema ou confirma uma atualização. A resposta fica guardada por 10 minutos (1 minuto, se a consulta falhou) | Um pedido de leitura sem credencial e sem corpo, com dois cabeçalhos fixos, iguais em toda instalação: `accept: application/vnd.github+json` e `user-agent: ozavo-panel`. Nenhuma versão, endereço ou identificador da instalação |
+| Agente de atualização | O repositório no GitHub, por `git fetch --tags` | O agente passa a cada minuto e busca as versões no máximo a cada 10 minutos, quando a instalação está numa versão publicada e veio de um clone do repositório | O pedido do git para buscar as etiquetas, sem credencial. O git se identifica com a própria versão (`git/2.x`); nada da instalação vai junto |
+| Caddy, só com domínio | A autoridade de certificados que o Caddy usa (Let's Encrypt, por padrão) | Ao instalar e, depois, sozinho, para renovar o certificado antes de vencer | O domínio, para provar que ele aponta para a VPS. O Ozavo não configura e-mail nesse pedido |
+
+Quando você pede, a instalação também fala com fora:
+
+- **Instalar e atualizar** (pelo terminal ou pela tela) baixa o código do GitHub e as imagens: as do
+  Ozavo no `ghcr.io` (painel, voz e rotinas) e as de terceiros no Docker Hub (Postgres, Caddy,
+  Asterisk). O Docker se identifica como em qualquer download de imagem (versão dele, do kernel e
+  a arquitetura); o Ozavo não acrescenta nada.
+- **Instalar sem informar o IP** (`OZAVO_PUBLIC_IP`): o instalador descobre o IP público da VPS
+  perguntando a `api.ipify.org`, `ifconfig.me` e `icanhazip.com`, um de cada vez, até um responder.
+  O pedido não leva nada; o serviço vê o IP da VPS, que é a resposta. O `install/diagnose.sh` faz
+  a mesma consulta.
+- **Instalar sem Docker:** depois de perguntar, o instalador baixa o script oficial de
+  `get.docker.com`.
+- **Instalar o WhatsApp pela tela:** o agente baixa a imagem do WAHA do Docker Hub, e tenta de novo
+  a cada 10 minutos se o download falhar.
+- **Construir na própria máquina** (`--build`): baixa a base do Node do Docker Hub, o pnpm e os
+  pacotes do registro do npm.
+
+No uso, o Ozavo fala com o que você configurou: o provedor de IA de voz (Google ou OpenAI)
+durante as chamadas, com a sua chave; a operadora do tronco SIP; o WhatsApp, pelo WAHA, se você o
+conectou; e os endereços das ferramentas e webhooks que você cadastrou. Com o desfecho ou a análise da ligação
+ligados (Configurações → Inteligência artificial, desligados de fábrica), o processo de rotinas
+também manda a transcrição em texto ao mesmo provedor, depois da chamada, pela API de texto dele
+(`/chat/completions` na OpenAI, `:generateContent` no Google), ou ao endpoint compatível com OpenAI que você
+configurou para isso.
+
+## Contribuir
+
+O projeto foi montado para que um PR de primeira viagem dê certo:
+
+- Abra o repositório no seu assistente de código (Claude Code, Codex, Cursor, Antigravity). As
+  skills em `.agents/skills/` guiam a contribuição, e o [`AGENTS.md`](AGENTS.md) é a autoridade
+  que todos eles leem.
+- Ferramenta, motor de voz e rotina moram cada um no próprio arquivo e são descobertos pela
+  pasta. Seu PR não disputa uma lista central com o PR de outra pessoa.
+- Quando o CI fica vermelho, ele diz se a causa é do seu PR.
+
+Comece por [`CONTRIBUTING.md`](CONTRIBUTING.md). Para uma primeira contribuição com começo, meio
+e fim: [adicionar uma ferramenta](docs/guides/adicionar-uma-ferramenta.md) ou
+[adicionar um motor de voz](docs/guides/adicionar-um-motor-de-voz.md).
+
+## Roadmap
+
+O horizonte e as frentes abertas para a comunidade, cada uma com tamanho e ponto de entrada no
+código, estão em [`ROADMAP.md`](ROADMAP.md). Entre as frentes: motor de voz em pipeline
+(transcrição, modelo de texto e síntese), ferramentas de agenda, CRM e pagamento, conector com o
+DeskcommCRM e painel de supervisão ao vivo.
+
+## Quem constrói
+
+O Ozavo foi criado por Rafael Melgaço ([@melgarafael](https://www.youtube.com/@melgarafael)) e
+é construído em público, com a comunidade. Já há contribuições de fora: as cercas e a
+segurança de [webtecnica](https://github.com/webtecnica) estão nas versões publicadas, e desde a 0.6.0 também os direitos de
+quem ligou (prazo de guarda e exportação), de webtecnica, e o custo da OpenAI conferido contra a
+fatura, a despedida antes de desligar e a gravação das chamadas, de
+[aliffstefano](https://github.com/aliffstefano). A 0.8.0 traz o desfecho da ligação e o aviso de fim de ligação no WhatsApp, de webtecnica, e a 0.9.0, também de webtecnica, as teclas do menu automático, a transferência não atendida, a gravação que para a pedido e o apagamento a pedido de quem ligou, e a 0.10.0, também de webtecnica, a transcrição da gravação, e a 0.11.0, também de webtecnica, o prazo de guarda que alcança o resumo da chamada, o custo exato da leitura do desfecho e o desfecho num provedor compatível com OpenAI, o aviso de custo e a falha da transcrição na tela, a linha por IP com vários blocos, a transcrição automática ao fim da chamada e os guias de implantação para clínicas e para a mesma VPS do CRM, e a 0.12.0, também de webtecnica, a caixa postal, o link para quem ligou baixar a gravação e as imagens para ARM, e a 0.13.0, também de webtecnica, o aviso de versão na lateral, o teto por ligação nas ferramentas, os cabeçalhos de segurança do painel e a impressão digital da gravação. O DeskcommCRM, de onde vem a fábrica de contribuição
+usada aqui, recebeu PRs de mais de 250 pessoas.
+
+Crédito é regra, não cortesia: quem contribui mantém a autoria do commit e tem o nome nas notas
+da versão. O que este projeto deve a outros projetos está em [`CREDITS.md`](CREDITS.md). Quem
+decide o quê está em [`GOVERNANCE.md`](GOVERNANCE.md).
+
+Quer ganhar dinheiro instalando e mantendo o Ozavo para empresas? Pode, e não nos deve nada
+por isso. Veja [`docs/guides/ganhar-dinheiro-implementando.md`](docs/guides/ganhar-dinheiro-implementando.md).
+
+## Licença
+
+[MIT](LICENSE). © 2026 Rafael Melgaço e contribuidores.
+
+O Asterisk, usado como serviço à parte na borda de telefonia, é distribuído pelos seus autores
+sob GPLv2 e não é embutido no código do Ozavo.
+
+## Suporte e responsabilidades
+
+- **Dúvida ou ideia:** [GitHub Discussions](https://github.com/DeskLabs-OpenSource/Ozavo/discussions).
+- **Bug:** [abra uma issue](https://github.com/DeskLabs-OpenSource/Ozavo/issues).
+- **Vulnerabilidade:** relato privado, como descrito em [`SECURITY.md`](SECURITY.md). Nunca em issue pública.
+
+O que é seu, por ser uma instalação própria:
+
+- **A VPS e os dados.** Firewall, atualizações do sistema e backup fora da máquina são com você.
+  O instalador traz backup e restauração, mas não escolhe por você onde guardar a cópia.
+- **As chaves e os contratos.** A conta com o provedor de IA e com a operadora é sua, e a fatura
+  também.
+- **O uso.** Gravação, tratamento de dados pessoais e ligações de saída têm regras legais. O
+  projeto entrega os controles, e não oferece aconselhamento jurídico.
+
+O software é entregue como está, sem garantia, nos termos da licença MIT.

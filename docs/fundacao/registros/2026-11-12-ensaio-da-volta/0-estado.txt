@@ -1,0 +1,7 @@
+antes: OZAVO_VERSION=0.5.0 contagens=1|25|5
+ozavo-asterisk-1 927d4c987771
+ozavo-caddy-1 caddy:2.11.9-alpine
+ozavo-panel-1 ghcr.io/desklabs-opensource/ozavo-panel:0.5.0
+ozavo-postgres-1 postgres:17.11-alpine
+ozavo-routines-1 ghcr.io/desklabs-opensource/ozavo-routines:0.5.0
+ozavo-voice-1 ghcr.io/desklabs-opensource/ozavo-voice:0.5.0

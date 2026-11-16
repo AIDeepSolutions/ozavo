@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# install.sh de verdade (com Docker de mentira): a publicação que ele grava em cada modo, a
+# reinstalação por cima de uma instalação de duas portas e as instruções finais, com UMA porta.
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+unset SUDO_USER; U="$(id -un)"   # o nome que o instalador põe no comando do túnel
+source "$KIT/_common.sh"; set +e; trap - ERR
+D="$OZAVO_DEPLOY_DIR"; O="$D/docker-compose.override.yml"; A="$D/app.env"
+export OZAVO_ORG_NAME="Clínica Exemplo" OZAVO_OWNER_NAME="Ana Exemplo" OZAVO_OWNER_EMAIL=ana@exemplo.com.br OZAVO_OWNER_PASSWORD="senha-de-teste-123"
+export OZAVO_HEALTH_TIMEOUT=0
+echo 1 > "$FAKE_DIR/users_count"
+: > "$FAKE_DIR/git_tags"   # um clone do repositório, ainda sem nenhuma versão publicada
+printf 'asterisk|ok|PJSIP 20.20.1\n' > "$FAKE_DIR/voice_health"
+printf '%s\n' 'panel|ok|respondendo' 'trunk|warn|sem linha' 'engine|warn|sem chave' > "$FAKE_DIR/panel_health"
+other_proxy() { printf 'LISTEN 0 511 0.0.0.0:80 0.0.0.0:*\nLISTEN 0 511 0.0.0.0:443 0.0.0.0:*\n%s' "${1:-}" > "$FAKE_DIR/ss_tcp"; }
+install() { bash "$KIT/install.sh" --yes --force 2>&1; }
+ports_published() { sed -n 's/^ *- "\(.*\)"$/\1/p' "$O" | tr '\n' ' '; }
+services_with_ports() { awk '/^  [a-z-]+:/ { s = $1 } /^    ports:/ { print s }' "$O" | tr -d ':' | tr '\n' ' '; }
+
+# ── 1. Instalação que já existia, no formato de DUAS portas (o caso da instalação de teste real):
+#       painel em 127.0.0.1:3080, voz em 127.0.0.1:3081, sem domínio, por túnel. ──
+write_env_files "http://localhost:3080" 203.0.113.10 localhost 10000 10200
+printf '# Gerado pelo instalador: 80/443 já são de outro proxy nesta máquina.\nservices:\n  panel:\n    ports:\n      - "127.0.0.1:3080:3000"\n  voice:\n    ports:\n      - "127.0.0.1:3081:8091"\n' > "$O"
+env_set "$A" VOICE_WEB_PUBLIC_PORT 3081; env_set "$A" TRUSTED_PROXY_HOPS 1; env_set "$D/.env" COMPOSE_PROFILES ""
+secret_before="$(env_get "$A" OZAVO_SECRET_KEY)"
+# As portas antigas estão ocupadas pelos NOSSOS contêineres antigos; a reinstalação não pode fugir delas.
+other_proxy 'LISTEN 0 128 127.0.0.1:3080 0.0.0.0:*
+LISTEN 0 128 127.0.0.1:3081 0.0.0.0:*
+'
+printf '%s\n' postgres asterisk panel voice routines caddy > "$FAKE_DIR/running"
+out="$(OZAVO_DOMAIN="" install)"; equal "reinstalar por cima de duas portas: sai com zero" 0 "$?"
+equal "reinstalar: UMA publicação, na mesma porta que o túnel já conhecia" "127.0.0.1:3080:80 " "$(ports_published)"
+equal "reinstalar: só o Caddy tem porta" "caddy " "$(services_with_ports)"
+lacks "reinstalar: a porta de voz antiga não fica em lugar nenhum do arquivo" "$(cat "$O")" "3081"
+lacks "reinstalar: VOICE_WEB_PUBLIC_PORT sai do app.env" "$(cat "$A")" "VOICE_WEB_PUBLIC_PORT"
+equal "reinstalar: continua só local, sem ninguém pedir" "http://localhost:3080" "$(env_get "$A" PUBLIC_URL)"
+equal "reinstalar por túnel: 1 salto, Caddy sem confiar em cabeçalho" "1 127.0.0.1/32" "$(env_get "$A" TRUSTED_PROXY_HOPS) $(sed -n 's/.*CADDY_TRUSTED_PROXIES: "\(.*\)".*/\1/p' "$O")"
+equal "reinstalar: segredo nenhum muda" "$secret_before" "$(env_get "$A" OZAVO_SECRET_KEY)"
+check "reinstalar: sobe tirando contêiner e porta que sobraram" grep -q "docker-compose.override.yml up -d --remove-orphans" "$FAKE_DIR/calls.log"
+check "reinstalar: baixa a imagem do Caddy" grep -q "pull -q postgres asterisk caddy" "$FAKE_DIR/calls.log"
+contains "túnel: uma porta só" "$out" "ssh -L 3080:127.0.0.1:3080 $U@203.0.113.10"
+lacks "túnel: nenhuma menção à segunda porta" "$out" "3081"
+lacks "túnel: nenhuma segunda regra -L" "$out" "-L 3080:127.0.0.1:3080 -L"
+contains "confere a entrada antes de anunciar o endereço" "$out" "Entrada única conferida"
+
+# ── 2. Mesma máquina, agora com domínio atrás do proxy do operador ──
+out="$(OZAVO_DOMAIN=voz.exemplo.com.br install)"; equal "com domínio atrás do proxy do operador: zero" 0 "$?"
+equal "proxy do operador: mesma porta única, só para dentro" "127.0.0.1:3080:80 " "$(ports_published)"
+equal "proxy do operador: 2 saltos e Caddy ouvindo só rede privada" "2 private_ranges" "$(env_get "$A" TRUSTED_PROXY_HOPS) $(sed -n 's/.*CADDY_TRUSTED_PROXIES: "\(.*\)".*/\1/p' "$O")"
+nginx="$(printf '%s\n' "$out" | grep 'Nginx instalado')"
+equal "Nginx: uma linha só" 1 "$(printf '%s\n' "$nginx" | wc -l | tr -d ' ')"
+contains "Nginx: destino é a porta única" "$nginx" "proxy_pass http://127.0.0.1:3080;"
+contains "Nginx: repassa Upgrade (WebSocket)" "$nginx" 'proxy_set_header Upgrade $http_upgrade;'
+contains "Nginx: repassa Connection (WebSocket)" "$nginx" 'proxy_set_header Connection "upgrade";'
+contains "Nginx: HTTP/1.1, sem o qual o WebSocket não passa" "$nginx" "proxy_http_version 1.1;"
+contains "Nginx: acrescenta o endereço do visitante" "$nginx" 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
+contains "Caddy do operador: uma linha, porta única" "$(printf '%s\n' "$out" | grep 'Caddy instalado')" "reverse_proxy 127.0.0.1:3080"
+contains "proxy em contêiner: aponta para o Caddy do Ozavo, não para o painel" "$(printf '%s\n' "$out" | grep 'Proxy em contêiner')" "http://ozavo-caddy-1:80"
+contains "proxy em contêiner: pede WebSocket" "$(printf '%s\n' "$out" | grep 'Proxy em contêiner')" "WebSocket"
+lacks "nenhuma instrução aponta para o painel direto" "$out" "ozavo-panel-1"
+lacks "nenhuma instrução aponta para a voz direto" "$out" "ozavo-voice-1"
+lacks "nenhuma instrução usa a porta de voz" "$out" "8091"
+lacks "nenhuma segunda porta nas instruções" "$out" "3081"
+contains "manda apagar a regra antiga de /voice-ws" "$out" "regra separada para /voice-ws"
+
+# ── 3. Sem domínio, aberto pelo IP ──
+env_set "$D/.env" PANEL_DOMAIN localhost   # resposta vazia mantém o domínio anterior; aqui a máquina nunca teve
+out="$(OZAVO_DOMAIN="" OZAVO_PANEL_PUBLIC_HTTP=yes install)"; equal "aberto pelo IP: zero" 0 "$?"
+equal "aberto pelo IP: uma publicação" "0.0.0.0:3080:80 " "$(ports_published)"
+equal "aberto pelo IP: 1 salto" 1 "$(env_get "$A" TRUSTED_PROXY_HOPS)"
+contains "aberto pelo IP: avisa do microfone e ensina o túnel de uma porta" "$out" "ssh -L 3080:127.0.0.1:3080 $U@203.0.113.10"
+
+# ── 4. Máquina com 80/443 livres ──
+: > "$FAKE_DIR/ss_tcp"; rm "$O"
+out="$(OZAVO_DOMAIN=voz.exemplo.com.br install)"; equal "80/443 livres com domínio: zero" 0 "$?"
+equal "80/443 livres com domínio: publica 80 e 443" "80:80 443:443 " "$(ports_published)"
+equal "80/443 livres: só o Caddy tem porta" "caddy " "$(services_with_ports)"
+equal "80/443 livres: 1 salto" 1 "$(env_get "$A" TRUSTED_PROXY_HOPS)"
+lacks "80/443 livres: nenhum passo de proxy pedido" "$out" "Falta um passo seu"
+# Reinstalar com o nosso Caddy já nas 80/443 (as portas aparecem ocupadas, por nós): continua nelas.
+other_proxy
+out="$(OZAVO_DOMAIN=voz.exemplo.com.br install)"
+equal "reinstalar com o nosso Caddy nas 80/443: continua nas 80/443" "80:80 443:443 " "$(ports_published)"
+env_set "$D/.env" PANEL_DOMAIN ":80"
+out="$(OZAVO_DOMAIN="" install)"
+equal "80/443 nossas, sem domínio: só a 80" "80:80 " "$(ports_published)"
+equal "sem domínio: endereço pelo IP" "http://203.0.113.10" "$(env_get "$A" PUBLIC_URL)"
+
+# ── 5. Atrás do Caddy do CRM (issue #221): a rede do proxy dele fica no arquivo de publicação,
+#       e o `up` que recria o Caddy do Ozavo já o põe nela. ──
+proxy_networks() { sed -n '/^networks:/,$p' "$O"; }
+out="$(OZAVO_DOMAIN="" OZAVO_PROXY_NETWORK='crm;rm' install)"; equal "rede com nome que não vale: para" 1 "$?"
+contains "rede com nome que não vale: diz qual" "$out" "OZAVO_PROXY_NETWORK (crm;rm) não vale"
+before="$(cat "$O")"
+out="$(OZAVO_DOMAIN="" OZAVO_PROXY_NETWORK=crm_caddy-sites install)"; equal "rede que não existe: para" 1 "$?"
+contains "rede que não existe: diz qual e que nada mudou" "$out" "A rede crm_caddy-sites"
+equal "rede que não existe: o arquivo de publicação fica como estava" "$before" "$(cat "$O")"
+echo crm_caddy-sites > "$FAKE_DIR/networks"
+out="$(OZAVO_DOMAIN="" OZAVO_PROXY_NETWORK=crm_caddy-sites install)"; equal "com a rede do CRM: zero" 0 "$?"
+equal "com a rede do CRM: declarada como externa, pelo nome medido" "$(printf 'networks:\n  proxy:\n    name: "crm_caddy-sites"\n    external: true')" "$(proxy_networks)"
+contains "com a rede do CRM: o Caddy entra nela com o nome ozavo" "$(cat "$O")" "aliases: [ozavo]"
+contains "com a rede do CRM: e continua na rede interna do Ozavo" "$(cat "$O")" "internal: {}"
+equal "com a rede do CRM: a publicação continua a mesma" "80:80 " "$(ports_published)"
+out="$(OZAVO_DOMAIN="" install)"; equal "reinstalar sem a variável: zero" 0 "$?"
+contains "reinstalar sem a variável: a rede gravada fica" "$(proxy_networks)" 'name: "crm_caddy-sites"'
+apply_entry caddy ""   # o que a atualização faz numa instalação de formato antigo
+contains "reescrever a publicação (atualização): a rede gravada fica" "$(proxy_networks)" 'name: "crm_caddy-sites"'
+: > "$FAKE_DIR/networks"
+out="$(OZAVO_DOMAIN="" install)"; equal "a rede gravada sumiu: a reinstalação para antes de mexer" 1 "$?"
+contains "a rede gravada sumiu: ensina a tirar" "$out" "OZAVO_PROXY_NETWORK=off"
+out="$(OZAVO_DOMAIN="" OZAVO_PROXY_NETWORK=off install)"; equal "tirar a rede: zero" 0 "$?"
+lacks "tirar a rede: sai do arquivo" "$(cat "$O")" "crm_caddy-sites"
+lacks "tirar a rede: sem bloco de redes" "$(cat "$O")" "networks:"
+
+# A entrada com problema não é escondida no fim da instalação.
+printf 'panel|200\nvoice|502\n' > "$FAKE_DIR/entry_probe"
+out="$(OZAVO_DOMAIN="" install)"; equal "voz inalcançável pela entrada: a instalação termina (o painel funciona)" 0 "$?"
+contains "voz inalcançável pela entrada: avisa com a causa" "$out" "/voice-ws não chega ao serviço de voz"
+lacks "voz inalcançável pela entrada: não diz conferida" "$out" "Entrada única conferida"
+lacks "senha do dono nunca aparece" "$out" "senha-de-teste-123"
+finish

@@ -1,0 +1,170 @@
+name: release
+
+# A release tem dois atos, e nenhum deles digita o número da versão.
+#
+#   Ato 1 (manual, "Run workflow"): lê os fragmentos de `.changes/`, calcula a versão pelo efeito
+#     que cada um declarou, monta a seção do CHANGELOG.md, apaga os fragmentos e abre o PR
+#     `release/X.Y.Z`. Major só com o input `major` marcado.
+#   Ato 2 (merge desse PR na main): cria a tag `vX.Y.Z` no commit da main que trouxe a versão ao
+#     CHANGELOG (com merge, squash ou rebase) e dispara a publicação das imagens. A release do
+#     GitHub é publicada pelo publish-image, no fim, quando as imagens já baixam sem credencial.
+#
+# A tag só nasce de commit da main, e só do merge de um PR `release/*` deste repositório.
+#
+# SOBRE O TOKEN. O PR de release é aberto pela conta de robô do projeto, com o segredo
+# RELEASE_BOT_TOKEN (só conteúdo e pull requests deste repositório). Tudo o mais usa o
+# GITHUB_TOKEN com permissão por job. O GitHub não dispara
+# workflows para o que o GITHUB_TOKEN faz, e por isso há dois disparos explícitos abaixo (o `ci`
+# no ramo da release e o `publish-image` na tag). Também é preciso ligar, na organização,
+# "Allow GitHub Actions to create and approve pull requests".
+# Se a organização preferir um GitHub App (dispara os workflows sozinho e pode ser exceção na
+# proteção de branch), troque os pontos marcados com "GITHUB APP" por:
+#
+#   - uses: actions/create-github-app-token@<sha> # vN
+#     id: app
+#     with:
+#       app-id: ${{ secrets.RELEASE_APP_ID }}
+#       private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+#
+# e use `${{ steps.app.outputs.token }}` no lugar de `${{ github.token }}`; os dois passos
+# "Disparar" deixam de ser necessários.
+
+on:
+  workflow_dispatch:
+    inputs:
+      major:
+        description: "Cortar como MAJOR (só por decisão explícita do dono do projeto)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# O grupo leva o commit: com um grupo só por evento, o GitHub guarda uma execução pendente e a mais
+# nova substitui a mais velha. O merge de uma release seguido de outro push na main podia ter a
+# execução do corte cancelada, e a seguinte não veria fragmento apagado: CHANGELOG sem tag, em silêncio.
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  open-release-pr:
+    name: open-release-pr
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # empurra o ramo release/X.Y.Z
+      pull-requests: write # abre o PR
+      actions: write # dispara o ci no ramo
+    steps:
+      - name: A release sai da main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Dispare este workflow a partir da main (veio de ${GITHUB_REF})."
+          exit 1
+      # GITHUB APP: gere o token aqui e passe-o em `token:` do checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - name: Calcular a versão e montar a seção do CHANGELOG
+        id: cut
+        env:
+          MAJOR: ${{ inputs.major }}
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "${MAJOR}" = "true" ]; then flags=(--major); fi
+          pnpm exec tsx scripts/release.ts cut "${flags[@]}" | tee "${RUNNER_TEMP}/cut.txt"
+          echo "version=$(pnpm exec tsx scripts/release.ts current)" >> "${GITHUB_OUTPUT}"
+      - name: Abrir o PR de release
+        env:
+          GH_TOKEN: ${{ github.token }} # GITHUB APP: token do App
+          # Conta de robô do projeto. Só abre o PR: um PR aberto por uma conta de verdade recebe o
+          # evento `pull_request`, e o `ci` roda nele como em qualquer outro. Sem o segredo, o PR é
+          # aberto pelo GITHUB_TOKEN e o `ci` é disparado à mão no ramo, como antes.
+          BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          VERSION: ${{ steps.cut.outputs.version }}
+        run: |
+          set -euo pipefail
+          branch="release/${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${branch}"
+          git add CHANGELOG.md .changes
+          git commit -m "chore(release): ${VERSION}"
+          git push origin "${branch}"
+          {
+            echo "Esta versão sai como **${VERSION}**. O número foi calculado a partir do efeito que cada mudança declarou em \`.changes/\`; ninguém digitou."
+            echo
+            echo '```'
+            cat "${RUNNER_TEMP}/cut.txt"
+            echo '```'
+            echo
+            echo "O merge deste PR cria a tag \`v${VERSION}\`, publica a release e as três imagens."
+            echo "Algo errado? **Feche o PR** em vez de editar o número: corrija o fragmento na main e dispare o workflow de novo."
+          } > "${RUNNER_TEMP}/body.md"
+          if [ -n "${BOT_TOKEN}" ]; then
+            GH_TOKEN="${BOT_TOKEN}" gh pr create --base main --head "${branch}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/body.md"
+          else
+            gh pr create --base main --head "${branch}" --title "Release ${VERSION}" --body-file "${RUNNER_TEMP}/body.md"
+            # Disparar: PR aberto pelo GITHUB_TOKEN não recebe o evento `pull_request`.
+            gh workflow run ci.yml --ref "${branch}"
+          fi
+
+  tag-release:
+    name: tag-release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # cria a tag
+      pull-requests: read # confere de que PR veio o commit
+      actions: write # dispara o publish-image na tag
+    steps:
+      # GITHUB APP: gere o token aqui e passe-o em `token:` do checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      # Roda a cada push na main e decide pelo histórico, não pelo último push: a tag vai no commit
+      # que trouxe a versão ao CHANGELOG (merge, squash ou rebase), e só se ele apagou fragmentos e
+      # veio de um PR release/<versão> deste repositório. Versão já marcada não é marcada de novo.
+      # Por isso a reexecução e o push seguinte que chega antes do corte terminar dão no mesmo
+      # commit. Como o publish-image constrói a etiqueta, as imagens são exatamente o código desse
+      # commit, mesmo com pushes depois dele. A lógica e os testes estão em scripts/release/tag-target.ts.
+      - name: Qual commit trouxe a versão, e ele é de um PR de versão?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/release.ts tag-target "${GITHUB_SHA}" | tee "${RUNNER_TEMP}/gate.txt"
+          grep -E '^(version|commit)=' "${RUNNER_TEMP}/gate.txt" >> "${GITHUB_OUTPUT}" || true
+      - name: Criar a tag e disparar as imagens
+        if: steps.gate.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }} # GITHUB APP: token do App
+          VERSION: ${{ steps.gate.outputs.version }}
+          COMMIT: ${{ steps.gate.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "v${VERSION}" "${COMMIT}"
+          if ! git push origin "v${VERSION}"; then
+            # Duas execuções (o merge da versão e o push logo depois) podem chegar juntas ao mesmo
+            # commit. Quem empurrou primeiro dispara as imagens; a outra só confere que é o mesmo.
+            remote="$(git ls-remote origin "refs/tags/v${VERSION}^{}" | cut -f1)"
+            if [ "${remote}" = "${COMMIT}" ]; then
+              echo "v${VERSION} já foi criada por outra execução no mesmo commit: nada a fazer."
+              exit 0
+            fi
+            echo "::error::Não consegui empurrar v${VERSION} para ${COMMIT} (no remoto ela aponta para ${remote:-nada})."
+            exit 1
+          fi
+          # A release do GitHub NÃO nasce aqui: nasce no fim do publish-image, depois que as imagens
+          # baixam sem credencial. "Release publicada" significa "instalável".
+          # Disparar: tag empurrada pelo GITHUB_TOKEN não aciona o `on: push: tags` do publish-image.
+          gh workflow run publish-image.yml --ref "v${VERSION}"

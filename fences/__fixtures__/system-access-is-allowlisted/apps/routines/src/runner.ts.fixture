@@ -1,0 +1,3 @@
+import { withSystem } from "@ozavo/core";
+
+export const recover = () => withSystem(db, (q) => q.exec("update tasks set status = 'queued'"));

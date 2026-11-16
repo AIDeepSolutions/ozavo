@@ -1,0 +1,18 @@
+{
+  "name": "@ozavo/voice-engine",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./pricing": "./src/pricing.ts",
+    "./transcription": "./src/transcription.ts"
+  },
+  "dependencies": {
+    "@ozavo/core": "workspace:^",
+    "ws": "^8.22.2",
+    "zod": "^4.6.7"
+  }
+}

@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+# Atualiza o Ozavo. Nunca roda sem backup, e desfaz tudo se a versão nova não ficar saudável.
+#
+#   bash install/update.sh                atualiza para a versão publicada mais recente
+#   bash install/update.sh --to 0.3.0     atualiza para uma versão específica
+#   --yes                                 não pede confirmação
+#
+# Ordem: mostra versão atual e alvo → backup conferido → troca a versão → migrations →
+# checagem de saúde. Se alguma peça essencial não responder, volta para a versão anterior
+# e restaura o banco do backup, dizendo o que aconteceu.
+#
+# O atualizador nunca constrói imagem: se a versão alvo não baixa, ele para antes de mexer em
+# qualquer coisa e diz o que fazer.
+#
+# Quem atualiza é o atualizador da versão de DESTINO. Este script (o da versão instalada) decide o
+# alvo, faz o backup, troca o código e então passa a vez ao update.sh que acabou de chegar, com
+# --resume. Assim, o que uma versão nova precisa fazer de diferente ao ser instalada (uma
+# migração de configuração, o agendamento do agente) roda de fato, em vez de ficar no script
+# antigo que já estava na memória. O que passa de um para o outro são as variáveis
+# OZAVO_UPDATE_*: quem as grava é sempre a versão ANTERIOR, então elas nunca mudam de nome
+# nem de sentido; variável nova entra com padrão.
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+# Tudo dentro de uma função: o bash lê o arquivo aos poucos, e a troca de versão reescreve
+# este próprio script no meio da execução. Assim ele já está inteiro na memória.
+# shellcheck disable=SC2034  # ASSUME_YES é lida por confirm(), no _common.sh
+main() {
+
+target=""; ASSUME_YES=0; resume=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --to) target="${2:-}"; shift ;;
+    --yes|-y) ASSUME_YES=1 ;;
+    # Uso interno: é como o atualizador da versão anterior passa a vez a este.
+    --resume) resume=1 ;;
+    -h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "Não conheço a opção $1." "Use --to <versão> e/ou --yes." ;;
+  esac
+  shift
+done
+require_install
+docker info >/dev/null 2>&1 || die "Não consegui falar com o Docker." "Confira se ele está rodando: sudo systemctl start docker"
+
+is_git=0; if is_clone; then is_git=1; fi
+previous_commit=""; backup_dir=""; entry_was_ok=0
+
+if [ "$resume" = 1 ]; then
+  # Continuação: o backup, a troca do código e as conferências já foram feitos pela versão anterior.
+  current="${OZAVO_UPDATE_FROM:-}"; previous_commit="${OZAVO_UPDATE_FROM_REF:-}"
+  backup_dir="${OZAVO_UPDATE_BACKUP:-}"; entry_was_ok="${OZAVO_UPDATE_ENTRY_WAS_OK:-0}"
+  target="$(version_of_tag "$target")"
+  { [ -n "$current" ] && is_version "$target" && [ -f "$backup_dir/manifest.txt" ]; } \
+    || die "--resume é de uso interno do atualizador e veio sem o que ele precisa (versão de origem, alvo e backup)." "Rode sem essa opção: bash install/update.sh"
+else
+
+# Pode ser um número, `local` (imagens construídas aqui) ou o que uma instalação de antes do
+# formato único gravou (um canal, ou o número com `v`). Qualquer coisa diferente do alvo converge.
+current="$(env_get "$ENV_FILE" OZAVO_VERSION)"
+
+step "Versões"
+if [ -z "$target" ]; then
+  [ "$is_git" = 1 ] || die "Não sei qual é a versão mais recente: esta pasta não é um clone do repositório." "Diga a versão: bash install/update.sh --to <versão>"
+  fetch_versions || die "Não consegui consultar as versões publicadas." "Confira a internet da VPS (git -C $REPO_DIR fetch --tags origin) ou diga a versão: bash install/update.sh --to <versão>"
+  target="$(latest_version)"
+  [ -n "$target" ] || die "Ainda não há nenhuma versão publicada para atualizar." "Quando houver, rode de novo; ou diga a versão: bash install/update.sh --to <versão>"
+fi
+# Aceita o número (0.3.0) e a tag do git (v0.3.0); daqui em diante é sempre o número.
+target="$(version_of_tag "$target")"
+is_version "$target" || die "O nome de versão '$target' não vale." "Use o número da versão, como 0.3.0."
+target_tag="$(tag_of_version "$target")"
+info "Atual: $current"
+info "Alvo:  $target"
+if [ "$current" = "$target" ]; then
+  # Quem chegou a esta versão pelo atualizador de uma versão sem agente ganha o agente aqui.
+  converge_agent
+  # E quem chegou a ela sem as chaves dos serviços de WhatsApp ganha as chaves.
+  converge_whatsapp_keys
+  ok "Esta instalação já está na versão $target. Nada a fazer."
+  exit 0
+fi
+
+if [ "$is_git" = 1 ]; then
+  [ -z "$(git -C "$REPO_DIR" status --porcelain --untracked-files=no)" ] \
+    || die "Há arquivos do Ozavo alterados à mão nesta pasta; atualizar por cima poderia perder essas mudanças." "Veja quais com: git status  — desfaça (git checkout -- <arquivo>) ou guarde uma cópia, e rode de novo."
+  previous_commit="$(git -C "$REPO_DIR" symbolic-ref -q --short HEAD || git -C "$REPO_DIR" rev-parse HEAD)"
+  git -C "$REPO_DIR" fetch --tags --quiet origin || warn "Não consegui buscar as versões no GitHub; sigo com o que já está nesta máquina."
+  git -C "$REPO_DIR" rev-parse --verify --quiet "refs/tags/$target_tag" >/dev/null \
+    || die "A versão $target não existe no repositório (procurei a tag $target_tag)." "Veja as versões com: git tag --list  — e rode de novo com --to <versão>."
+fi
+# Em ARM, a versão alvo tem de ter imagem arm64 (as de antes da 0017 não têm). Pergunta antes do
+# backup: sem isso, a frase clara vira o erro cru do `docker pull`, depois de um backup à toa.
+arch="$(uname -m)"
+case "$arch" in aarch64|arm64)
+  arm64_rc=0; published_arm64 "$target" || arm64_rc=$?
+  case "$arm64_rc" in
+    0) ;;
+    1) die "$(no_arm64_image "$target" "$arch") Nada foi alterado: a instalação segue na versão $current." "Atualize para uma versão que tenha a imagem ARM, ou construa a $target nesta máquina: git -C $REPO_DIR checkout $target_tag && bash install/install.sh --build" ;;
+    *) warn "Não consegui perguntar ao registro de imagens se a versão $target tem imagem para ARM. Sigo: se o download falhar, nada é alterado." ;;
+  esac ;;
+esac
+missing_network="$(missing_proxy_network)"
+[ -z "$missing_network" ] || die "A rede $missing_network, em que o Caddy do Ozavo entra para o proxy do outro sistema publicar o painel, não existe mais nesta máquina: com ela faltando, o Compose não sobe serviço nenhum, e a atualização terminaria com tudo parado. Nada foi alterado." "Suba o outro sistema, que recria a rede, e rode de novo. Para deixar de usar a rede: OZAVO_PROXY_NETWORK=off bash install/install.sh"
+confirm "Atualizar de $current para $target? (faço um backup antes; se algo falhar, volto sozinho)" \
+  || die "Atualização cancelada: nada foi alterado." "Quando quiser, rode de novo."
+
+step "Backup antes de mexer"
+# Na atualização pela tela, este backup tem de vir DEPOIS de o agente aceitar o pedido (o agente
+# só chama este script com o pedido já em `running`). Se a atualização voltar, o banco é
+# restaurado daqui: ele precisa conter o pedido em `running`, para o resultado que o agente
+# entrega depois encontrar o que fechar. Não mova o backup para antes da conversa com o painel.
+backup_dir="$(bash "$KIT_DIR/backup.sh" | tee /dev/stderr | tail -n 1)" \
+  || die "O backup falhou, então a atualização NÃO começou. Nada foi alterado." "Resolva o problema do backup acima (bash install/backup.sh) e rode de novo."
+[ -f "$backup_dir/manifest.txt" ] || die "O backup não deixou manifesto em '$backup_dir'; sem backup conferido eu não atualizo." "Rode bash install/backup.sh e veja o erro."
+
+# Guarda as imagens atuais com outro nome, para a volta não depender de baixar nem de reconstruir.
+for service in $APP_SERVICES; do
+  docker tag "$(image_ref "$service" "$current")" "$(image_ref "$service" rollback)" 2>/dev/null || true
+done
+fi   # fim do que só a versão anterior faz
+
+apply_version() {  # apply_version <versão> <commit ou tag do código>
+  if [ "$is_git" = 1 ] && [ -n "$2" ]; then git -C "$REPO_DIR" checkout --quiet "$2" || return 1; fi
+  env_set "$ENV_FILE" OZAVO_VERSION "$1"
+}
+# A entrada única não é peça essencial em termos absolutos (certificado que ainda não saiu daria
+# volta falsa). Mas se ela respondia ANTES da atualização e parou DEPOIS, a atualização quebrou o
+# caminho de quem usa o painel: conta como falha e volta.
+# Olha SÓ a linha da entrada. O código de saída da checagem não entra: ele é 2 quando qualquer peça
+# não essencial falha (uma linha recusada pela operadora, por exemplo), e num pipe com `pipefail`
+# isso fazia esta função dizer "a entrada não respondia" e desligava a volta por regressão.
+entry_ok() {
+  local report re='"id":"entry"[^}]*"status":"ok"'
+  report="$(NO_COLOR=1 bash "$KIT_DIR/healthcheck.sh" --json 2>/dev/null || true)"
+  [[ "$report" =~ $re ]]
+}
+wait_healthy() {
+  local waited=0 timeout="${OZAVO_HEALTH_TIMEOUT:-240}"
+  until NO_COLOR=1 bash "$KIT_DIR/healthcheck.sh" --essential >/dev/null 2>&1 && { [ "$entry_was_ok" = 0 ] || entry_ok; }; do
+    [ "$waited" -lt "$timeout" ] || return 1
+    sleep 5; waited=$((waited + 5))
+  done
+}
+roll_back() {  # roll_back "<o que falhou>"
+  fail "$1"
+  step "Voltando para a versão $current"
+  NO_COLOR=1 bash "$KIT_DIR/healthcheck.sh" --essential 2>&1 | sed 's/^/  /' >&2 || true
+  local problems=""
+  apply_version "$current" "$previous_commit" || problems="$problems não consegui voltar o código para $previous_commit;"
+  # A configuração do Asterisk volta a ser a dos modelos da versão anterior (em subshell: uma falha
+  # aqui entra na lista de problemas, sem interromper a volta).
+  ( render_asterisk_config ) >/dev/null 2>&1 || problems="$problems não consegui regerar a configuração do Asterisk da versão $current;"
+  for service in $APP_SERVICES; do
+    docker tag "$(image_ref "$service" rollback)" "$(image_ref "$service" "$current")" 2>/dev/null || true
+  done
+  # O banco pode já ter recebido migrations da versão nova: volta ao estado do backup.
+  bash "$KIT_DIR/restore.sh" --yes "$backup_dir" || problems="$problems a restauração do banco falhou;"
+  dc up -d --remove-orphans >/dev/null 2>&1 || problems="$problems os serviços não subiram;"
+  # Como na ida: o Caddy que ficou de pé ainda lê o Caddyfile da versão de destino até reiniciar.
+  dc restart caddy >/dev/null 2>&1 || true
+  # E o Asterisk volta a usar a configuração da versão anterior, regerada acima.
+  converge_asterisk
+  if [ -z "$problems" ] && wait_healthy; then
+    die "A atualização para $target não deu certo e foi desfeita: você está de volta na versão $current, com o banco do backup de antes da atualização ($backup_dir) e tudo respondendo." "Nada se perdeu além do que entrou durante a tentativa. Rode bash install/diagnose.sh e abra uma issue com o arquivo, dizendo que a atualização para $target voltou."
+  fi
+  die "A atualização para $target falhou E a volta para $current não terminou bem:${problems:- a versão anterior não respondeu depois de voltar.}" "Seus dados estão no backup $backup_dir. Não rode mais nada: gere o diagnóstico (bash install/diagnose.sh) e peça ajuda."
+}
+# Cada versão deixa no servidor cerca de 2 GB de imagens que mais nada usa. Só roda depois de tudo
+# responder e de a etiqueta `rollback` sair: a volta desta execução usa aquela etiqueta, e não
+# estas. Ficam a versão que roda e a de onde se acabou de sair, para descer sem internet. A
+# `local`, construída nesta máquina, sai mesmo sendo a de onde se saiu: a instalação passou a rodar
+# a imagem publicada. Só as três imagens do Ozavo, por nome exato, e `docker rmi` sem força:
+# ele recusa imagem que algum contêiner usa, e essa recusa é a trava. Nunca `prune`. Falha é aviso.
+# As imagens de terceiros (WAHA, WaCalls, Caddy...) que o Compose da versão de onde se saiu fixava
+# por resumo e o da nova não fixa mais: a troca de imagem de um serviço deixava a antiga no disco
+# (issue #163; a do WAHA tem mais de 3 GB). Só a referência exata, com resumo, que o próprio
+# Ozavo fixou: imagem de outro sistema nesta VPS não entra nem por nome parecido. `docker rmi`
+# sem força recusa a que algum contêiner usa. Ao contrário das do Ozavo, a da versão de onde se
+# saiu não fica: voltar a ela pede internet para baixá-la de novo. Falha é aviso.
+pinned_images() { sed -nE 's/^[[:space:]]*image:[[:space:]]*(\$\{[A-Z_]+:-)?([^}[:space:]]+@sha256:[0-9a-f]{64})\}?[[:space:]]*$/\2/p' | sort -u; }
+remove_unpinned_images() {
+  local before after ref out removed=""
+  [ -n "$previous_commit" ] || return 0
+  before="$(git -C "$REPO_DIR" show "$previous_commit:deploy/docker-compose.yml" 2>/dev/null | pinned_images)"
+  after="$(pinned_images < "$DEPLOY_DIR/docker-compose.yml")"
+  for ref in $before; do
+    if printf '%s\n' "$after" | grep -qxF "$ref"; then continue; fi
+    if out="$(docker rmi "$ref" 2>&1)"; then removed="$removed $ref"; continue; fi
+    case "$out" in
+      *"No such image"*) ;;
+      *) warn "Não consegui remover a imagem $ref, que a versão $target deixou de usar; a atualização está completa, ela só ocupa espaço. Veja se algum contêiner a usa: docker ps -a --filter ancestor=$ref" ;;
+    esac
+  done
+  [ -n "$removed" ] || return 0
+  ok "Imagens de terceiros que a versão $target deixou de usar removidas, para liberar disco:"
+  for ref in $removed; do info "  $ref"; done
+  info "Voltar para a versão $current pede internet, para baixá-las de novo."
+}
+
+remove_old_images() {
+  local service repo tags tag ref removed="" local_removed=0
+  for service in $APP_SERVICES; do
+    repo="$(image_repo "$service")"
+    if ! tags="$(docker image ls --format '{{.Tag}}' "$repo" 2>/dev/null)"; then
+      warn "Não consegui listar as imagens antigas de $repo: as que houver ficam no disco."; continue
+    fi
+    for tag in $tags; do
+      if [ "$tag" = "$target" ] || [ "$tag" = "<none>" ]; then continue; fi
+      if [ "$tag" = "$current" ] && [ "$current" != "$LOCAL_VERSION" ]; then continue; fi
+      ref="$(image_ref "$service" "$tag")"
+      if docker rmi "$ref" >/dev/null 2>&1; then
+        removed="$removed $ref"
+        if [ "$tag" = "$LOCAL_VERSION" ]; then local_removed=1; fi
+      else
+        warn "Não consegui remover a imagem antiga $ref; a atualização está completa, ela só ocupa espaço. Veja se algum contêiner a usa: docker ps -a --filter ancestor=$ref"
+      fi
+    done
+  done
+  [ -n "$removed" ] || return 0
+  ok "Imagens de versões antigas do Ozavo removidas, para liberar disco:"
+  for ref in $removed; do info "  $ref"; done
+  if [ "$current" != "$LOCAL_VERSION" ]; then info "A imagem da versão $current fica, para voltar a ela sem internet."; fi
+  if [ "$local_removed" = 1 ]; then
+    info "A imagem construída nesta máquina (local) saiu: a instalação roda agora a imagem publicada da versão $target. A local só volta construindo de novo: bash install/install.sh --build"
+  fi
+}
+
+if [ "$resume" = 0 ]; then
+  if entry_ok; then entry_was_ok=1; fi
+  step "Trocando para a versão $target"
+  if [ -n "$previous_commit" ]; then
+    git -C "$REPO_DIR" checkout --quiet "refs/tags/$target_tag" || die "Não consegui trocar o código para a versão $target. Nada foi alterado: a instalação segue na versão $current." "Veja o motivo com: git -C $REPO_DIR status  — e rode de novo."
+    # O código no disco agora é o da versão de destino: a vez passa ao atualizador dela. Antes,
+    # confere que ele ao menos carrega; se não, o código volta e nada mais foi tocado.
+    if grep -q 'OZAVO_UPDATE_FROM' "$KIT_DIR/update.sh" 2>/dev/null; then
+      if ! bash -n "$KIT_DIR/update.sh" || ! bash -n "$KIT_DIR/_common.sh"; then
+        git -C "$REPO_DIR" checkout --quiet "$previous_commit" || true
+        die "O atualizador da versão $target não carrega (erro de sintaxe acima). Nada foi alterado: a instalação segue na versão $current." "Abra uma issue dizendo a versão de origem e a de destino."
+      fi
+      export OZAVO_UPDATE_FROM="$current" OZAVO_UPDATE_FROM_REF="$previous_commit" OZAVO_UPDATE_BACKUP="$backup_dir" OZAVO_UPDATE_ENTRY_WAS_OK="$entry_was_ok"
+      exec bash "$KIT_DIR/update.sh" --resume --to "$target" --yes
+    fi
+    # Versão de destino anterior a este mecanismo: segue com o que está na memória, como antes.
+  fi
+fi
+env_set "$ENV_FILE" OZAVO_VERSION "$target"
+# Quem vem de uma versão sem o WhatsApp por QR Code ganha aqui a chave que painel, voz e rotinas
+# vão receber (o serviço em si só sobe se alguém o instalar pela tela). Em ARM, é este passo que
+# diz ao Compose qual é a imagem do WAHA. O mesmo para as chaves da ligação pelo WhatsApp (WaCalls).
+ensure_waha || true
+ensure_wacalls || true
+# As imagens vêm antes de qualquer outra mudança. Sem elas não há atualização, e construir aqui
+# não é saída: até este ponto só a versão foi trocada, então basta voltá-la. O banco e os
+# serviços não foram tocados.
+# shellcheck disable=SC2086
+if pull_output="$(dc pull -q $APP_SERVICES 2>&1)"; then ok "Imagens da versão $target baixadas"
+else
+  printf '%s\n' "$pull_output" | tail -n 5 | sed 's/^/    /' >&2
+  apply_version "$current" "$previous_commit" \
+    || die "Não consegui baixar as imagens da versão $target, e também não consegui voltar o código para $previous_commit." "Os serviços seguem rodando na versão anterior e o banco não foi tocado. Rode: git -C $REPO_DIR checkout $previous_commit  — e depois bash install/diagnose.sh para pedir ajuda."
+  die "Não consegui baixar as imagens da versão $target (resposta do Docker acima). Nada foi alterado: a instalação segue na versão $current, e o banco não foi tocado." "Causas prováveis: a internet da VPS ou o ghcr.io fora do ar; ou a versão acabou de sair e as imagens ainda estão sendo publicadas (espere alguns minutos). Teste com: docker pull $(image_ref panel "$target")  — e rode bash install/update.sh de novo."
+fi
+# Só em instalação que ligou o WhatsApp pela tela: o WAHA é peça de terceiros, vinda de outro
+# registro. Baixar agora, e não no `up`, faz a falta dele parar a atualização aqui, onde só a
+# versão foi trocada, em vez de provocar a volta inteira depois que o banco já recebeu as
+# migrations. Instalação sem o serviço não baixa nada.
+if whatsapp_enabled && ! pull_output="$(dc pull -q waha 2>&1)"; then
+  printf '%s\n' "$pull_output" | tail -n 5 | sed 's/^/    /' >&2
+  apply_version "$current" "$previous_commit" \
+    || die "Não consegui baixar a imagem do serviço de WhatsApp (WAHA), e também não consegui voltar o código para $previous_commit." "Os serviços seguem rodando na versão anterior e o banco não foi tocado. Rode: git -C $REPO_DIR checkout $previous_commit  — e depois bash install/diagnose.sh para pedir ajuda."
+  die "Não consegui baixar a imagem do serviço de WhatsApp (WAHA), que esta instalação usa (resposta do Docker acima). Nada foi alterado: a instalação segue na versão $current, e o banco não foi tocado." "Causas prováveis: a internet da VPS, o Docker Hub fora do ar ou o limite de downloads dele (espere uma hora). Confira também o espaço em disco (df -h): a imagem ocupa cerca de 3,2 GB. Depois rode bash install/update.sh de novo."
+fi
+# O mesmo para a ligação pelo WhatsApp (WaCalls), que vem do ghcr.io.
+if whatsapp_calls_enabled && ! pull_output="$(dc pull -q wacalls 2>&1)"; then
+  printf '%s\n' "$pull_output" | tail -n 5 | sed 's/^/    /' >&2
+  apply_version "$current" "$previous_commit" \
+    || die "Não consegui baixar a imagem do serviço de ligação pelo WhatsApp (WaCalls), e também não consegui voltar o código para $previous_commit." "Os serviços seguem rodando na versão anterior e o banco não foi tocado. Rode: git -C $REPO_DIR checkout $previous_commit  — e depois bash install/diagnose.sh para pedir ajuda."
+  die "Não consegui baixar a imagem do serviço de ligação pelo WhatsApp (WaCalls), que esta instalação usa (resposta do Docker acima). Nada foi alterado: a instalação segue na versão $current, e o banco não foi tocado." "Causas prováveis: a internet da VPS ou o ghcr.io fora do ar. Depois rode bash install/update.sh de novo."
+fi
+render_asterisk_config
+# Instalação de antes da entrada única: o Caddy passa a ser a única porta publicada, na mesma
+# porta que o painel já usava. Em instalação já no formato atual, não muda nada.
+converge_entry
+# O endereço das imagens deixou de ser gravado por instalação: a fonte única é deploy/images.env.
+env_unset "$ENV_FILE" OZAVO_IMAGE_PREFIX
+# O painel que vai subir já recebe o segredo do agente de atualização.
+ensure_agent_token || true
+
+step "Aplicando as mudanças no banco"
+# shellcheck disable=SC2086
+dc stop $APP_SERVICES >/dev/null 2>&1 || true
+dc run --rm migrate || roll_back "As migrations da versão $target falharam."
+ok "Banco atualizado"
+
+step "Subindo e conferindo"
+dc up -d --remove-orphans || roll_back "Os serviços da versão $target não subiram."
+# O Caddyfile é montado como arquivo, e a troca de versão o substitui por outro: o contêiner que
+# já estava de pé só passa a ler o novo ao reiniciar.
+dc restart caddy >/dev/null 2>&1 || true
+# Os arquivos do Asterisk regravados acima: o que mudou é recarregado, sem derrubar ligação em
+# andamento. Reinicia só se recarregar não basta (ver converge_asterisk).
+converge_asterisk
+wait_healthy || roll_back "A versão $target subiu, mas nem toda peça essencial respondeu, ou o painel deixou de abrir pelo endereço que abria antes."
+
+for service in $APP_SERVICES; do docker rmi "$(image_ref "$service" rollback)" >/dev/null 2>&1 || true; done
+# Instalação que veio de uma versão sem agente passa a tê-lo; nas outras, só confere.
+install_agent_schedule
+ok "Atualizado para $target, com todas as peças essenciais respondendo."
+# Pelo caminho de quem usa: a porta publicada. Não provoca volta (a regra da volta é a de cima,
+# pela entrada de dentro da rede), mas a atualização não termina calada sobre isso.
+probe_url="$(published_probe_url "$(env_get "$APP_ENV_FILE" PUBLIC_IP)")"
+reach="$(probe_published "$probe_url")"
+if [ "$reach" = 200 ]; then ok "O painel responde pela porta publicada ($probe_url)"
+elif [ -n "$reach" ]; then warn "As peças respondem, mas a porta publicada do painel (${probe_url:-nenhuma}) não respondeu daqui (resposta: $reach): confira se o painel abre no navegador e rode bash install/healthcheck.sh"
+else warn "Não conferi a porta publicada do painel: falta o comando curl nesta máquina. Confira se o painel abre no navegador."; fi
+remove_old_images || warn "A limpeza das imagens antigas parou no meio; a atualização está completa."
+remove_unpinned_images || warn "A limpeza das imagens de terceiros parou no meio; a atualização está completa."
+# Perto do fim de propósito: a tela mostra só o fim da saída, e esta linha é a prova de que quem
+# terminou foi o atualizador da versão de destino, e não o que estava instalado.
+if [ "$resume" = 1 ]; then info "O atualizador da versão $target assumiu a atualização a partir da $current."; fi
+info "Backup de antes da atualização: $backup_dir"
+info "Relatório completo: bash install/healthcheck.sh"
+}
+main "$@"

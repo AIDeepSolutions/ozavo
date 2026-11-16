@@ -1,0 +1,347 @@
+<div align="center">
+
+[Português](README.md) · English · [Español](README.es.md)
+
+<h1>
+  <a href="https://ozavo.com.br"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/ozavo-logo-dark.svg">
+    <img src="brand/ozavo-logo-light.svg" alt="Ozavo" height="76">
+  </picture></a>
+</h1>
+
+**An open source phone system run by AI agents, installed on your own VPS.**
+
+The agent answers the call, runs tools during the conversation, asks a human for approval when
+it needs to, transfers the call, and leaves tasks running after the caller hangs up.
+
+**[ozavo.com.br](https://ozavo.com.br)** (in Portuguese) · [Install](https://ozavo.com.br/instalar) · [Guides](https://ozavo.com.br/guias) · [Release notes](https://ozavo.com.br/changelog)
+
+[![Website](https://img.shields.io/badge/website-ozavo.com.br-a2552f)](https://ozavo.com.br)
+[![CI](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml/badge.svg)](https://github.com/DeskLabs-OpenSource/Ozavo/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Node 22](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-your%20VPS-orange)](install/install.sh)
+
+[Vision](VISION.md) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.en.md)
+
+</div>
+
+---
+
+> **Project status: with published releases.** Installing, updating from the panel,
+> backup, restore and the automatic rollback of a failed update have run on a real VPS, and a
+> contributor has placed real calls with the OpenAI Realtime engine. What is proven, what is
+> experimental and what is still a plan are kept apart in "What it does today". Nothing on the
+> roadmap has a promised date.
+>
+> This page is a translation of [`README.md`](README.md). Most of the deeper documentation is
+> written in Brazilian Portuguese. Translations are an open front in the roadmap.
+
+## Install
+
+> **Infrastructure partner: HostGator.** Ozavo is free, with no paid version and no locked
+> feature. What sustains the project is the partnership with HostGator, and the install kit was
+> built with their VPS in mind: one command, a few questions, no variable to edit.
+>
+> **[Get the HostGator VPS through the partner link](https://www.hostgator.com.br/52708-141-3-52.html)**
+>
+> Using that link is how you support the project. Any other VPS with Docker works with the same
+> command, with no difference in features.
+
+### On your VPS
+
+SSH into the server and run one line:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DeskLabs-OpenSource/Ozavo/main/install/get.sh | bash
+```
+
+It downloads Ozavo into `~/Ozavo` and opens the installer. Prefer to read before you run?
+The same result, step by step:
+
+```bash
+git clone https://github.com/DeskLabs-OpenSource/Ozavo.git && cd Ozavo && bash install/install.sh
+```
+
+The installer checks the machine and the network, asks a few questions (domain, company name,
+your name, e-mail and password), generates every secret, starts the services, creates the first
+user and shows the panel address. If Docker is missing, it asks and installs it. You do not edit
+environment variables by hand. Running it again breaks nothing.
+
+From there, everything is configured on screen: the SIP trunk, the number, the AI key and the
+agent. No feature requires SSH to be turned on.
+
+| What you need | Notes |
+|---|---|
+| A VPS running Ubuntu 22.04 or newer (Debian 12+, AlmaLinux 9+ and Rocky Linux 9+ are also accepted; what was proven on each one is in [`install/README.md`](install/README.md#sistemas-aceitos), in Portuguese) | The [HostGator VPS](https://www.hostgator.com.br/52708-141-3-52.html), the project's partner, is the recommended one. Any VPS with Docker works, with the same command. On memory, only what was measured: the install was proven on a VPS with 8 GB and 4 vCPU, and Ozavo at rest uses about 380 MiB of memory and takes about 2.7 GB of disk (measured on 0.3.0, without WhatsApp). The smallest size the install fits in has not been measured yet. The published images are for x86_64 (amd64) processors and, starting with 0.12.0, also for 64-bit ARM (arm64), with the same command; there is no proof on a real ARM machine yet ([why](docs/decisions/0017-imagens-para-amd64-e-arm64.md)). On ARM, the installer checks whether the version has the image: if it does not, it stops and says so, and the install builds on the machine itself, with `--build` |
+| A domain pointing to the VPS | Optional for testing. Without a domain there is no HTTPS: the panel stays inside the VPS and you reach it through an SSH tunnel (the installer shows the command) |
+| A SIP trunk with a number | From the telephony carrier of your choice. Authentication by registration or by IP; by IP, with one or more numeric addresses or blocks from the carrier, up to /16 on IPv4 and /32 on IPv6 |
+| A voice AI key | Gemini (Google) or OpenAI. You pay the provider directly |
+
+### Installing with an AI assistant
+
+Using Claude Code, Codex, Cursor or another coding assistant? Paste this into it:
+
+```text
+Help me install Ozavo: https://github.com/DeskLabs-OpenSource/Ozavo
+Read the repository's AGENTS.md and follow the ozavo-instalar skill.
+```
+
+Its first question is whether you already have a server. If you do not, it tells you what machine
+size is enough and shows the HostGator VPS link, the same one as in the block above, stating that
+it is a partner link and that any other VPS with Docker works the same. Then it asks about the
+VPS system, the ports, the domain, the SIP trunk and the AI key, and stays with you until the
+first call. Passwords and keys do not go into the conversation: they are entered in the installer
+or on screen.
+
+Prefer a command to a conversation? On your own computer (macOS or Linux), before you have a
+server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DeskLabs-OpenSource/Ozavo/main/install/start.sh | bash
+```
+
+It only informs: what you need, the machine size, the partner link and the next command. It
+installs nothing and collects nothing. Its output is in Brazilian Portuguese.
+
+### See a call with no key and no trunk
+
+The repository ships a simulated voice engine. It runs a whole call, with greeting, tool,
+approval request, transfer and post-call task, without an AI key and without a carrier. On your
+computer:
+
+```bash
+git clone https://github.com/DeskLabs-OpenSource/Ozavo.git && cd Ozavo
+pnpm install && pnpm demo   # needs Docker: starts a throwaway Postgres and removes it on exit
+```
+
+## What it does today
+
+Ozavo has published releases since 2026-11-11, and what changes in each one is in
+[`CHANGELOG.md`](CHANGELOG.md) (in Portuguese). So nobody installs it expecting what has not been
+proven yet, each capability below says how far the proof went:
+
+- **Proven in simulation:** covered by an end-to-end test with the simulated engine, which walks
+  through a whole call with no carrier and no key.
+- **Proven on a real install:** it ran on a real VPS (the test ones, on 2026-11-11, or the
+  partner's dedicated one, on 2026-11-12), in the way and as far as the row describes. Each proof,
+  with its saved output, is in [`docs/fundacao/instalacao-real.md`](docs/fundacao/instalacao-real.md) (in Portuguese).
+- **Awaiting real-world proof:** implemented and tested against fake servers and a real Asterisk,
+  but no call has been placed through a real carrier yet.
+
+| Capability | How far it was proven |
+|---|---|
+| Call conversation: greeting, turns, tools, hang-up | Proven in simulation |
+| Notify a human and ask for approval mid-call, with a deadline and a default answer | Proven in simulation |
+| Per-call timeline, event by event, with cost | Proven in simulation |
+| On each call's screen, the earlier calls from the same number (date, agent, outcome and link) and its open follow-ups; the transfer notice and the `notify_human` notice say how many times the number has called. None of this reaches the call's agent | Tested with a real database, including isolation between companies and that the agent's instructions do not change; the screen test runs in CI, but the screen was not seen in a real browser. Performance with many calls from the same number was not measured, and the same number stored another way (with and without the ninth digit) counts as a different one; what the phone line delivers was not checked. Since 0.14.0 |
+| Agent notes about the caller (the `remember_caller_note` tool), which the team sees in the "This number" block on the call screen; off by default and turned on from the agent screen. Up to 10 notes per call, kept for 90 days, adjustable from 30 to 365 in Settings, and included in the export and in the erasure at the caller's request. The agent does not yet receive the notes on the next call | Tested with a real database, including isolation between companies, the 10-note ceiling, the retention period and erasure; the screen test passed in CI. How the real model uses the tool, and whether it avoids noting sensitive data, was not checked. Since 0.15.0 |
+| Work that continues after the call (summary, notices, follow-up tasks) | Proven in simulation |
+| Cost and duration ceiling per call | Proven in simulation |
+| Per-call ceiling on the tools that record or notify: 5 follow-ups, 5 bookings, 5 webhook calls, 3 team notices and 3 approval requests; above it, the tool does not run and the agent says the request was not recorded | Tested with a real database, including parallel calls, which do not go over the ceiling. Not yet with a real carrier call. Since 0.13.0 |
+| Web panel in Portuguese, English and Spanish | Routes tested against a real database; screens checked in Portuguese |
+| Install on a VPS with the install kit | Proven on a real install, without a domain: Ubuntu 22.04 on two test VPSs and AlmaLinux 9 on the partner's VPS (there, before the installer started the Docker service on its own, with the service started by hand). Debian and Rocky Linux not yet proven |
+| Panel and browser voice on the same address, Caddy's single entry point | Proven on a real install, without a domain |
+| Talk to the agent by voice from the "Talk to the agent" screen | Proven on a real install with the OpenAI Realtime engine, by a test client that plays the browser's role with recorded speech. Not yet from a browser with a microphone |
+| Panel with a domain and HTTPS | Awaiting real-world proof |
+| Answer an inbound call from a carrier line (SIP trunk) | Awaiting real-world proof |
+| Transfer the call to a person | Awaiting real-world proof (the Asterisk path was checked, without a carrier). Since 0.9.0, a transfer nobody answers shows as unanswered and creates a panel notice asking for a callback, tested against a real database and simulated telephony |
+| Voicemail: a call through the phone line to a number with no agent, or with the agent turned off, is answered with a recorded notice and a beep, and the message stays on the call itself; off by default, turned on in Settings → Calls, and it only works with recording on. Calls through WhatsApp still have no voicemail | Tested with a real database and with a test transport that takes the time to play the notice. Not yet with a real carrier call, and the screens were not checked in a browser. Since 0.12.0 |
+| OpenAI Realtime voice engine | Proven on a real install, in the "Talk to the agent" conversation described above. A contributor placed real calls with it on their own install, and, with the cost fix ([#94](https://github.com/DeskLabs-OpenSource/Ozavo/pull/94)), Ozavo's estimate matched the OpenAI invoice. The fix applies since 0.6.0 |
+| Gemini Live voice engine | Awaiting real-world proof (tested against a fake server, without a key) |
+| Send WhatsApp during the call, through a connector | Awaiting real-world proof |
+| Connect a WhatsApp number by QR code (Settings → WhatsApp) and send the agent's notices and messages through it | The service does not come installed: you install it from the screen, and it costs about 323 MiB of memory with no number connected and 3.2 GB of disk (measured on 0.3.0, November 12, 2026). Routes tested with a real database and a fake WhatsApp service; installing and removing through the agent, with a simulated Docker. **Not yet proven with a real number:** no QR code was scanned and no message went out. It is an unofficial WhatsApp client; see the [guide](docs/guides/whatsapp-por-qr-code.md) (in Portuguese) |
+| Have the agent answer calls made to the number on WhatsApp (Settings → WhatsApp, in the WhatsApp calls block: connect the number and pick the agent) | The service (WaCalls) does not come installed: you install it from the screen; memory and disk not measured yet. **Proven with a real number** in four incoming calls on 12 and 13/11/2026 (the longest lasting 2 min 7 s), with audio both ways and transcription, and no transfer to a human on this channel. The agent answers 0.6 to 2.4 s after the caller stops talking (nine answers measured on the recordings of two calls on 13/11; before the fix that fills in the silence WhatsApp does not send, it was 4 to 5 s). When WhatsApp hides the number (`@lid`, now the common case), the phone number the call itself reports is used, unconfirmed by WhatsApp, passed on by the WaCalls image the kit uses (a fork with the fix, until the authors publish it). **Proven on a real call with a hidden number** on 13/11/2026: the number reached the call timeline with nothing written to the WaCalls store. Unofficial WhatsApp client; see the [guide](docs/guides/ligacao-pelo-whatsapp.md) (in Portuguese) |
+| Call outcome (booked, callback requested, message taken, not interested, info only), classified by the engine after the call; off by default, turned on in Settings → Artificial intelligence | Tested against a real database and a simulated provider response, with the cost counted against the spending cap and failures on the timeline. Not yet proven on a real install or against a real OpenAI or Gemini. Since 0.8.0 |
+| End-of-call analysis, in the same paid request as the outcome: the score, which is always the sum of a five-criterion rubric with the line of speech behind each one when it appears in the conversation, the caller's temperature, objections with the agent's answer, and the next step; off by default, turned on in Settings → Artificial intelligence, and the score shows in the call list | Tested against a real database and simulated provider responses: cost counted once in the ledger and under the ceiling, the reason on the timeline when the analysis is not done, no speech text left after erasure at the caller's request. The screen was checked on a panel against a throwaway database, with analyses written straight to the database. Not yet proven on a real install or against a real OpenAI or Gemini. Since 0.11.0 |
+| Outcome and analysis on an OpenAI-compatible provider (DeepSeek, Qwen, OpenRouter, Groq), with its own endpoint, model and key in Settings → Artificial intelligence; the provider must accept `json_schema` responses; if nothing is set, nothing changes. The cost on the configured provider is not estimated: it shows as zero and does not count toward the agent's ceiling | Tested against a real database and simulated provider responses, including refusal of internal addresses and of an endpoint without its own key. Not yet proven against a real compatible provider. Since 0.11.0 |
+| Caller environment, normal or noisy, on the agent screen: in Noisy the agent is less sensitive to noise before it starts listening. OpenAI Realtime only for now; when an agent switches to another engine, the screen warns and offers to go back to Normal | A Noisy session was accepted by OpenAI Realtime on a real install, without a call. The screen was checked on a panel against a throwaway database. Not yet proven on Gemini Live, and the effect on speech recognition has not been measured. Since 0.11.0 |
+| End-of-call notice on the operator's WhatsApp, with a fixed text (no speech or phone number of the caller); off by default, turned on in Settings → WhatsApp | Tested against a real database and a fake WhatsApp. Not yet proven with a real number. Since 0.8.0 |
+| Call a webhook during the call | Awaiting real-world proof (without a real receiver) |
+| Press the keys of an automated menu (IVR) during the call, with the `send_dtmf` tool | Measured on a local Asterisk with the install's image and dialplan, against another Asterisk playing the IVR: a menu that detects tones in the audio read the keys; one that only accepts keys over RFC 4733 did not. Not yet proven against a carrier's IVR |
+| Update, health check, backup and restore | Proven on a real install, on the partner's VPS: installer run twice without regenerating secrets, backup checked, a restore that brings back the backup's row counts, and the automatic rollback of a failed update. Restoring on another server, or across versions with a new migration, not yet proven |
+| Update from the panel (Settings → System), through a kit agent on the server | Proven on a real install: twice on the partner's VPS (0.3.0 → 0.4.0 and 0.4.0 → 0.5.0), with nobody at the server's terminal, including the hand-off to the new version's updater and the removal of old images |
+| New-version notice in the panel's sidebar, highlighted only for the owner and admins, which leads straight to the update screen; operators see the running version, without highlight | Unit-tested, including that operators do not see the highlight. The sidebar was not checked in a browser. Right after a release, the sidebar may announce it before the update screen offers the button. Since 0.13.0 |
+| Record the call audio, off by default and turned on from the panel (Settings → Privacy → Call recording) | Tested against a real database and on a browser call, in an end-to-end test. Not yet proven on a real install. Since 0.6.0 |
+| Fingerprint (SHA-256) of each recording and each voicemail message, on the call's timeline, to check whether a copy of the audio is the same as the one recorded. It proves nothing against whoever administers the server, because the fingerprint sits on the same machine as the audio | Tested with a real database; the timeline was checked by a test that renders the screen, not in a browser. Recordings made before the update have no fingerprint. Since 0.13.0 |
+| Stop recording when the caller asks, by the agent (the `stop_recording` tool, checked per agent) or by the button on the live call screen; the stop shows on the timeline | Tested against a real database, in the real call session, with a simulated engine and telephony. Not yet proven on a real install. Since 0.9.0 |
+| Transcribe the recording of a call that was left without text, through the agent's provider, with each side of the call kept apart; off by default, turned on in Settings → Artificial intelligence, with the button on the call screen, next to a note that, with the outcome or the analysis on, transcribing also triggers the paid classification | Tested against a real database and simulated provider responses: cost in the ledger and under the ceiling, the provider failure with its reason on the timeline, refusal for an erased call, one past the retention period or one too long for the provider without the recording being loaded into memory. Not yet proven on a real install nor with real OpenAI or Gemini. Since 0.10.0 |
+| Transcribe on its own, at the end of the call, the recording that was left with no speech at all, before the final summary, the outcome and the notice; its own switch, off by default, in Settings → Artificial intelligence, which only works with on-request transcription also on. Each transcribed call is a paid request to the provider, counted in the cost and the ceiling | Tested against a real database and simulated provider responses: a call that already has speech is not transcribed again, and a recording that is too long is not even read. Not yet proven on a real install or with a real OpenAI or Gemini. Since 0.11.0 |
+| Transcript retention period and export of what the organization keeps about a phone number (Settings) | Tested against a real database and checked on screen, on a panel against a throwaway database. Not yet proven on a real install. Since 0.6.0 |
+| Erase at the caller's request (Settings → Privacy): preview of what goes, a confirmation that names the phone number, a receipt; all speech and text about the person goes, including the recording, and the service record stays. Backup copies already made are not reached | Tested against a real database, including the check back through the export. Not yet proven on a real install. Since 0.9.0 |
+| Temporary link for the caller to download the recording of their own call, created on the call screen by the owner or an admin: valid for 72 hours and 10 downloads, with no login, and the screen revokes it at once; each creation, revocation and download goes into the Privacy log | Tested with a real database, including simultaneous downloads that do not go over the limit. Neither the call screen nor the /s/<token> page the caller opens was checked in a browser, and without a domain the link only opens from inside the server. Since 0.12.0 |
+| Calls placed by the agent | Awaiting real-world proof, and off by default. See "Outbound calls" |
+
+If you answer a call through a carrier line, tell us how it went in an issue: inbound calls over
+a SIP trunk have no public record yet, and that is the most valuable contribution right now.
+
+What does **not** exist yet: several
+companies on one screen, a visual flow builder, voice IVR, call queues.
+Part of this is on the [roadmap](ROADMAP.md), open to the community.
+
+## How it works
+
+```
+        SIP trunk (carrier)
+               │ SIP + RTP (UDP)
+        ┌──────▼──────┐
+        │  Asterisk   │  telephony edge; never talks HTTP to the internet
+        └──┬───────┬──┘
+   ARI (WS)│       │AudioSocket (TCP, PCM16 8 kHz)
+        ┌──▼───────▼──┐        ┌──────────────────┐
+        │  apps/voice │◄──────►│ voice engine     │ Gemini Live / OpenAI Realtime / simulated
+        │             │        └──────────────────┘
+        │  tools      │──► notify a human, ask for approval, transfer, webhook, WhatsApp
+        └──────┬──────┘
+               │ events + tasks
+        ┌──────▼──────┐   LISTEN/NOTIFY   ┌──────────────┐
+        │  Postgres   │◄─────────────────►│ apps/routines │ post-call tasks
+        └──────▲──────┘                   └──────────────┘
+               │
+        ┌──────┴──────┐
+        │  apps/panel │  Next.js: panel + API; published by Caddy
+        └─────────────┘
+```
+
+The carrier delivers the call to Asterisk. Asterisk hands control and audio to the voice
+process, which talks to the AI model and runs the tools the agent asks for. Everything that
+happens becomes an event in Postgres, and the panel builds the call timeline from those events.
+When the call ends, a third process carries on with the work.
+
+Stack: Node 22, TypeScript, pnpm, Next.js, Postgres 17 inside the VPS, Asterisk 20, Docker
+Compose and Caddy. The path of a call, step by step, is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Relationship with DeskcommCRM
+
+Ozavo is a sibling of [DeskcommCRM](https://github.com/melgarafael/DeskcommCRM), by the same
+creator.
+
+- **DeskcommCRM already has a calls module, and it stays.** The public 500-star goal was met
+  there.
+- **Ozavo is an independent system in which telephony is the center.** You do not need
+  Deskcomm to use Ozavo, or the other way around.
+- **Later on, the Deskcomm module becomes a connector to Ozavo.** This is roadmap, with no
+  date.
+
+The reasoning is in
+[`docs/decisions/0001-fronteira-com-o-deskcomm.md`](docs/decisions/0001-fronteira-com-o-deskcomm.md).
+
+## Costs
+
+The software is free. There is no paid version and no locked feature. You pay three things, all
+directly to the supplier:
+
+1. **The VPS.**
+2. **Telephony.** It depends on the trunk you contract.
+3. **Voice AI.** With direct voice engines, the estimate is in the range of a few US cents per
+   minute, depending on the model.
+
+These are estimates, and prices change. The panel shows the measured cost of every call, and
+each agent has a cost ceiling per call. See [`docs/guides/custos.md`](docs/guides/custos.md).
+
+## Outbound calls
+
+The agent can place calls. **The feature ships turned off.** The owner of the installation
+turns it on from the screen, after declaring the purpose, and from then on these apply:
+
+- a daily cap of calls per line;
+- a do-not-call list;
+- a time window;
+- a limit of attempts per person;
+- a recording notice at the start of the call.
+
+The reason: in Brazil, the regulator (Anatel) blocks lines with a pattern of mass short calls,
+and telemarketing regulation is changing. Ozavo was not built for mass dialing and does not
+accept contributions that make it easier. Whoever operates the installation is responsible for
+how it is used. If you operate outside Brazil, check the rules of your own country. See
+[`docs/guides/conformidade-brasil.md`](docs/guides/conformidade-brasil.md).
+
+## Contacts the install makes on its own
+
+Ozavo has no telemetry: no usage, call or install data goes to the project. These are all
+the outside contacts the install makes without you asking:
+
+| Who | With whom | When | What it sends |
+|---|---|---|---|
+| Panel | GitHub's public releases API (`api.github.com/repos/DeskLabs-OpenSource/Ozavo/releases`) | When someone opens Settings → System or confirms an update. The answer is kept for 10 minutes (1 minute if the lookup failed) | A read request with no credential and no body, with two fixed headers, the same on every install: `accept: application/vnd.github+json` and `user-agent: ozavo-panel`. No version, address or identifier of the install |
+| Update agent | The repository on GitHub, through `git fetch --tags` | The agent runs every minute and looks up versions at most every 10 minutes, when the install is on a published version and came from a clone of the repository | git's request to fetch the tags, with no credential. git identifies itself with its own version (`git/2.x`); nothing about the install goes along |
+| Caddy, only with a domain | The certificate authority Caddy uses (Let's Encrypt, by default) | On install and then, on its own, to renew the certificate before it expires | The domain, to prove it points to the VPS. Ozavo sets no e-mail in that request |
+
+When you ask for it, the install also talks to the outside:
+
+- **Installing and updating** (from the terminal or the screen) downloads the code from GitHub and
+  the images: Ozavo's on `ghcr.io` (panel, voice and routines) and third-party ones on Docker
+  Hub (Postgres, Caddy, Asterisk). Docker identifies itself as in any image download (its version,
+  the kernel's and the architecture); Ozavo adds nothing.
+- **Installing without giving the IP** (`OZAVO_PUBLIC_IP`): the installer finds the VPS public
+  IP by asking `api.ipify.org`, `ifconfig.me` and `icanhazip.com`, one at a time, until one
+  answers. The request carries nothing; the service sees the VPS IP, which is the answer.
+  `install/diagnose.sh` makes the same lookup.
+- **Installing without Docker:** after asking, the installer downloads the official script from
+  `get.docker.com`.
+- **Installing WhatsApp from the screen:** the agent downloads the WAHA image from Docker Hub, and
+  tries again every 10 minutes if the download fails.
+- **Building on the machine itself** (`--build`): downloads the Node base from Docker Hub, pnpm and
+  the packages from the npm registry.
+
+In use, Ozavo talks to what you configured: the voice AI provider (Google or OpenAI) during
+calls, with your key; the SIP trunk carrier; WhatsApp, through WAHA, if you connected it; and the
+addresses of the tools and webhooks you registered. With the call outcome or the call analysis turned on (Settings →
+Artificial intelligence, off by default), the routines process also sends the text transcript to
+the same provider, after the call, through its text API (`/chat/completions` on OpenAI,
+`:generateContent` on Google), or to the OpenAI-compatible endpoint you set up for it.
+
+## Contributing
+
+The project is set up so that a first PR goes well:
+
+- Open the repository in your coding assistant (Claude Code, Codex, Cursor, Antigravity). The
+  skills in `.agents/skills/` guide the contribution, and [`AGENTS.md`](AGENTS.md) is the
+  authority they all read.
+- A tool, a voice engine and a routine each live in their own file and are discovered by folder.
+  Your PR does not fight another PR over a central list.
+- When CI goes red, it says whether the cause is your PR.
+
+Start with [`CONTRIBUTING.en.md`](CONTRIBUTING.en.md).
+
+## Roadmap
+
+The horizon and the fronts open to the community, each with a size and an entry point in the
+code, are in [`ROADMAP.md`](ROADMAP.md).
+
+## Who builds it
+
+Ozavo was created by Rafael Melgaço ([@melgarafael](https://www.youtube.com/@melgarafael))
+and is built in public, with the community. There are already outside contributions: the fences
+and security work from [webtecnica](https://github.com/webtecnica) are in the published releases, and since 0.6.0 so are
+the rights of callers (retention period and export), from webtecnica, and the OpenAI cost checked
+against the invoice, the farewell before hanging up and call recording, from
+[aliffstefano](https://github.com/aliffstefano). Release 0.8.0 brings the call outcome and the end-of-call WhatsApp notice, from webtecnica, and 0.9.0, also from webtecnica, brings automated-menu keys, unanswered transfers, recording that stops on request and erasure at the caller's request, and 0.10.0, also from webtecnica, brings transcription of the recording, and 0.11.0, also from webtecnica, brings the retention period reaching the call summary, the exact cost of reading the outcome and the outcome on an OpenAI-compatible provider, the transcription cost notice and failure on screen, the IP line with several blocks, automatic transcription at the end of the call, and the deployment guides for clinics and for the same VPS as the CRM, and 0.12.0, also from webtecnica, brings voicemail, the link for the caller to download the recording, and the ARM images, and 0.13.0, also from webtecnica, brings the new-version notice in the sidebar, the per-call ceiling on tools, the panel's security headers and the recording fingerprint. DeskcommCRM, where the contribution workflow used
+here comes from, has received PRs from more than 250 people.
+
+Credit is a rule, not a courtesy: contributors keep authorship of their commits and are named
+in the release notes. What this project owes to other projects is in [`CREDITS.md`](CREDITS.md).
+Who decides what is in [`GOVERNANCE.md`](GOVERNANCE.md).
+
+## License
+
+[MIT](LICENSE). © 2026 Rafael Melgaço and contributors.
+
+Asterisk, used as a separate service at the telephony edge, is distributed by its authors under
+GPLv2 and is not embedded in Ozavo's code.
+
+## Support and responsibilities
+
+- **Questions and ideas:** [GitHub Discussions](https://github.com/DeskLabs-OpenSource/Ozavo/discussions).
+- **Bugs:** [open an issue](https://github.com/DeskLabs-OpenSource/Ozavo/issues).
+- **Vulnerabilities:** private report, as described in [`SECURITY.md`](SECURITY.md). Never in a public issue.
+
+What is yours, because this is a self-hosted installation:
+
+- **The VPS and the data.** Firewall, system updates and off-machine backups are up to you.
+- **The keys and the contracts.** The accounts with the AI provider and the carrier are yours,
+  and so are the bills.
+- **The use.** Recording, personal data and outbound calls have legal rules. The project
+  delivers the controls and does not offer legal advice.
+
+The software is provided as is, without warranty, under the terms of the MIT license.

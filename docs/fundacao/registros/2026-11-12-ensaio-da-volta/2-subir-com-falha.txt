@@ -1,0 +1,124 @@
+
+▶ Copiando o banco
+  ✓ dump gravado (84K)
+
+▶ Conferindo se o backup abre
+  ✓ restaurado num banco de rascunho: 20 tabelas contadas
+
+▶ Guardando a configuração
+  ✓ Backup concluído e conferido: /root/Ozavo/backups/20261112-130816
+/root/Ozavo/backups/20261112-130816
+
+▶ Trocando para a versão 0.5.0
+  ✓ Imagens da versão 0.5.0 baixadas
+
+▶ Aplicando as mudanças no banco
+ Container ozavo-postgres-1 Running 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-run-f4fe24fbef79 Creating 
+ Container ozavo-migrate-run-f4fe24fbef79 Created 
+
+> @ozavo/routines@0.0.0 migrate /app/apps/routines
+> tsx src/cli/migrate.ts
+
+Nenhuma migration nova: o banco já estava em dia.
+Senha do papel ozavo_app definida.
+Senha do papel ozavo_system definida.
+  ✓ Banco atualizado
+
+▶ Subindo e conferindo
+ Container ozavo-asterisk-1 Running 
+ Container ozavo-caddy-1 Running 
+ Container ozavo-postgres-1 Running 
+ Container ozavo-migrate-1 Recreate 
+ Container ozavo-migrate-1 Recreated 
+ Container ozavo-routines-1 Recreate 
+ Container ozavo-panel-1 Recreate 
+ Container ozavo-voice-1 Recreate 
+ Container ozavo-panel-1 Recreated 
+ Container ozavo-routines-1 Recreated 
+ Container ozavo-voice-1 Recreated 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-asterisk-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-1 Starting 
+ Container ozavo-asterisk-1 Healthy 
+ Container ozavo-migrate-1 Started 
+ Container ozavo-migrate-1 Waiting 
+ Container ozavo-migrate-1 Exited 
+ Container ozavo-panel-1 Starting 
+ Container ozavo-voice-1 Starting 
+ Container ozavo-routines-1 Starting 
+ Container ozavo-panel-1 Started 
+ Container ozavo-panel-1 Waiting 
+ Container ozavo-voice-1 Started 
+ Container ozavo-routines-1 Started 
+ Container ozavo-panel-1 Error dependency panel failed to start
+dependency failed to start: container ozavo-panel-1 exited (143)
+  ✗ Os serviços da versão 0.5.0 não subiram.
+
+▶ Voltando para a versão 0.4.0
+    ok     Banco              Postgres aceitando conexões
+    ok     Asterisk           System uptime: 2 hours, 36 minutes, 48 seconds
+    falha  Painel             o contêiner do painel não está rodando. Veja: docker compose -f deploy/docker-compose.yml logs --tail 50 panel
+    aviso  Painel → banco   não deu para consultar porque o painel não respondeu; resolva o painel primeiro
+    ok     Worker de voz      respondendo
+    ok     Controle da telefonia o processo de voz está conectado ao Asterisk (Connected.)
+    ok     Rotinas            processo rodando
+  
+    Há peça essencial fora do ar. Para pedir ajuda com tudo junto: bash install/diagnose.sh
+
+▶ Conferindo o arquivo do backup
+  ✓ arquivo íntegro (sha256 confere)
+
+▶ Parando painel, voz e rotinas
+ Container ozavo-panel-1 Stopping 
+ Container ozavo-voice-1 Stopping 
+ Container ozavo-routines-1 Stopping 
+ Container ozavo-panel-1 Stopped 
+ Container ozavo-routines-1 Stopped 
+ Container ozavo-voice-1 Stopped 
+
+▶ Restaurando num banco ao lado
+
+▶ Comparando as contagens com o manifesto
+  ✓ todas as 20 tabelas com a mesma contagem do backup
+
+▶ Trocando o banco
+
+▶ Religando os serviços
+ Container ozavo-caddy-1 Running 
+ Container ozavo-postgres-1 Running 
+ Container ozavo-asterisk-1 Running 
+ Container ozavo-migrate-1 Recreate 
+ Container ozavo-migrate-1 Recreated 
+ Container ozavo-panel-1 Recreate 
+ Container ozavo-voice-1 Recreate 
+ Container ozavo-routines-1 Recreate 
+ Container ozavo-routines-1 Recreated 
+ Container ozavo-panel-1 Recreated 
+ Container ozavo-voice-1 Recreated 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-asterisk-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-1 Starting 
+ Container ozavo-asterisk-1 Healthy 
+ Container ozavo-migrate-1 Started 
+ Container ozavo-migrate-1 Waiting 
+ Container ozavo-migrate-1 Exited 
+ Container ozavo-panel-1 Starting 
+ Container ozavo-voice-1 Starting 
+ Container ozavo-routines-1 Starting 
+ Container ozavo-panel-1 Started 
+ Container ozavo-panel-1 Waiting 
+ Container ozavo-voice-1 Started 
+ Container ozavo-routines-1 Started 
+ Container ozavo-panel-1 Healthy 
+  ✓ Restaurado: o banco agora é o do backup de 2026-11-12T16:08:17Z, com as contagens conferidas.
+  Confira o sistema com: bash install/healthcheck.sh
+
+✗ A atualização para 0.5.0 não deu certo e foi desfeita: você está de volta na versão 0.4.0, com o banco do backup de antes da atualização (/root/Ozavo/backups/20261112-130816) e tudo respondendo.
+  O que fazer: Nada se perdeu além do que entrou durante a tentativa. Rode bash install/diagnose.sh e abra uma issue com o arquivo, dizendo que a atualização para 0.5.0 voltou.
+  Se precisar de ajuda, rode: bash install/diagnose.sh
+saída: 1

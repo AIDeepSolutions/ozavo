@@ -1,0 +1,11 @@
+# Gerado pelo instalador do Ozavo. Não edite: rode bash install/agent.sh --install.
+[Unit]
+Description=Ozavo: passada do agente de atualização, a cada minuto
+
+[Timer]
+OnCalendar=minutely
+RandomizedDelaySec=15s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

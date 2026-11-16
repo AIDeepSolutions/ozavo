@@ -1,0 +1,288 @@
+# Instalação real
+
+> Registro criado em 2026-11-11 pela auditoria de conformidade, a partir do que o dono informou e
+> do que está no PR #3. Quem escreveu este arquivo não esteve na instalação.
+
+## O que foi feito
+
+| Campo | Valor |
+|---|---|
+| Data | 2026-11-11 |
+| Máquina | VPS de teste do parceiro (HostGator), Ubuntu 22.04, segundo o PR #3. Máquina compartilhada, e não um servidor recém-criado |
+| Caminho | O comando de uma linha do README (`install/get.sh`) |
+| Modo | Sem perguntas (`--yes`), com as respostas por variáveis `OZAVO_*` |
+| Chave de provedor | Nenhuma na instalação |
+
+## O que a instalação achou
+
+| Defeito | Efeito | Correção |
+|---|---|---|
+| Arquivos de configuração do Asterisk montados direto do repositório herdavam a permissão de quem baixou. Com permissões padrão restritas (umask 077), o Asterisk não lia o plano de discagem nem a interface de controle | O instalador terminava dizendo que tudo respondia, e nenhuma ligação seria atendida | PR #3: tudo o que o Asterisk lê sai de `deploy/asterisk/generated`, gravado com permissão explícita |
+| A checagem de saúde não conferia a ligação entre o processo de voz e o Asterisk | O defeito acima não aparecia em lugar nenhum | PR #3: linha "Controle da telefonia" em `install/healthcheck.sh` |
+
+Evidência: <https://github.com/DeskLabs-OpenSource/Ozavo/pull/3>.
+
+## O que não foi provado
+
+- Instalação num servidor recém-criado.
+- Instalação pelo modo com perguntas no terminal.
+- Instalação numa VPS de outro provedor.
+- Entrada no painel pelo navegador com o usuário criado pelo instalador, conferida pelo instalador.
+- Backup, restauração e atualização nessa máquina.
+- Ligação por operadora.
+- Chamada pelo navegador a partir de um navegador.
+
+## O que não foi medido
+
+- Memória e disco do sistema parado, com o tamanho da máquina (item 3.4 da conformidade).
+
+## O que aconteceu depois do merge das correções
+
+Registrado por quem conduziu a instalação (a sessão que constrói o Ozavo), a partir do que foi observado na própria máquina. Não há captura guardada no repositório; os comandos abaixo reproduzem a conferência.
+
+| Quando (UTC, 2026-11-11) | O que foi feito | O que se observou |
+|---|---|---|
+| 13:48, depois do PR #3 | `git pull` e `bash install/install.sh --yes` de novo, na mesma instalação | O instalador reconheceu a instalação anterior, não criou outro dono e manteve o painel só local. `bash install/healthcheck.sh`: "Controle da telefonia: ok, o processo de voz está conectado ao Asterisk". O usuário do Asterisk lê os cinco arquivos de configuração; `dialplan show from-trunk` mostra as três entradas; a interface de controle está ligada |
+| 14:09 | Chamada simulada pelas rotas do painel instalado | Desfecho `completed`, 24 eventos, aviso de gravação antes da saudação, resumo gravado pelas rotinas |
+| 14:44, depois do PR #4 | `git pull` e instalador de novo | Painel em `127.0.0.1:3080` e voz do navegador em `127.0.0.1:3081`; de fora, pela internet, nenhuma das duas responde |
+| 14:45 | Conversa por voz com o motor OpenAI Realtime, por um cliente de teste que faz o papel do navegador com fala gravada | Fala em português entendida e transcrita, ferramenta `notify_human` acionada, 67 s, custo estimado de 33 centavos de dólar |
+
+| por volta de 17:10, depois do PR #7 | Backup, `git pull` e instalador de novo, com a instalação em duas portas | A instalação passou para a entrada única: só o Caddy publica porta (`127.0.0.1:3080`), painel e voz deixaram de publicar. `healthcheck.sh` com a linha "Entrada única: ok". Dados preservados |
+| por volta de 17:20 | Conversa por voz pela entrada única, pelo mesmo cliente de teste, através de um túnel SSH para a porta única | Aviso de gravação, saudação, fala em português entendida e respondida; 17 centavos de dólar. O cliente de teste não foi guardado no repositório |
+| 19:10, depois da versão 0.1.0 | `git pull` (a `main` era o commit da tag) e `bash install/update.sh --yes`, com a instalação em `stable` e imagens construídas na própria VPS | Primeira atualização entre versões. Backup conferido, as três imagens `0.1.0` baixadas do registro sem login, migrations, subida, saída 0. Depois: `OZAVO_VERSION=0.1.0`, a cópia do endereço das imagens saiu do `.env`, contêineres nas imagens publicadas, Postgres 17.11 e Caddy 2.11.9, todas as peças da saúde em ok, agente, usuário e nove chamadas preservados. Compose 5.1.4 |
+| por volta de 19:20 | Comando de uma linha (`get.sh`) em simulação (`--yes --dry-run`), numa pasta separada da mesma VPS | O clone ficou na tag `v0.1.0`; o instalador reconheceu a 0.1.0 como a publicada mais recente e disse que baixaria as imagens dela, sem construir. Nada foi alterado na instalação viva |
+
+Então rodar o instalador uma segunda vez **foi** exercitado, três vezes, numa instalação com dados. O que continua sem prova está na lista acima.
+
+Correção sobre a causa do defeito de permissão: o `umask 077` não era da máquina. Veio do comando de quem instalava, que restringiu as permissões para proteger o arquivo da senha, e o instalador herdou. Um servidor endurecido teria o mesmo efeito, mas essa instalação não prova como é o padrão da VPS do parceiro.
+
+## Ordem dos fatos
+
+O repositório ficou público em 2026-11-11 às 12:09 UTC. A correção do defeito entrou às 13:47 UTC.
+A instalação real aconteceu depois da publicação (item 13.5 da conformidade).
+
+## O que continua sem prova depois da 0.1.0
+
+- Instalação do zero, de verdade, pelo comando de uma linha contra uma versão publicada, numa máquina limpa. Só a simulação e a atualização foram exercitadas. (Depois da 0.2.0 a instalação do zero contra a 0.1.0 aconteceu, numa segunda VPS compartilhada: ver "Depois da 0.2.0". Máquina limpa continua sem prova.)
+- Conversa por voz depois da atualização para a 0.1.0.
+- A volta automática do `update.sh` numa VPS.
+- Instalação em processador ARM. Nas versões sem imagem ARM ela só existe construindo na própria máquina; a partir da primeira versão publicada com imagem ARM ([0017](../decisions/0017-imagens-para-amd64-e-arm64.md)), a instalação puxa, sem que ninguém tenha instalado numa máquina ARM real.
+
+## Depois da 0.2.0 (2026-11-11)
+
+Registrado a partir do que informou quem conduziu as instalações e a versão. Quem escreveu esta seção não esteve nas máquinas, e não há captura guardada no repositório.
+
+### Instalação do zero numa segunda VPS, contra a 0.1.0
+
+| Campo | Valor |
+|---|---|
+| Máquina | Segunda VPS de teste: Ubuntu 22.04, x86_64, 8 GB, compartilhada |
+| Caminho | O comando de uma linha (`install/get.sh`), contra a versão 0.1.0 |
+| Tempo | 67 segundos do `curl` até tudo respondendo |
+| O que se observou | O clone ficou na tag; as três imagens baixaram sem login; a checagem de saúde mostrou todas as peças em ok |
+| Memória | Cerca de 320 MiB somando os seis contêineres, com o sistema **parado**, sem chamada. Não é o tamanho mínimo de máquina: esse continua sem medida |
+
+Defeito achado nessa instalação: a máquina tinha as portas 80 e 443 livres e não tinha domínio, e a opção de painel só local (`OZAVO_PANEL_LOCAL_ONLY`) foi **ignorada em silêncio**. O valor passado, `1`, nem foi validado nesse modo. O Caddy publicou `0.0.0.0:80` e o instalador anunciou `http://<IP>`. A opção só existia para o caso de as portas 80 e 443 serem de outro proxy. A correção (a opção vale em todo modo, valor inválido e opção sem efeito param com erro, e sem domínio o padrão passa a ser só local) está no ramo `fix/instalador-confere-o-que-anuncia`, provada só com o Docker de mentira dos testes do kit: ver [`nao-exercitado.md`](nao-exercitado.md).
+
+### Memória e disco na 0.3.0 (vps-teste, 2026-11-12)
+
+Medido por quem conduziu a atualização, com `docker stats --no-stream` e `docker system df -v`. A saída não ficou guardada no repositório.
+
+| Campo | Valor |
+|---|---|
+| Máquina | VPS de teste: x86_64, 8 GB. Na mesma máquina rodam outros sistemas, que não entraram na conta |
+| Momento | 11:49 UTC, 8 minutos depois de `update.sh --to 0.3.0` subir as peças. Sistema **parado**: sem chamada, sem linha e sem motor configurados |
+| Memória, sem o WhatsApp | Cerca de 380 MiB nos seis contêineres: voz 109, rotinas 99, banco 66, painel 58, Caddy 32, Asterisk 15 |
+| Memória do WhatsApp | Cerca de 323 MiB no serviço instalado, sem número conectado |
+| Disco, uma versão | Cerca de 2,7 GB em espaço único (sem contar duas vezes as camadas compartilhadas). São três imagens do Ozavo (painel 95 MB, voz 943 MB, rotinas 942 MB, mais 239 MB de base comum), mais Postgres 411 MB, Asterisk 79 MB, Caddy e o banco (67 MB). O serviço do WhatsApp, quando instalado, ocupa mais 3,2 GB |
+| Acúmulo | Imagens de versões antigas ficam no disco: esta máquina guardava 0.1.0, 0.2.0 e uma construída localmente, cerca de 2 GB únicos cada. Voz e rotinas publicadas não dividem as camadas que vêm do mesmo estágio de construção, porque cada uma é construída num job do CI |
+
+Os cerca de 320 MiB de 11/11 foram medidos na 0.2.0, noutra máquina e com seis contêineres. A diferença para a medida de hoje não foi investigada.
+
+### A versão 0.2.0
+
+| O que rodou | O que se observou |
+|---|---|
+| Ato 1 do `release.yml` | Rodou pelo workflow pela primeira vez e abriu o PR de versão |
+| Verificações do PR de versão | As verificações do evento de PR ficaram em `action_required`. O `ready` verde veio do `ci` disparado no ramo, anexado ao commit |
+| Publicação | Inteira, sem intervenção: os pacotes seguiram públicos e a release nasceu sozinha |
+
+### A ponte da 0.1.0, nas duas VPS de teste
+
+Nas duas máquinas, `bash install/update.sh --yes` duas vezes, como a nota da 0.2.0 pede a quem está na 0.1.0.
+
+| Rodada | O que se observou |
+|---|---|
+| 1 | Backup, imagens 0.2.0 e a migration nova |
+| 2 | Recriou o painel e agendou o timer do systemd. O agente falou com o painel em menos de dois minutos, e a checagem de saúde mostrou "Agente de atualização: ok" |
+
+Defeito achado na ponte: pela entrada única, o 404 da rota do agente vinha do **painel** (resposta em JSON), e não do Caddy, porque o Caddy não tinha sido reiniciado e seguia com o Caddyfile antigo. Depois de reiniciar o Caddy à mão, o 404 passou a vir do Caddy (corpo vazio). A rota continuava recusada nos dois casos; o que faltava era a camada da frente. A correção (a segunda rodada reinicia o Caddy quando o Caddyfile que ele tem montado não é o do disco, e a checagem de saúde avisa quando quem recusa é o painel) está no mesmo ramo, também provada só com o Docker de mentira.
+
+### O que continua sem prova depois da 0.2.0
+
+- O agente de atualização ouvindo um "sim" do painel e atualizando.
+- A passagem de vez do `update.sh` com `--resume`. A ponte não a exercita, porque a 0.1.0 não a tem.
+- A volta automática do `update.sh` numa VPS.
+- A tela de atualização num navegador.
+- Conversa por voz depois das atualizações.
+- Instalação numa máquina limpa: a segunda VPS também é compartilhada.
+
+
+## Na VPS da parceira, com AlmaLinux (2026-11-12)
+
+Uma VPS cedida pela HostGator, parceira de infraestrutura do projeto, dedicada ao Ozavo e sem nenhum outro sistema. Quem conduziu foi a sessão que mantém o projeto, por SSH. As saídas estão guardadas, inteiras, em [`registros/2026-11-12-vps-parceira/`](registros/2026-11-12-vps-parceira/), com o IP trocado por `<IP-da-VPS>`.
+
+| Campo | Valor |
+|---|---|
+| Máquina antes de qualquer coisa | AlmaLinux 9.8, x86_64, 4 vCPU, 12 GB de memória, 295 GB de disco (3,7 GB usados). Já vinha com `docker-ce` 29.9.3, git e Compose v5, mas com o serviço do Docker desligado. Sem `ufw`, `firewalld` inativo, SELinux Disabled ([`0-maquina-antes.txt`](registros/2026-11-12-vps-parceira/0-maquina-antes.txt)) |
+| Por que AlmaLinux | Quem compra VPS na HostGator escolhe o sistema e recebe Ubuntu. Esta máquina foi cedida pela HostGator já pronta, com AlmaLinux, segundo o dono do projeto. Ele decidiu que o Ozavo deve ser compatível com AlmaLinux também |
+
+| Rodada | O que se observou |
+|---|---|
+| 1. A linha única do README, `curl … get.sh \| bash -s -- --yes` | O `get.sh` clonou na 0.3.0. O instalador parou no passo 1: "Este sistema (almalinux 9.8) não é Ubuntu 22.04+ nem Debian 12+". Nada foi instalado ([`1-linha-unica.txt`](registros/2026-11-12-vps-parceira/1-linha-unica.txt)) |
+| 2. `bash install/install.sh --force --yes` | Parou: o usuário não conseguia falar com o Docker, porque o serviço estava parado ([`2-force-docker-parado.txt`](registros/2026-11-12-vps-parceira/2-force-docker-parado.txt)) |
+| Passo à mão | `systemctl enable --now docker`, feito pela sessão. Não fica na saída de nenhuma rodada |
+| 3a. `--force --yes` de novo | Passos 1 e 2 em ok (Docker e Compose, versão 0.3.0, IP público na placa, portas livres). Parou nas perguntas: sem terminal, `OZAVO_ORG_NAME` vazio ([`3a-force-sem-respostas.txt`](registros/2026-11-12-vps-parceira/3a-force-sem-respostas.txt)) |
+| 3b. `--force --yes` com `OZAVO_ORG_NAME` e `OZAVO_OWNER_*` | Instalação inteira contra as imagens publicadas da 0.3.0: migrations, dono criado, peças respondendo, agente agendado, entrada única e login conferidos. Painel só local, em `127.0.0.1:3080`, porque não há domínio ([`3b-force-com-respostas.txt`](registros/2026-11-12-vps-parceira/3b-force-com-respostas.txt)). A senha do dono foi gerada no servidor e não aparece em nenhuma saída |
+| Saúde | `install/healthcheck.sh` saiu com 0. Avisos esperados: nenhuma linha, nenhum motor, e o agente de atualização ainda sem falar com o painel no primeiro minuto ([`4-healthcheck.txt`](registros/2026-11-12-vps-parceira/4-healthcheck.txt)) |
+
+O que isto prova e o que não prova:
+
+- Prova que a 0.3.0 publicada roda em AlmaLinux 9.8 numa VPS da parceira, desde que o serviço do Docker seja ligado à mão e o instalador rode com `--force`.
+- Não prova a linha única sem nenhuma intervenção nesse sistema. Ela parou no passo 1, e o conserto (aceitar AlmaLinux e ligar o Docker parado) vem num PR próprio, que só se prova rodando de novo numa máquina dessas.
+- Não prova `firewalld` ativo nem SELinux em Enforcing, porque a máquina não tinha nenhum dos dois.
+- Não prova ligação: não há linha nem motor configurados.
+
+## Primeira atualização pela tela: 0.3.0 → 0.4.0, na VPS da parceira (2026-11-12)
+
+Na mesma VPS dedicada, a instalação estava na 0.3.0 publicada. Ninguém tocou no terminal do servidor durante a atualização. A sessão que mantém o projeto entrou no painel por túnel SSH, com um navegador dirigido por ela, e clicou. Do lado do servidor, só leu. As capturas e as saídas estão em [`registros/2026-11-12-atualizacao-pela-tela/`](registros/2026-11-12-atualizacao-pela-tela/).
+
+| Momento (-03) | O que se observou |
+|---|---|
+| 11:45 | Configurações → "Versão e atualização" mostrava "Em execução 0.3.0", "Mais recente publicada 0.4.0" e, embaixo, "Este servidor não encontrou versão publicada mais nova que a instalada", sem botão ([`1-antes-sem-botao.jpg`](registros/2026-11-12-atualizacao-pela-tela/1-antes-sem-botao.jpg)). **Defeito:** o agente do servidor só consulta as tags a cada 10 minutos, e a última consulta (11:38) foi segundos antes de a tag `v0.4.0` existir. A tela disse duas coisas contrárias sobre a mesma versão |
+| 11:48 | O agente consultou de novo e viu a tag. A tela passou a mostrar "O que muda da 0.3.0 para a 0.4.0" e o botão "Atualizar para a 0.4.0" ([`2-botao-depois-da-consulta.jpg`](registros/2026-11-12-atualizacao-pela-tela/2-botao-depois-da-consulta.jpg)) |
+| 11:49 | O clique abriu a confirmação dentro da página, nomeando as duas versões, dizendo que o sistema sai do ar e pedindo a senha de novo ([`3-confirmacao-com-senha.jpg`](registros/2026-11-12-atualizacao-pela-tela/3-confirmacao-com-senha.jpg)). Confirmado: "Pedido registrado em 12 de nov., 11:49. O agente do servidor começa a atualização em até um minuto" ([`4-pedido-registrado.jpg`](registros/2026-11-12-atualizacao-pela-tela/4-pedido-registrado.jpg)) |
+| 11:49:15 a 11:50:21 | `agent.log`: "pedido de atualização aceito; versão instalada: 0.3.0", e 66 s depois "atualização terminou: succeeded (de 0.3.0 para 0.4.0; update.sh saiu com 0)" ([`agent.log.txt`](registros/2026-11-12-atualizacao-pela-tela/agent.log.txt)) |
+| 11:59 | A tela: "A atualização terminou em 12 de nov., 11:50: o servidor está na versão 0.4.0", com a saída do atualizador ([`5-terminou.jpg`](registros/2026-11-12-atualizacao-pela-tela/5-terminou.jpg), [`6-saida-do-atualizador-na-tela.txt`](registros/2026-11-12-atualizacao-pela-tela/6-saida-do-atualizador-na-tela.txt)) |
+
+Depois, conferido pelo terminal, só lendo:
+
+- **Versão:** pasta em `v0.4.0` e `.env` com `OZAVO_VERSION=0.4.0`. Painel, voz e rotinas nas imagens publicadas `0.4.0`.
+- **Asterisk:** não reiniciou, com uptime de 1 h 28 min. A 0.4.0 não muda nenhum arquivo de configuração dele.
+- **Saúde:** `healthcheck.sh` saiu com 0, com os avisos esperados (sem linha, sem motor).
+- **Backup:** em `backups/20261112-114915`.
+- **Imagens:** ficaram as da 0.4.0 e as da 0.3.0, que é a de onde se saiu. Não havia versão mais velha nesta máquina, então a limpeza não tinha o que remover.
+
+O que isto prova:
+
+- o caminho inteiro do botão numa máquina real: o pedido com a senha, o agente aceitando, o `update.sh` com backup, migrations e saúde, e o resultado de volta na tela;
+- que a atualização entre duas versões publicadas terminou sem intervenção.
+
+O que isto não prova:
+
+- **A passagem de vez com `--resume`.** A tela mostra só o fim da saída. As linhas que diriam que o atualizador da 0.3.0 passou a vez ao da 0.4.0 não aparecem, e a saída inteira não ficou guardada no servidor.
+- **A remoção de imagem antiga pelo `docker rmi` real.** Nesta máquina não havia o que remover.
+- **A volta automática.** A atualização não falhou.
+- **O espaço em disco antes e depois.** `docker system df` não foi medido antes do clique.
+
+Defeitos achados aqui, com conserto em PR próprio:
+
+- **A frase contrária da janela de 10 minutos.**
+- **O número de memória antigo na tela do WhatsApp.** A tela diz "O Ozavo inteiro, sem ele, usa cerca de 320 MB".
+- **O mascaramento da saída, que trocou `routines` por `***`.** A linha `@ozavo/routines@0.0.0` parecia um e-mail.
+
+## Instalador duas vezes, backup e restauração, troca de senha (2026-11-12)
+
+Na VPS da parceira, na 0.4.0 instalada pela tela, sem linha nem motor. As saídas inteiras estão em [`registros/2026-11-12-provas-destrutivas/`](registros/2026-11-12-provas-destrutivas/), com o IP trocado. Os números "N-…-contagens.txt" são organizações, usuários, chamadas e eventos de chamada.
+
+| Prova | O que se observou |
+|---|---|
+| Instalador duas vezes seguidas, na mesma versão (11.3) | `install.sh --yes` duas vezes, saída 0 nas duas. Os três arquivos de ambiente têm o mesmo `sha256` antes e depois, ou seja, nenhum segredo foi regerado. Os contêineres são os mesmos (mesmos IDs, nenhum recriado). As contagens não mudaram (1, 1, 1, 25). Nas duas rodadas o instalador avisou "Login NÃO testado: o usuário dono já existia e eu não tenho a senha dele", que é o comportamento declarado |
+| Backup (11.8) | `backup.sh` restaurou o dump num banco de rascunho, contou 20 tabelas e só então disse "Backup concluído e conferido" |
+| Restauração sem mudança | `restore.sh latest --yes`: "Restaurado… com as contagens conferidas", saída 0. As contagens são as mesmas de antes |
+| Restauração com mudança | Depois do backup, uma chamada simulada pelo painel levou o banco a 2 chamadas e 50 eventos. `restore.sh` com o backup anterior voltou o banco a 1 chamada e 25 eventos, saída 0 ([`5-antes-da-restauracao.txt`](registros/2026-11-12-provas-destrutivas/5-antes-da-restauracao.txt)) |
+| Troca de senha pelo kit (6.5) | `reset-password.sh` com a senha nova pela variável: "Senha… trocada. Sessões encerradas: 1" e "Senha trocada e conferida: entrei pela tela de entrada com a senha nova". A senha nova não aparece na saída: o `grep` por ela deu zero |
+| Saúde | `healthcheck.sh` saiu com 0 depois de cada etapa |
+
+O que não prova:
+
+- **Restauração em outro servidor** (`--with-config`): não rodou.
+- **Restauração depois de uma migration nova:** não rodou. O backup e a restauração são da mesma versão.
+- **Desempenho com banco grande:** o banco tem 84 KB de dump.
+
+## Segunda atualização pela tela: 0.4.0 → 0.5.0, com a passagem de vez e a limpeza (2026-11-12)
+
+Na mesma VPS, pelo botão, sem tocar no terminal do servidor durante a atualização. O disco e as imagens foram medidos pelo terminal, só lendo, antes do clique e depois. Saídas em [`registros/2026-11-12-atualizacao-0.5.0/`](registros/2026-11-12-atualizacao-0.5.0/).
+
+| O que | Antes | Depois |
+|---|---|---|
+| Versão | 0.4.0 | 0.5.0 |
+| Imagens do Ozavo | 0.4.0 e 0.3.0 | 0.5.0 e 0.4.0 |
+| `docker system df`, imagens | 3,857 GB (1,98 GB que se podia liberar) | 2,915 GB (96 MB que se podia liberar) |
+
+- **Passagem de vez com `--resume`, provada.** A saída mostrada na tela traz "O atualizador da versão 0.5.0 assumiu a atualização a partir da 0.4.0". Essa linha só é impressa pelo atualizador de destino depois de receber a vez ([`saida-do-atualizador-na-tela.txt`](registros/2026-11-12-atualizacao-0.5.0/saida-do-atualizador-na-tela.txt)).
+- **Limpeza de imagens com `docker rmi` real, provada.** "Imagens de versões antigas do Ozavo removidas": as três da 0.3.0. "A imagem da versão 0.4.0 fica, para voltar a ela sem internet." A lista de imagens depois confirma ([`1-imagens-depois.txt`](registros/2026-11-12-atualizacao-0.5.0/1-imagens-depois.txt)).
+- **Tempo:** `agent.log` com o pedido aceito às 16:04:06Z e "succeeded (de 0.4.0 para 0.5.0)" às 16:05:04Z, 58 s.
+- **A tela nova:** termina com "Este servidor está na versão publicada mais recente", sem a contradição da 0.4.0. O bloco do WhatsApp já mostra os números medidos (323 MiB, 380 MiB).
+- **O `last-update.log` não existe, como esperado:** quem executou foi o agente da 0.4.0, que não o grava. A tela não aponta o arquivo.
+- **Saúde:** `healthcheck.sh` saiu com 0.
+
+O que continua sem prova:
+
+- **O `last-update.log`:** só nasce na atualização seguinte, 0.5.0 → próxima.
+- **A máscara nova sobre a saída real:** o trecho mostrado na tela começa depois da linha do `routines`.
+- **A volta automática numa máquina real:** nenhuma atualização falhou.
+
+## Ensaio da volta automática numa máquina real (2026-11-12)
+
+Na VPS da parceira, pelo terminal, com um roteiro guardado em [`registros/2026-11-12-ensaio-da-volta/ensaio-volta.sh.txt`](registros/2026-11-12-ensaio-da-volta/ensaio-volta.sh.txt). A versão "doente" não existe publicada. A falha foi induzida de fora: um laço derrubava o contêiner do painel sempre que ele aparecia na imagem da 0.5.0. O prazo da saúde foi baixado para 60 s (`OZAVO_HEALTH_TIMEOUT=60`), mas não chegou a contar: o painel caiu enquanto o Compose ainda subia as peças, e a volta partiu do passo anterior à espera da saúde.
+
+| Passo | O que se observou |
+|---|---|
+| 1. Descer da 0.5.0 para a 0.4.0 (`update.sh --to 0.4.0`) | Saída 0, com backup, as três imagens da 0.4.0 e as peças respondendo. O banco tem a migration da 0.5.0 (a coluna `output_kept`), e a 0.4.0 rodou com ela. Descer não é caminho anunciado: aqui funcionou porque a migration só acrescenta uma coluna |
+| 2. Subir para a 0.5.0 com o painel derrubado | O laço derrubou o painel 0.5.0 às 16:08:26Z. O Compose acusou "dependency panel failed to start", e o atualizador disse "Os serviços da versão 0.5.0 não subiram". Em seguida mostrou a saúde (painel em falha) e "Voltando para a versão 0.4.0", voltou o código e as imagens, restaurou o banco do backup feito antes da tentativa ("contagens conferidas") e terminou com "A atualização para 0.5.0 não deu certo e foi desfeita: você está de volta na versão 0.4.0… e tudo respondendo". A saída foi 1, como deve ser numa volta ([`2-subir-com-falha.txt`](registros/2026-11-12-ensaio-da-volta/2-subir-com-falha.txt)) |
+| Depois da volta | Versão 0.4.0, as três imagens da 0.4.0 rodando, contagens iguais às de antes (1 chamada, 25 eventos) e `healthcheck.sh` com saída 0 |
+| 3. Subir de novo, sem sabotagem | Saída 0, com "O atualizador da versão 0.5.0 assumiu a atualização a partir da 0.4.0". A máquina terminou na 0.5.0, onde estava, com a saúde em 0 |
+
+O que isto prova:
+
+- o caminho inteiro da volta numa máquina real, disparado por "os serviços não subiram": código, imagens com a etiqueta `rollback`, restauração do banco e as peças de volta respondendo, com a mensagem certa.
+- **Não prova a volta disparada pelo prazo da saúde** (`wait_healthy` esgotado com as peças de pé). O código da volta é o mesmo, mas esse gatilho não rodou aqui.
+
+O que isto não prova:
+
+- **Uma versão publicada que de fato falhe.** A falha foi induzida de fora, num contêiner. Uma migration quebrada, por exemplo, não foi exercitada.
+- **A volta disparada pela tela.** Este ensaio rodou pelo terminal. A tela mostrando "voltou" ainda não foi vista.
+- **Descer de versão** continua sem promessa: funcionou aqui por causa da forma da migration.
+
+## A 0.6.0 na VPS da parceira: atualização, gravação e o serviço da ligação pelo WhatsApp (2026-11-12)
+
+Nesta rodada, tudo foi feito **pela API do painel**, com sessão de dono, porque a extensão do navegador desconectou. A API usada é a mesma das telas: o botão "Atualizar", os blocos de Configurações. As duas atualizações anteriores já provaram o clique na tela. Saídas em [`registros/2026-11-12-0.6.0/`](registros/2026-11-12-0.6.0/).
+
+| O que | O que se observou |
+|---|---|
+| Atualização 0.5.0 → 0.6.0 (POST `/system/update` com a senha) | Pedido às 22:04:09Z, "succeeded" às 22:04:57Z, 48 s ([`agent.log.txt`](registros/2026-11-12-0.6.0/agent.log.txt)). Migrations: `organization_events` e `whatsapp_call_sessions`. O volume `ozavo_recordings` foi criado na atualização. A 0.4.0 saiu do disco e a 0.5.0 ficou. `healthcheck.sh` saiu com 0, já com a linha "Ligação pelo WhatsApp". Ele foi rodado logo depois da atualização, antes de o serviço subir, e por isso a linha diz "não instalado" ([`2-saude.txt`](registros/2026-11-12-0.6.0/2-saude.txt)) |
+| Saída inteira guardada (12.21) | `deploy/agent/last-update.log` nasceu nesta atualização, com permissão 600, e o pedido ficou com `outputKept: true`. A máscara nova não tocou em `@ozavo/routines@0.0.0`. A linha "O atualizador da versão 0.6.0 assumiu a atualização a partir da 0.5.0" está lá ([`last-update.log.txt`](registros/2026-11-12-0.6.0/last-update.log.txt)) |
+| Gravação ligada, numa chamada simulada | O áudio foi para o disco durante a chamada (`.wav.part`, 1,7 MB). O arquivo final tem 2,4 MB, PCM16 estéreo a 8 kHz, e o painel o entrega pela rota da chamada. A memória do processo de voz ficou estável, de 118,4 a 120,1 MiB ([`gravacao-medida.txt`](registros/2026-11-12-0.6.0/gravacao-medida.txt)). O WAV tem 75 s contra 64 s de chamada. A diferença é a fila que o transporte simulado não espera tocar (#111). O defeito real, quando quem ligou desliga com fala na fila, foi consertado no #110 |
+| Serviço da ligação pelo WhatsApp (POST `/whatsapp-calls/service`) | O agente subiu `ozavo-wacalls-1` em 2 s, sem porta publicada, com 8,4 MiB parado |
+| Conectar o número (POST `/whatsapp-calls/connect`) | A sessão `ozavo_<id da organização>` foi criada no WaCalls, e em 6 s o painel tinha o QR em SVG. O evento real do QR chega, e esse era o ponto não verificado do #106. Sem leitura, o QR venceu, e o painel mostrou `qr_expired` |
+
+Antes de instalar o serviço do produto, o WaCalls de ensaio (contêiner, volume e porta UDP 7881) foi removido às 22:05:41Z. Meio minuto antes, às 22:05:12Z, o `agent.log` registrou "a imagem do serviço de ligação pelo WhatsApp não saiu do disco… outra coisa a usa". Era o agente tentando remover a imagem do serviço não pedido, e o `docker rmi` sem força recusou porque o contêiner de ensaio a usava. A trava funcionou como desenhada.
+
+O que não prova:
+
+- **O pareamento com um número de verdade.** Ninguém leu o QR.
+- **O clique na tela nesta versão.** Foi pela API.
+- **A gravação com fala humana.** O WAV não foi ouvido.
+
+## Processadores e memória das máquinas de prova (medido em 2026-11-13)
+
+Os documentos de entrada falam em "VPS de 8 GB e 4 vCPU", mas as seções acima só anotavam a memória. Medido por SSH (`nproc` e `free -m`), às 00:20 UTC:
+
+| Máquina | vCPU | Memória total |
+|---|---|---|
+| `hg-vps` (primeira instalação real) | 4 | 7940 MiB |
+| `vps-teste` (segunda VPS) | 4 | 7940 MiB |
+| VPS da parceira, dedicada (AlmaLinux) | 4 | 11699 MiB (seção "Na VPS da parceira") |
+
+"8 GB" é o tamanho vendido. O sistema vê 7940 MiB.

@@ -1,0 +1,426 @@
+/**
+ * Motor Gemini Live (Google), por WebSocket.
+ *
+ * Documentação oficial consultada em 2026-11-10 (ai.google.dev redireciona para aistudio.google.com):
+ *   - https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket  (URL, setup, realtimeInput, toolCall/toolResponse)
+ *   - https://ai.google.dev/api/live  (mensagens: setup, setupComplete, serverContent, usageMetadata)
+ *   - https://ai.google.dev/api/generate-content  (speechConfig, FunctionDeclaration, FunctionResponse, Blob)
+ *   - https://ai.google.dev/gemini-api/docs/live-api/capabilities  (áudio 16 kHz na entrada, 24 kHz na saída, interrupção, transcrição)
+ *   - https://ai.google.dev/gemini-api/docs/live-api/tools  (chamada de função bloqueante)
+ *   - https://ai.google.dev/gemini-api/docs/speech-generation  (lista de vozes)
+ *   - https://ai.google.dev/gemini-api/docs/pricing  (preços)
+ *
+ * Vocabulário do agente, consultado em 2026-11-13 (ai.google.dev/api/live redireciona para
+ * aistudio.google.com/api-reference/live):
+ *   - `AudioTranscriptionConfig.customVocabulary[]`: "A list of custom vocabulary phrases to bias the speech
+ *     recognition model toward recognizing specific terms". Vale para a transcrição lateral; a página não diz
+ *     formato, limite de quantidade nem de tamanho. O modelo de voz não tem campo de vocabulário no `setup`:
+ *     os termos vão também na instrução de sistema (`instructionsWithVocabulary`).
+ *
+ * Teste da chave (`checkKey`), consultado em 2026-11-12 (ai.google.dev redireciona para aistudio.google.com):
+ *   - https://ai.google.dev/api/models  (`GET /v1beta/models/{model}`: lê os dados do modelo, não gera nada)
+ *   - https://ai.google.dev/gemini-api/docs/api-key  (a chave vai no cabeçalho `x-goog-api-key`)
+ *   - https://ai.google.dev/gemini-api/docs/api-errors  (401 chave inválida, 402 crédito pré-pago esgotado,
+ *     403 sem permissão ou chave bloqueada, 404 modelo inexistente, 429 limite, 5xx do lado do Google)
+ *   A página de modelos não diz se ler um modelo é cobrado; nenhuma página de preço lista essa chamada.
+ *
+ * Não confirmado contra o servidor real (nenhuma chamada com chave foi feita):
+ *   - o código de uma chave inválida na API de modelos: a página de erros diz 401, e a forma antiga
+ *     da API respondia 400 com `API_KEY_INVALID`; as duas são tratadas como chave recusada;
+ *   - se a leitura do modelo confere crédito (402) ou só a chave: a resposta "aceita" não promete crédito;
+ *   - `responseModalities`/`speechConfig` vão dentro de `setup.generationConfig`, como na referência da
+ *     API; o exemplo do guia de WebSocket mostra `responseModalities` direto em `setup`;
+ *   - `inputAudioTranscription.languageCodes` (está na referência; os guias só mostram `{}`);
+ *   - `inputAudioTranscription.customVocabulary` aceito pela Live API (está na referência, nenhum guia mostra),
+ *     e o efeito dele no reconhecimento;
+ *   - se `usageMetadata` é por turno ou acumulado na sessão. Aqui é tratado como incremento.
+ *
+ * Sinal de fala e fim de turno forçado (`callerActivity`, `closeCallerTurn`), consultado em 2026-11-14:
+ *   - https://aistudio.google.com/api-reference/live  (`serverContent.interimInputTranscription`,
+ *     `serverContent.inputTranscription`, `realtimeInput.audioStreamEnd`, que só vale com a detecção
+ *     automática de fala ligada, como aqui, e reabre quando chega áudio de novo)
+ *   Não confirmado contra o servidor real: se o Gemini manda `interimInputTranscription` sem que se
+ *   peça, e com que frequência; se `audioStreamEnd` o faz responder ao que ouviu, ou só esvazia o que
+ *   estava guardado. `voiceActivity` não entra: a referência não diz se ele é início de fala.
+ *
+ * Ambiente barulhento (`listeningEnvironment: "noisy"`), consultado em 2026-11-14 na referência v1beta
+ * (https://aistudio.google.com/api-reference/live, `setup.realtimeInputConfig`):
+ *   - `automaticActivityDetection.startOfSpeechSensitivity`: `START_SENSITIVITY_HIGH` (padrão) ou `_LOW`;
+ *   - `automaticActivityDetection.endOfSpeechSensitivity`: `END_SENSITIVITY_HIGH` (padrão) ou `_LOW`;
+ *   - `automaticActivityDetection.prefixPaddingMs` (int32);
+ *   - `activityHandling`: `START_OF_ACTIVITY_INTERRUPTS` (padrão) ou `NO_INTERRUPTION`. Fica no padrão:
+ *     `NO_INTERRUPTION` mataria a interrupção de verdade.
+ *   Não confirmado contra o servidor real: o efeito desses valores numa ligação com ruído (a bancada
+ *   da fatia 5 mede).
+ */
+import { z } from "zod";
+import { SessionEmitter } from "../emitter";
+import { awaitSessionReady, openProviderSocket } from "../provider-socket";
+import { resample } from "../resample";
+import { instructionsWithVocabulary } from "../vocabulary";
+import { checkKeyOverHttp } from "../key-check";
+import { ANALYSIS_SCHEMA_GOOGLE, analysisPrompt } from "../analysis";
+import { classifyOptionsFor, classifyOutcomeOverHttp, readClassifyText, transcribeOverHttp } from "../outcome-over-http";
+import { OUTCOME_GUESS_SCHEMA_GOOGLE, outcomePrompt } from "../outcome";
+import type { ClassifyOptions, EnginePricing, RecordingTranscriber, Usage, VoiceEngine, VoiceSession } from "../types";
+
+const DEFAULT_BASE_URL =
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+/**
+ * Ambiente barulhento, ponto de partida do desenho (a bancada da fatia 5 pode trocar os valores):
+ * início de fala menos sensível (menos início falso, que é a interrupção falsa) com 300 ms de fala
+ * antes de confirmar, e fim de fala sensível, que não espera o ruído acabar. `activityHandling` não
+ * aparece: fica no padrão, em que a fala de verdade interrompe o agente.
+ */
+const NOISY_REALTIME_INPUT = {
+  automaticActivityDetection: {
+    startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+    endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+    prefixPaddingMs: 300,
+  },
+} as const;
+const DEFAULT_API_URL = "https://generativelanguage.googleapis.com/v1beta";
+const DEFAULT_MODEL = "gemini-3.8-live";
+const DEFAULT_VOICE = "Sulafat";
+// Modelo de texto que classifica o desfecho e transcreve a gravação: o mais barato da linha estável de texto. A página de
+// preços e a de modelos (conferidas em 2026-11-13) não listam `gemini-3.5-flash`, só o
+// `gemini-3.5-flash-lite`. Trocar de modelo é trocar o preço abaixo junto, numa versão.
+const TEXT_MODEL = "gemini-3.5-flash-lite";
+// gemini-3.5-flash-lite, por milhão de tokens: entrada US$ 0,30 e saída US$ 2,50, com o raciocínio
+// incluído na saída. A linha de entrada diz "text / image / video / audio" (conferida em 2026-11-13):
+// o áudio da gravação custa o mesmo que o texto. O cache implícito custaria menos; cobrar tudo como entrada nova superestima.
+const TEXT_PRICING: EnginePricing = {
+  centsPerMillionInputTokens: 30,
+  centsPerMillionOutputTokens: 250,
+  checkedOn: "2026-11-13",
+  source: "https://ai.google.dev/gemini-api/docs/pricing",
+};
+// "Maximum request size is 20 MB total (including prompts and all files)", na página de áudio
+// (aistudio.google.com/docs/audio, conferida em 2026-11-13). A página de formas de envio diz 100 MB
+// para dados embutidos; vale a menor. O áudio vai em base64 (4/3 do tamanho), com folga para o
+// pedido: cerca de 15 minutos de um lado a 8 kHz.
+const TRANSCRIBE_MAX_BYTES = Math.floor(((20_000_000 - 100_000) * 3) / 4);
+/** Transcrever, não resumir: resumo e desfecho são outras peças, com outro dono. */
+const TRANSCRIBE_PROMPT =
+  "Transcreva a fala deste áudio literalmente, no idioma em que foi dita, sem resumir, sem comentar, sem traduzir e sem marcar quem fala. Se não houver fala, responda com um texto vazio.";
+const generateText = z.object({ candidates: z.array(z.object({ content: z.object({ parts: z.array(z.object({ text: z.string().optional() })) }) })).min(1) });
+const generateUsage = z.object({
+  usageMetadata: z.object({ promptTokenCount: z.number(), candidatesTokenCount: z.number().optional(), thoughtsTokenCount: z.number().optional() }),
+});
+/** O consumo de `:generateContent`. O raciocínio vem à parte e é cobrado como saída. */
+const generateUsageOf = (body: unknown): Usage => {
+  const usage = generateUsage.safeParse(body).data?.usageMetadata;
+  if (!usage) return {};
+  return { inputTokens: usage.promptTokenCount, outputTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0) };
+};
+// As 30 vozes prontas, com o descritor oficial. Conferido em 2026-11-12 na página de síntese de voz
+// (aistudio.google.com/docs/speech-generation); a página da Live API não lista as vozes dela.
+const VOICES = [
+  { id: "Zephyr", style: "Bright" },
+  { id: "Puck", style: "Upbeat" },
+  { id: "Charon", style: "Informative" },
+  { id: "Kore", style: "Firm" },
+  { id: "Fenrir", style: "Excitable" },
+  { id: "Leda", style: "Youthful" },
+  { id: "Orus", style: "Firm" },
+  { id: "Aoede", style: "Breezy" },
+  { id: "Callirrhoe", style: "Easy-going" },
+  { id: "Autonoe", style: "Bright" },
+  { id: "Enceladus", style: "Breathy" },
+  { id: "Iapetus", style: "Clear" },
+  { id: "Umbriel", style: "Easy-going" },
+  { id: "Algieba", style: "Smooth" },
+  { id: "Despina", style: "Smooth" },
+  { id: "Erinome", style: "Clear" },
+  { id: "Algenib", style: "Gravelly" },
+  { id: "Rasalgethi", style: "Informative" },
+  { id: "Laomedeia", style: "Upbeat" },
+  { id: "Achernar", style: "Soft" },
+  { id: "Alnilam", style: "Firm" },
+  { id: "Schedar", style: "Even" },
+  { id: "Gacrux", style: "Mature" },
+  { id: "Pulcherrima", style: "Forward" },
+  { id: "Achird", style: "Friendly" },
+  { id: "Zubenelgenubi", style: "Casual" },
+  { id: "Vindemiatrix", style: "Gentle" },
+  { id: "Sadachbia", style: "Lively" },
+  { id: "Sadaltager", style: "Knowledgeable" },
+  { id: "Sulafat", style: "Warm" },
+] as const;
+const BRIDGE_HZ = 8000;
+const INPUT_HZ = 16000;
+const DEFAULT_OUTPUT_HZ = 24000;
+
+const transcription = z.object({ text: z.string().optional() });
+const serverMessage = z.object({
+  setupComplete: z.object({}).optional(),
+  serverContent: z
+    .object({
+      modelTurn: z
+        .object({
+          parts: z.array(
+            z.object({ inlineData: z.object({ data: z.string(), mimeType: z.string().optional() }).optional() }),
+          ),
+        })
+        .optional(),
+      turnComplete: z.boolean().optional(),
+      interrupted: z.boolean().optional(),
+      inputTranscription: transcription.optional(),
+      interimInputTranscription: transcription.optional(),
+      outputTranscription: transcription.optional(),
+    })
+    .optional(),
+  toolCall: z
+    .object({ functionCalls: z.array(z.object({ id: z.string().optional(), name: z.string(), args: z.unknown() })) })
+    .optional(),
+  usageMetadata: z
+    .object({ promptTokenCount: z.number().optional(), responseTokenCount: z.number().optional() })
+    .optional(),
+});
+
+// O modelo lido: o recurso devolve o próprio nome. A forma antiga da API recusava a chave com 400 e
+// o motivo `API_KEY_INVALID` nos detalhes.
+const modelResource = z.object({ name: z.string().startsWith("models/") });
+const errorDetails = z.object({ error: z.object({ details: z.array(z.unknown()) }) });
+const invalidKeyDetail = z.object({ reason: z.literal("API_KEY_INVALID") });
+const saysInvalidKey = (body: unknown): boolean =>
+  errorDetails.safeParse(body).data?.error.details.some((detail) => invalidKeyDetail.safeParse(detail).success) ?? false;
+
+function literalSpeech(text: string, language: string): string {
+  return `Say exactly the following to the caller, in ${language}, without adding anything: "${text}"`;
+}
+
+const recordingTranscriber: RecordingTranscriber = {
+  model: TEXT_MODEL,
+  pricing: TEXT_PRICING,
+  maxAudioBytes: TRANSCRIBE_MAX_BYTES,
+  transcribe(apiKey, input, options = {}) {
+    return transcribeOverHttp(
+      {
+        url: `${options.baseUrl ?? DEFAULT_API_URL}/models/${encodeURIComponent(TEXT_MODEL)}:generateContent`,
+        // No cabeçalho, e não na URL: endereço de pedido costuma ir para log de proxy.
+        headers: { "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ inlineData: { mimeType: "audio/wav", data: Buffer.from(input.audio).toString("base64") } }, { text: TRANSCRIBE_PROMPT }] }],
+          generationConfig: { temperature: 0 },
+        }),
+        model: TEXT_MODEL,
+        pricing: TEXT_PRICING,
+        read: (body) => {
+          const parsed = generateText.safeParse(body);
+          return parsed.success ? (parsed.data.candidates[0]?.content.parts ?? []).map((part) => part.text ?? "").join("").trim() : null;
+        },
+        usage: generateUsageOf,
+        classify: (status, body) => (status === 400 && saysInvalidKey(body) ? "rejected" : undefined),
+      },
+      options,
+    );
+  },
+};
+
+const engine: VoiceEngine = {
+  id: "gemini-live",
+  label: "Gemini Live (Google)",
+  provider: "google",
+  // A Gemini Developer API não publica a lista de países onde o áudio é processado: há pedido
+  // oficial em aberto no fórum do Google (discuss.ai.google.dev/t/…/195090, 02/11/2026), e a
+  // resposta para quem precisa de região é usar Vertex AI com `europe-west1` e semelhantes.
+  // Enquanto não houver declaração, o honesto é dizer que não se sabe.
+  processingLocation: { kind: "undeclared" },
+  voices: VOICES,
+  defaultVoice: DEFAULT_VOICE,
+  pricing: {
+    // US$ 3,00 e US$ 12,00 por milhão de tokens de áudio (entrada e saída) do gemini-3.8-live.
+    // O prompt de texto custa menos (US$ 0,75); cobrar tudo como áudio superestima um pouco, nunca subestima.
+    centsPerMillionInputTokens: 300,
+    centsPerMillionOutputTokens: 1200,
+    checkedOn: "2026-11-10",
+    source: "https://ai.google.dev/gemini-api/docs/pricing",
+  },
+
+  async connect(config, apiKey, options = {}) {
+    const emitter = new SessionEmitter();
+    const toolNames = new Map<string, string>();
+    let anonymousCalls = 0;
+    let userText = "";
+    let agentText = "";
+
+    let setupDone: () => void = () => undefined;
+    let setupFailed: (error: Error) => void = () => undefined;
+    const ready = new Promise<void>((resolve, reject) => {
+      setupDone = resolve;
+      setupFailed = reject;
+    });
+
+    const flush = (speaker: "user" | "agent"): void => {
+      const text = (speaker === "user" ? userText : agentText).trim();
+      if (speaker === "user") userText = "";
+      else agentText = "";
+      if (text) emitter.emit("transcript", { speaker, text });
+    };
+
+    const onMessage = (raw: unknown): void => {
+      const parsed = serverMessage.safeParse(raw);
+      if (!parsed.success) return;
+      const { setupComplete, serverContent, toolCall, usageMetadata } = parsed.data;
+      if (setupComplete) setupDone();
+
+      if (serverContent) {
+        // A transcrição chega em fragmentos; o contrato entrega a fala inteira de cada turno.
+        if (serverContent.inputTranscription?.text) userText += serverContent.inputTranscription.text;
+        // A interina não entra no texto da fala (a definitiva chega em `inputTranscription`): só avisa
+        // que quem ligou está falando.
+        if (serverContent.interimInputTranscription?.text?.trim() || serverContent.inputTranscription?.text?.trim()) {
+          emitter.emit("callerActivity", { words: true });
+        }
+        if (serverContent.modelTurn || serverContent.outputTranscription) flush("user");
+        if (serverContent.outputTranscription?.text) agentText += serverContent.outputTranscription.text;
+        for (const part of serverContent.modelTurn?.parts ?? []) {
+          if (!part.inlineData) continue;
+          const rate = Number(/rate=(\d+)/.exec(part.inlineData.mimeType ?? "")?.[1] ?? DEFAULT_OUTPUT_HZ);
+          // ponytail: reamostra cada pedaço isolado; a emenda entre pedaços perde uma fração de amostra.
+          // Se aparecer estalo na fala, trocar por um reamostrador com estado entre pedaços.
+          emitter.emit("audio", resample(Buffer.from(part.inlineData.data, "base64"), rate, BRIDGE_HZ));
+        }
+        if (serverContent.interrupted) emitter.emit("interrupted");
+        if (serverContent.turnComplete || serverContent.interrupted) {
+          flush("user");
+          flush("agent");
+        }
+      }
+
+      if (toolCall) {
+        flush("user");
+        for (const call of toolCall.functionCalls) {
+          const id = call.id ?? `gemini-call-${++anonymousCalls}`;
+          toolNames.set(id, call.name);
+          emitter.emit("toolCall", { id, name: call.name, args: call.args ?? {} });
+        }
+      }
+
+      if (usageMetadata) {
+        emitter.emit("usage", {
+          inputTokens: usageMetadata.promptTokenCount ?? 0,
+          outputTokens: usageMetadata.responseTokenCount ?? 0,
+        });
+      }
+    };
+
+    const socket = await openProviderSocket({
+      url: `${options.baseUrl ?? DEFAULT_BASE_URL}?key=${encodeURIComponent(apiKey)}`,
+      label: "Gemini Live",
+      emitter,
+      onMessage,
+      onClosed: () => setupFailed(new Error("Gemini Live: a conexão fechou antes de confirmar a sessão (chave ou modelo inválido?)")),
+      timeout: options,
+    });
+
+    socket.send({
+      setup: {
+        model: `models/${options.model ?? DEFAULT_MODEL}`,
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceId ?? DEFAULT_VOICE } } },
+        },
+        // Os modelos de áudio nativo não aceitam código de idioma para a fala; a documentação manda
+        // restringir o idioma pela instrução de sistema.
+        systemInstruction: { parts: [{ text: `${instructionsWithVocabulary(config.instructions, config.vocabulary)}\n\nSpeak only in ${config.language}.` }] },
+        ...(config.tools.length > 0 && {
+          tools: [
+            {
+              functionDeclarations: config.tools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parametersJsonSchema: tool.parameters,
+              })),
+            },
+          ],
+        }),
+        // Sem termos, o campo nem aparece: o setup fica igual ao de antes.
+        inputAudioTranscription: {
+          languageCodes: [config.language],
+          ...(config.vocabulary && config.vocabulary.length > 0 && { customVocabulary: [...config.vocabulary] }),
+        },
+        outputAudioTranscription: {},
+        // Ambiente `normal` ou ausente: o campo nem aparece, e o setup fica igual ao de antes.
+        ...(config.listeningEnvironment === "noisy" && { realtimeInputConfig: NOISY_REALTIME_INPUT }),
+      },
+    });
+    await awaitSessionReady(ready, socket, { label: "Gemini Live", emitter, timeout: options });
+
+    const session: VoiceSession = {
+      on: (event, handler) => emitter.on(event, handler),
+      sendAudio(pcm16_8k) {
+        socket.send({
+          realtimeInput: {
+            audio: { data: resample(pcm16_8k, BRIDGE_HZ, INPUT_HZ).toString("base64"), mimeType: `audio/pcm;rate=${INPUT_HZ}` },
+          },
+        });
+      },
+      sendToolResult(id, result) {
+        const name = toolNames.get(id);
+        if (!name) {
+          emitter.emit("error", new Error(`Gemini Live: resultado para uma chamada de ferramenta desconhecida: ${id}`));
+          return;
+        }
+        toolNames.delete(id);
+        // A chamada é bloqueante: o modelo retoma a fala sozinho ao receber a resposta.
+        socket.send({ toolResponse: { functionResponses: [{ id, name, response: { result } }] } });
+      },
+      say(text) {
+        socket.send({ realtimeInput: { text: literalSpeech(text, config.language) } });
+      },
+      closeCallerTurn() {
+        // O áudio seguinte de quem ligou reabre o fluxo, sem mensagem a mais.
+        socket.send({ realtimeInput: { audioStreamEnd: true } });
+      },
+      close: () => socket.close(),
+    };
+
+    if (config.greeting) session.say(config.greeting);
+    return session;
+  },
+
+  analyzes: true,
+
+  async classifyOutcome(apiKey, input, options: ClassifyOptions = {}) {
+    const analyze = input.analyze === true;
+    return classifyOutcomeOverHttp(
+      {
+        url: `${options.baseUrl ?? DEFAULT_API_URL}/models/${encodeURIComponent(TEXT_MODEL)}:generateContent`,
+        model: TEXT_MODEL,
+        pricing: TEXT_PRICING,
+        // No cabeçalho, e não na URL: endereço de pedido costuma ir para log de proxy.
+        headers: { "x-goog-api-key": apiKey },
+        // Sem `analyze`, o pedido é exatamente o só de desfecho: quem usa só o desfecho não paga a análise.
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: analyze ? analysisPrompt(input) : outcomePrompt(input) }] }],
+          generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: analyze ? ANALYSIS_SCHEMA_GOOGLE : OUTCOME_GUESS_SCHEMA_GOOGLE },
+        }),
+        read: (body) => readClassifyText((body as { candidates?: { content?: { parts?: { text?: unknown }[] } }[] }).candidates?.[0]?.content?.parts?.[0]?.text, analyze),
+        usage: generateUsageOf,
+        classify: (status, body) => (status === 400 && saysInvalidKey(body) ? "rejected" : undefined),
+      },
+      classifyOptionsFor(options, analyze),
+    );
+  },
+
+  transcription: recordingTranscriber,
+
+  checkKey(apiKey, options = {}) {
+    const model = options.model ?? DEFAULT_MODEL;
+    return checkKeyOverHttp(
+      {
+        url: `${options.baseUrl ?? DEFAULT_API_URL}/models/${encodeURIComponent(model)}`,
+        // No cabeçalho, e não na URL como no WebSocket: endereço de pedido costuma ir para log de proxy.
+        headers: { "x-goog-api-key": apiKey },
+        model,
+        accepted: modelResource,
+        classify: (status, body) => (status === 400 && saysInvalidKey(body) ? "rejected" : undefined),
+      },
+      options,
+    );
+  },
+};
+
+export default engine;

@@ -1,0 +1,18 @@
+{
+  "name": "@ozavo/voice",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@ozavo/core": "workspace:^",
+    "@ozavo/tools": "workspace:^",
+    "@ozavo/voice-engine": "workspace:^",
+    "werift": "0.27.0",
+    "ws": "^8.22.2",
+    "zod": "^4.6.7"
+  }
+}

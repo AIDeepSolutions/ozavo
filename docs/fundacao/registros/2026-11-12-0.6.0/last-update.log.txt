@@ -1,0 +1,80 @@
+
+▶ Versões
+  Atual: 0.5.0
+  Alvo:  0.6.0
+
+▶ Backup antes de mexer
+
+▶ Copiando o banco
+  ✓ dump gravado (84K)
+
+▶ Conferindo se o backup abre
+  ✓ restaurado num banco de rascunho: 20 tabelas contadas
+
+▶ Guardando a configuração
+  ✓ Backup concluído e conferido: /root/Ozavo/backups/20261112-190410
+/root/Ozavo/backups/20261112-190410
+
+▶ Trocando para a versão 0.6.0
+  ✓ Imagens da versão 0.6.0 baixadas
+
+▶ Aplicando as mudanças no banco
+ Container ozavo-postgres-1 Running 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-run-736260d65830 Creating 
+ Container ozavo-migrate-run-736260d65830 Created 
+
+> @ozavo/routines@0.0.0 migrate /app/apps/routines
+> tsx src/cli/migrate.ts
+
+Migrations aplicadas (2):
+  20261112T161000_organization_events.sql
+  20261112T190000_whatsapp_call_sessions.sql
+Senha do papel ozavo_app definida.
+Senha do papel ozavo_system definida.
+  ✓ Banco atualizado
+
+▶ Subindo e conferindo
+ Container ozavo-caddy-1 Running 
+ Container ozavo-asterisk-1 Running 
+ Container ozavo-postgres-1 Running 
+ Container ozavo-migrate-1 Recreate 
+ Volume ozavo_recordings Creating 
+ Volume ozavo_recordings Created 
+ Container ozavo-migrate-1 Recreated 
+ Container ozavo-routines-1 Recreate 
+ Container ozavo-panel-1 Recreate 
+ Container ozavo-voice-1 Recreate 
+ Container ozavo-panel-1 Recreated 
+ Container ozavo-routines-1 Recreated 
+ Container ozavo-voice-1 Recreated 
+ Container ozavo-postgres-1 Waiting 
+ Container ozavo-asterisk-1 Waiting 
+ Container ozavo-postgres-1 Healthy 
+ Container ozavo-migrate-1 Starting 
+ Container ozavo-asterisk-1 Healthy 
+ Container ozavo-migrate-1 Started 
+ Container ozavo-migrate-1 Waiting 
+ Container ozavo-migrate-1 Exited 
+ Container ozavo-panel-1 Starting 
+ Container ozavo-voice-1 Starting 
+ Container ozavo-routines-1 Starting 
+ Container ozavo-panel-1 Started 
+ Container ozavo-panel-1 Waiting 
+ Container ozavo-voice-1 Started 
+ Container ozavo-routines-1 Started 
+ Container ozavo-panel-1 Healthy 
+  ✓ Agente de atualização agendado (systemd: ozavo-agent.timer, a cada minuto, como root)
+  ✓ Atualizado para 0.6.0, com todas as peças essenciais respondendo.
+  ✓ O painel responde pela porta publicada (http://127.0.0.1:3080)
+  ✓ Imagens de versões antigas do Ozavo removidas, para liberar disco:
+    ghcr.io/desklabs-opensource/ozavo-panel:0.4.0
+    ghcr.io/desklabs-opensource/ozavo-voice:0.4.0
+    ghcr.io/desklabs-opensource/ozavo-routines:0.4.0
+  A imagem da versão 0.5.0 fica, para voltar a ela sem internet.
+  O atualizador da versão 0.6.0 assumiu a atualização a partir da 0.5.0.
+  Backup de antes da atualização: /root/Ozavo/backups/20261112-190410
+  Relatório completo: bash install/healthcheck.sh
+
+# permissão: 600
