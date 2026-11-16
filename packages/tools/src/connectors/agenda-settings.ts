@@ -34,6 +34,20 @@ export const storedAgendaConnector = z.discriminatedUnion("type", [
     slotMinutes: z.number().int().min(5).max(480),
     services: z.array(service.extend({ durationMinutes: z.number().int().min(5).max(480) })).max(30),
   }),
+  // Google Agenda por conta de serviço: a agenda é compartilhada com o e-mail da conta, e a chave
+  // privada dela fica cifrada. Não há autorização a esperar: gravou, liga.
+  z.object({
+    type: z.literal("google_service_account"),
+    clientEmail: z.string().email(),
+    privateKeyEnc: z.string().min(1),
+    calendarId: z.string().min(1),
+    timezone: z.string().min(1),
+    workStart: time,
+    workEnd: time,
+    workDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+    slotMinutes: z.number().int().min(5).max(480),
+    services: z.array(service.extend({ durationMinutes: z.number().int().min(5).max(480) })).max(30),
+  }),
 ]);
 export type StoredAgendaConnector = z.infer<typeof storedAgendaConnector>;
 
@@ -46,7 +60,7 @@ export async function readAgendaConnector(q: OrgQuery): Promise<StoredAgendaConn
 
 /** A agenda gravada está pronta para uma ligação (no Google, já autorizada). */
 export function agendaConnectorReady(stored: StoredAgendaConnector | null): boolean {
-  return stored !== null && (stored.type === "calcom" || stored.refreshTokenEnc !== undefined);
+  return stored !== null && (stored.type !== "google_calendar" || stored.refreshTokenEnc !== undefined);
 }
 
 /** O cliente da agenda desta empresa, ou `null` se ela não configurou nenhuma (ou falta autorizar). */
@@ -56,18 +70,24 @@ export async function agendaFromSettings(q: OrgQuery, secretKey: Buffer, net: Sa
   if (stored.type === "calcom") {
     return createCalcomAgenda({ apiKey: decryptSecret(stored.apiKeyEnc, secretKey), timezone: stored.timezone, services: stored.services }, net);
   }
+  const schedule = {
+    calendarId: stored.calendarId,
+    timezone: stored.timezone,
+    workStart: stored.workStart,
+    workEnd: stored.workEnd,
+    workDays: stored.workDays,
+    slotMinutes: stored.slotMinutes,
+    services: stored.services,
+  };
+  if (stored.type === "google_service_account") {
+    return createGoogleAgenda({ serviceAccount: { clientEmail: stored.clientEmail, privateKey: decryptSecret(stored.privateKeyEnc, secretKey) }, ...schedule }, net);
+  }
   return createGoogleAgenda(
     {
       clientId: stored.clientId,
       clientSecret: decryptSecret(stored.clientSecretEnc, secretKey),
       refreshToken: decryptSecret(stored.refreshTokenEnc ?? "", secretKey),
-      calendarId: stored.calendarId,
-      timezone: stored.timezone,
-      workStart: stored.workStart,
-      workEnd: stored.workEnd,
-      workDays: stored.workDays,
-      slotMinutes: stored.slotMinutes,
-      services: stored.services,
+      ...schedule,
     },
     net,
   );

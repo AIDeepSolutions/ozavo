@@ -1,5 +1,6 @@
+import { createVerify, generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createGoogleAgenda, freeSlotsFrom, googleConsentUrl, zonedInstant } from "./agenda-google";
+import { createGoogleAgenda, freeSlotsFrom, googleConsentUrl, serviceAccountKeyFile, zonedInstant } from "./agenda-google";
 
 const work = { timezone: "America/Sao_Paulo", workStart: "09:00", workEnd: "11:00", workDays: [1, 2, 3, 4, 5] };
 
@@ -72,5 +73,47 @@ describe("cliente do Google Agenda", () => {
     expect(url.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy");
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("state")).toBe("s");
+  });
+});
+
+describe("Google Agenda por conta de serviço", () => {
+  // Chave gerada no teste: nenhuma conta de verdade.
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+  const clock = { now: () => new Date("2026-11-18T12:00:00Z") };
+
+  it("troca um JWT assinado pela chave da conta pelo acesso, sem token de renovação", async () => {
+    const seen: Array<{ url: string; body?: string; headers: Record<string, string> }> = [];
+    const answers: unknown[] = [{ access_token: "ya29.conta" }, { calendars: { "agenda@exemplo.com": { busy: [] } } }];
+    const fetch = (async (url: string, init: { body?: string; headers: Record<string, string> }) => {
+      seen.push({ url, body: init.body, headers: init.headers });
+      return new Response(JSON.stringify(answers.shift()), { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const agenda = createGoogleAgenda(
+      { serviceAccount: { clientEmail: "ozavo@projeto-falso.iam.gserviceaccount.com", privateKey }, clock, calendarId: "agenda@exemplo.com", slotMinutes: 30, services: [], ...work },
+      { fetch, lookup: async () => ["142.250.0.1"] },
+    );
+    await agenda.freeSlots({ serviceType: "Consulta", from: "2026-11-18T12:00:00Z", to: "2026-11-18T13:00:00Z", callId: "c1" });
+
+    const form = new URLSearchParams(seen[0]?.body);
+    expect(seen[0]?.url).toBe("https://oauth2.googleapis.com/token");
+    expect(form.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
+    expect(form.has("refresh_token")).toBe(false);
+    const [header = "", claims = "", signature = ""] = (form.get("assertion") ?? "").split(".");
+    expect(createVerify("RSA-SHA256").update(`${header}.${claims}`).verify(publicKey, Buffer.from(signature, "base64url"))).toBe(true);
+    expect(JSON.parse(Buffer.from(header, "base64url").toString())).toEqual({ alg: "RS256", typ: "JWT" });
+    expect(JSON.parse(Buffer.from(claims, "base64url").toString())).toEqual({
+      iss: "ozavo@projeto-falso.iam.gserviceaccount.com",
+      scope: "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: 1795003200,
+      exp: 1795006800,
+    });
+    expect(seen[1]?.headers).toMatchObject({ Authorization: "Bearer ya29.conta" });
+  });
+
+  it("lê o arquivo JSON da conta e recusa o de cliente OAuth", () => {
+    const file = { type: "service_account", project_id: "projeto-falso", client_email: "ozavo@projeto-falso.iam.gserviceaccount.com", private_key: privateKey };
+    expect(serviceAccountKeyFile.parse(file)).toMatchObject({ client_email: file.client_email });
+    expect(serviceAccountKeyFile.safeParse({ installed: { client_id: "cid" } }).success).toBe(false);
   });
 });
