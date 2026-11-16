@@ -38,8 +38,9 @@ export async function checkPacingAllowed(q: OrgQuery, now: Date, input: { lineE1
   const usage = await getPeriodUsage(q, now);
   if (usage) {
     // O aviso sai mesmo quando ninguém está em chamada para medir: a tentativa de ligar também confere.
+    // Franquia zero com pausa é saída pausada desde o começo, não ilimitada: ilimitado é tarifar.
     await checkUsageAlerts(q, now);
-    if (usage.subscription.overageRule === "pause_outbound" && usage.includedSeconds > 0 && usage.consumedSeconds >= usage.includedSeconds) {
+    if (usage.subscription.overageRule === "pause_outbound" && usage.consumedSeconds >= usage.includedSeconds) {
       return refuse("plan_quota_exhausted", `The plan allowance of ${usage.subscription.includedMinutes} minutes is used up for this cycle, and outbound calls are paused until ${usage.period.end}.`);
     }
   }
