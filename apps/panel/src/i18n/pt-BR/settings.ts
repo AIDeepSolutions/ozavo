@@ -15,6 +15,7 @@ const settings = {
   enginesTitle: "Motores de voz",
   enginesLead: "O motor de voz é o modelo de IA que escuta e fala na ligação. Cada provedor pede uma chave própria.",
   keyOf: "Chave de {engine}",
+  keyPartsHint: "Este motor usa um provedor para ouvir, um para pensar e um para falar. Cole a chave de cada um; para trocar qualquer uma, cole as três de novo.",
   keyConfigured: "Configurada",
   keyMissing: "Sem chave",
   keyNotNeeded: "Não pede chave",

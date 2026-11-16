@@ -321,6 +321,12 @@ export interface VoiceEngine {
   /** Verdadeiro para motores que não precisam de chave (o simulado). */
   keyless?: boolean;
   /**
+   * Partes da chave, para motor que fala com mais de um provedor (o pipeline). Com isso, a tela pede
+   * um campo por parte e grava a chave como um JSON `{ [id]: valor }`; sem isso, um campo só.
+   * `label` é o nome do provedor, que não se traduz.
+   */
+  keyParts?: readonly { id: string; label: string }[];
+  /**
    * Verdadeiro para motor que detecta caixa postal sozinho e emite `answeringMachine` (o pipeline).
    * Para os outros, quem conduz a chamada roda o mesmo detector sobre o áudio e a transcrição de
    * quem atendeu (`apps/voice/src/call-session.ts`), então toda ligação de saída tem AMD.

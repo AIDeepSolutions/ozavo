@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { encodePipelineKey, InvalidPipelineKeyError } from "../pipeline/credentials";
+import { encodePipelineKey, InvalidPipelineKeyError, parsePipelineKey, pipelineCredentials } from "../pipeline/credentials";
 import type { TurnMetrics } from "../pipeline/session";
 import { pcm16ToUlaw } from "../resample";
 import { expireAtOnce, startFakeHttp } from "../testing/fake-http";
@@ -258,5 +258,14 @@ describe("declaração do motor", () => {
     expect(engine.pricing.centsPerMinute).toBeGreaterThan(0);
     expect(engine.pricing.centsPerMillionCharacters).toBeGreaterThan(0);
     expect(engine.voices?.some((voice) => voice.id === engine.defaultVoice)).toBe(true);
+  });
+});
+
+describe("partes da chave na tela", () => {
+  it("pede um campo por provedor, e o JSON que a tela monta é o que o motor lê", () => {
+    const ids = (engine.keyParts ?? []).map((part) => part.id);
+    expect([...ids].sort()).toEqual(Object.keys(pipelineCredentials.shape).sort());
+    const typed = Object.fromEntries(ids.map((id) => [id, ` ${id}-falsa `]));
+    expect(parsePipelineKey(JSON.stringify(typed))).toEqual({ deepgram: "deepgram-falsa", cartesia: "cartesia-falsa", openrouter: "openrouter-falsa" });
   });
 });

@@ -17,6 +17,7 @@ const settings: SettingsDictionary = {
   enginesTitle: "Voice engines",
   enginesLead: "The voice engine is the AI model that listens and speaks on the call. Each provider asks for its own key.",
   keyOf: "{engine} key",
+  keyPartsHint: "This engine uses one provider to listen, one to think and one to speak. Paste the key for each; to change any of them, paste all three again.",
   keyConfigured: "Configured",
   keyMissing: "No key",
   keyNotNeeded: "Needs no key",

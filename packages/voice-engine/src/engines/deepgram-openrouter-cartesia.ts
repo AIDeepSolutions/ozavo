@@ -169,6 +169,12 @@ const engine: VoiceEngine = {
   acceptsCustomVoices: true,
   detectsAnsweringMachine: true,
   defaultVoice: CARTESIA_DEFAULT_VOICE,
+  // A ordem e os ids são os de `pipelineCredentials`: a tela monta o JSON que `parsePipelineKey` lê.
+  keyParts: [
+    { id: "deepgram", label: "Deepgram" },
+    { id: "openrouter", label: "OpenRouter" },
+    { id: "cartesia", label: "Cartesia" },
+  ],
   pricing: {
     centsPerMinute: 0.77,
     centsPerMillionCharacters: 6500,

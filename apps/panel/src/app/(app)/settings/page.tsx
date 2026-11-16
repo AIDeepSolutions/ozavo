@@ -88,6 +88,9 @@ function EngineKey({ engine, t, cancel, onChanged }: { engine: Engine; t: Settin
   const save = useAction();
   const test = useAction();
   const [key, setKey] = useState("");
+  // Motor de vários provedores (o pipeline): um campo por parte, gravados juntos como um JSON.
+  const [parts, setParts] = useState<Record<string, string>>({});
+  const multipart = engine.keyParts.length > 0;
   const [confirming, setConfirming] = useState(false);
   // A gravação testa a chave nova; `check: null` diz que o limite de testes adiou o teste.
   const [testPostponed, setTestPostponed] = useState(false);
@@ -99,6 +102,7 @@ function EngineKey({ engine, t, cancel, onChanged }: { engine: Engine; t: Settin
     void save.run(async () => setTestPostponed((await api<{ check?: unknown }>(`/settings/${settingKey}`, { method: "PUT", body: { value } })).check === null)).then((ok) => {
       if (ok) {
         setKey("");
+        setParts({});
         setConfirming(false);
       }
       onChanged();
@@ -130,10 +134,29 @@ function EngineKey({ engine, t, cancel, onChanged }: { engine: Engine; t: Settin
           className="flex flex-wrap items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            change(key);
+            change(multipart ? JSON.stringify(Object.fromEntries(engine.keyParts.map((part) => [part.id, parts[part.id] ?? ""]))) : key);
           }}
         >
-          <TextInput mono type="password" autoComplete="off" className="max-w-md" aria-label={fill(t.keyOf, { engine: engine.label })} placeholder={engine.keyConfigured ? t.keyNew : undefined} value={key} onChange={(event) => setKey(event.target.value)} required />
+          {multipart ? (
+            <div className="grid w-full max-w-md gap-2">
+              <p className="text-muted">{t.keyPartsHint}</p>
+              {engine.keyParts.map((part) => (
+                <Field key={part.id} label={fill(t.keyOf, { engine: part.label })}>
+                  <TextInput
+                    mono
+                    type="password"
+                    autoComplete="off"
+                    placeholder={engine.keyConfigured ? t.keyNew : undefined}
+                    value={parts[part.id] ?? ""}
+                    onChange={(event) => setParts((current) => ({ ...current, [part.id]: event.target.value }))}
+                    required
+                  />
+                </Field>
+              ))}
+            </div>
+          ) : (
+            <TextInput mono type="password" autoComplete="off" className="max-w-md" aria-label={fill(t.keyOf, { engine: engine.label })} placeholder={engine.keyConfigured ? t.keyNew : undefined} value={key} onChange={(event) => setKey(event.target.value)} required />
+          )}
           <Button type="submit" busy={save.busy}>
             {t.keySave}
           </Button>
