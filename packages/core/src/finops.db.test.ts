@@ -5,7 +5,7 @@ import { checkUsageAlerts, getPeriodUsage } from "./metering";
 import { saveOperationSettings } from "./operation-settings";
 import { checkPacingAllowed } from "./pacing";
 import { getPlanSubscription, setPlanSubscription } from "./plans";
-import { WATCH_SHORT_CALLS_TASK, activeCadenceBreakers, watchShortCalls } from "./short-calls";
+import { WATCH_SHORT_CALLS_TASK, WHOLE_ORGANIZATION, activeCadenceBreakers, watchShortCalls } from "./short-calls";
 import { provisionTenant, type ProvisionInput } from "./tenants";
 import { withOrg } from "./with-org";
 
@@ -197,6 +197,58 @@ describe("ligação de saída: franquia, concorrência e cadência", () => {
     expect(notices.rows[0].body).toMatch(/ALERTA CRÍTICO: A linha \+553133330000 fez 1200 ligações de saída hoje e 79% delas/);
     const events = await owner.pool.query("select payload from organization_events where organization_id = $1 and kind = 'cadence_reduced'", [org]);
     expect(events.rows).toHaveLength(1);
+  });
+
+  /** `count` ligações de saída de hoje pela linha, todas com `seconds` de conversa, ou sem atendimento. */
+  const outboundBurst = (org: string, line: string, count: number, seconds: number | "unanswered") =>
+    owner.pool.query(
+      `insert into calls (organization_id, direction, channel, status, from_e164, started_at, answered_at, ended_at)
+       select $1, 'outbound', 'phone', $4, $2, s.start, case when $5::int is null then null else s.start end, s.start + make_interval(secs => coalesce($5::int, 20))
+         from generate_series(1, $6::int) n cross join lateral (select $3::timestamptz + make_interval(secs => n * 10) as start) s`,
+      [org, line, at(11, 12, 0), seconds === "unanswered" ? "failed" : "completed", seconds === "unanswered" ? null : seconds, count],
+    );
+
+  it("soma as linhas: a empresa inteira dispara mesmo sem nenhuma linha passar de 1.000, e cada linha fica reduzida", async () => {
+    const org = await createOrganization(app, "finops empresa inteira");
+    const lines = ["+553140010001", "+553140010002", "+553140010003"];
+    for (const line of lines) await outboundBurst(org, line, 400, 2);
+    const now = at(11, 16, 30);
+    await withOrg(app, org, async (q) => {
+      expect(await watchShortCalls(q, now)).toEqual([{ lineE164: WHOLE_ORGANIZATION, total: 1200, short: 1200 }]);
+      for (const line of lines) expect(await checkPacingAllowed(q, at(11, 13, 0), { db: app, lineE164: line })).toMatchObject({ allowed: false, code: "cadence_reduced" });
+    });
+    const notices = await owner.pool.query("select body from notifications where organization_id = $1", [org]);
+    expect(notices.rows[0].body).toMatch(/A empresa, somando todas as linhas, fez 1200 ligações/);
+  });
+
+  it("a ligação não completada conta como curta, como na spec; a plataforma pode tirar", async () => {
+    const counts = await createOrganization(app, "finops nao completadas");
+    await outboundBurst(counts, LINE, 1100, "unanswered");
+    await withOrg(app, counts, async (q) => {
+      expect(await watchShortCalls(q, at(11, 16, 30))).toEqual([{ lineE164: LINE, total: 1100, short: 1100 }]);
+    });
+    const ignores = await createOrganization(app, "finops so atendidas");
+    await outboundBurst(ignores, LINE, 1100, "unanswered");
+    await withOrg(app, ignores, async (q) => {
+      await saveOperationSettings(q, { ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, shortCallCountsUnanswered: false }, at(11));
+      expect(await watchShortCalls(q, at(11, 16, 30))).toEqual([]);
+    });
+  });
+
+  it("a fronteira é a da spec (menos de 6 s); a ligação de 6 s exatos só conta com a fronteira inclusiva", async () => {
+    const exclusive = await createOrganization(app, "finops fronteira exclusiva");
+    await outboundBurst(exclusive, LINE, 1100, 6);
+    await withOrg(app, exclusive, async (q) => {
+      expect(await watchShortCalls(q, at(11, 16, 30))).toEqual([]);
+    });
+    const inclusive = await createOrganization(app, "finops fronteira inclusiva");
+    await outboundBurst(inclusive, LINE, 1100, 6);
+    await withOrg(app, inclusive, async (q) => {
+      await saveOperationSettings(q, { ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, shortCallInclusive: true }, at(11));
+      expect(await watchShortCalls(q, at(11, 16, 30))).toEqual([{ lineE164: LINE, total: 1100, short: 1100 }]);
+    });
+    const notices = await owner.pool.query("select body from notifications where organization_id = $1", [inclusive]);
+    expect(notices.rows[0].body).toMatch(/duraram até 6 segundos \(contando as não atendidas\)/);
   });
 });
 

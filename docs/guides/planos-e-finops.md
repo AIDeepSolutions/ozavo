@@ -85,19 +85,35 @@ política de saída. Não há fila de espera: quem pediu a ligação recebe o c�
 ## Redução de cadência por chamadas curtas
 
 A rotina `watch_short_calls` confere, a cada 15 minutos enquanto a organização faz ligações de
-saída, as ligações do dia por linha. Quando mais de 1.000 ligações de saída foram feitas no dia e
-75% ou mais delas foram atendidas e duraram menos de 6 segundos:
+saída, as ligações do dia **por linha e pela empresa inteira** (todas as linhas somadas, quando há
+mais de uma). Quando mais de 1.000 ligações de saída foram feitas no dia e 75% ou mais delas foram
+curtas:
 
-- a linha entra em `cadence_breakers` para aquele dia;
+- a linha entra em `cadence_breakers` para aquele dia; a empresa inteira entra com a linha `*`
+  (`WHOLE_ORGANIZATION`), e então cada linha dela fica reduzida;
 - sai um aviso crítico no painel e o evento `cadence_reduced`;
 - até o fim do dia, a linha só faz o número de ligações por hora informado em FinOps (padrão: 60), e
   a ligação a mais é recusada com `cadence_reduced`.
 
 A redução acaba sozinha na virada do dia, no fuso da organização.
 
-Os números (6 s, 75%, 1.000 por dia) vêm da especificação do produto recebida em 2026-11-16, que
-cita o Despacho 100/2026 da Anatel. O texto do despacho não foi conferido por quem escreveu este
-guia, inclusive a definição exata de "chamada curta".
+O que conta como **curta** fica em FinOps → Limites de operação (só a plataforma grava), com o
+padrão literal da especificação:
+
+| Campo | Padrão | O que faz |
+|---|---|---|
+| `shortCallSeconds` | 6 | Segundos de conversa abaixo dos quais a ligação é curta |
+| `shortCallInclusive` | não | Com sim, a ligação de exatamente esse tempo também conta (até, em vez de menos de) |
+| `shortCallCountsUnanswered` | sim | A ligação de saída não completada conta como curta, com duração 0 |
+
+Os números (6 s, 75%, 1.000 por dia, por tenant e por tronco) vêm da especificação do produto
+recebida em 2026-11-16 (seção 6), que cita o Despacho 100/2026 da Anatel e fala em "duração inferior
+a 6 segundos". O texto do despacho não foi conferido por quem escreveu este guia, inclusive se a
+ligação não completada conta e se a fronteira é exclusiva: por isso os três campos acima existem.
+
+Para o disjuntor ter efeito, o limite diário por linha da política de saída (`daily_cap_per_line`,
+em Configurações → Ligações de saída) precisa passar de 1.000 ligações: com um teto menor, a linha
+nunca chega ao volume que dispara a regra, e quem a protege é o próprio teto.
 
 ## Limite de caracteres por turno
 

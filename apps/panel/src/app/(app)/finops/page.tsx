@@ -9,7 +9,7 @@ import { useDict, useLocale } from "../../../i18n/provider";
 import { api, useApi } from "../../../ui/api";
 import { ActionStatus, ReadOnlyNotice, useAction, useErrorText } from "../../../ui/errors";
 import { formatBrl, formatDay, formatMoney, formatPhone } from "../../../ui/format";
-import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Skeleton, TextInput } from "../../../ui/kit";
+import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Skeleton, Switch, TextInput } from "../../../ui/kit";
 import { useCanConfigure } from "../../../ui/me";
 import type { Finops, OperationSettings, OverageRule, PlanId, PlanState } from "../../../ui/types";
 import { ConsolidatedPanel } from "./consolidated-panel";
@@ -35,6 +35,9 @@ interface LimitsDraft {
   reducedCallsPerHour: string;
   telephonyBrlPerMinute: string;
   usdBrlRate: string;
+  shortCallSeconds: string;
+  shortCallInclusive: boolean;
+  shortCallCountsUnanswered: boolean;
 }
 
 const reais = (cents: number): string => (cents / 100).toFixed(2);
@@ -112,9 +115,12 @@ export default function FinopsPage() {
       reducedCallsPerHour: String(settings.reducedCallsPerHour),
       telephonyBrlPerMinute: settings.telephonyBrlPerMinute === null ? "" : String(settings.telephonyBrlPerMinute),
       usdBrlRate: settings.usdBrlRate === null ? "" : String(settings.usdBrlRate),
+      shortCallSeconds: String(settings.shortCallSeconds),
+      shortCallInclusive: settings.shortCallInclusive,
+      shortCallCountsUnanswered: settings.shortCallCountsUnanswered,
     });
     // Só quando os valores gravados mudam: o que a pessoa está digitando não é sobrescrito a cada leitura.
-  }, [settings?.ttsConcurrencyLimit, settings?.reducedCallsPerHour, settings?.telephonyBrlPerMinute, settings?.usdBrlRate]);
+  }, [settings?.ttsConcurrencyLimit, settings?.reducedCallsPerHour, settings?.telephonyBrlPerMinute, settings?.usdBrlRate, settings?.shortCallSeconds, settings?.shortCallInclusive, settings?.shortCallCountsUnanswered]);
 
   const failed = summary.error && !summary.data ? summary.error : plan.error && !plan.data ? plan.error : null;
   if (failed) return <Notice tone="fail">{errorText(failed)}</Notice>;
@@ -155,6 +161,9 @@ export default function FinopsPage() {
       reducedCallsPerHour: Number(limitsDraft.reducedCallsPerHour),
       telephonyBrlPerMinute: numberOrNull(limitsDraft.telephonyBrlPerMinute),
       usdBrlRate: numberOrNull(limitsDraft.usdBrlRate),
+      shortCallSeconds: Number(limitsDraft.shortCallSeconds),
+      shortCallInclusive: limitsDraft.shortCallInclusive,
+      shortCallCountsUnanswered: limitsDraft.shortCallCountsUnanswered,
     };
     await api("/finops/settings", { method: "PUT", body });
     summary.reload();
@@ -340,6 +349,13 @@ export default function FinopsPage() {
             <Field label={t.usdBrlRate} hint={t.usdBrlRateHint}>
               <TextInput mono type="number" min={0} step="0.0001" value={limitsDraft.usdBrlRate} onChange={(event) => setLimitsDraft({ ...limitsDraft, usdBrlRate: event.target.value })} />
             </Field>
+            <Field label={t.shortCallSeconds} hint={t.shortCallSecondsHint}>
+              <TextInput mono type="number" min={1} max={60} step={1} value={limitsDraft.shortCallSeconds} onChange={(event) => setLimitsDraft({ ...limitsDraft, shortCallSeconds: event.target.value })} required />
+            </Field>
+            <div className="grid content-start gap-3">
+              <Switch label={t.shortCallInclusive} disabled={!canEdit} checked={limitsDraft.shortCallInclusive} onChange={(next) => setLimitsDraft({ ...limitsDraft, shortCallInclusive: next })} />
+              <Switch label={t.shortCallCountsUnanswered} disabled={!canEdit} checked={limitsDraft.shortCallCountsUnanswered} onChange={(next) => setLimitsDraft({ ...limitsDraft, shortCallCountsUnanswered: next })} />
+            </div>
           </fieldset>
           {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">

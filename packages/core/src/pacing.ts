@@ -2,7 +2,7 @@ import { checkUsageAlerts, getPeriodUsage } from "./metering";
 import type { Db } from "./types";
 import { getOperationSettings } from "./operation-settings";
 import { takeProviderSlots } from "./provider-slots";
-import { SHORT_CALL_WATCH_INTERVAL_MS, activeCadenceBreakers, scheduleShortCallWatch } from "./short-calls";
+import { SHORT_CALL_WATCH_INTERVAL_MS, WHOLE_ORGANIZATION, activeCadenceBreakers, scheduleShortCallWatch } from "./short-calls";
 import type { OrgQuery } from "./types";
 
 /**
@@ -67,7 +67,8 @@ export async function checkPacingAllowed(q: OrgQuery, now: Date, input: { db: Db
 
   const line = input.lineE164 ?? "";
   const breakers = await activeCadenceBreakers(q, now);
-  if (breakers.some((breaker) => breaker.lineE164 === line)) {
+  // A organização inteira no disjuntor reduz cada linha dela, como se cada uma tivesse disparado.
+  if (breakers.some((breaker) => breaker.lineE164 === line || breaker.lineE164 === WHOLE_ORGANIZATION)) {
     const recent = await q.one<{ count: number }>(
       `select count(*)::int as count from calls
         where organization_id = $1 and direction = 'outbound' and channel = 'phone' and status <> 'refused'

@@ -29,7 +29,8 @@ afterAll(async () => {
   await panel.close();
 });
 
-const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4 };
+const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4, shortCallSeconds: 7, shortCallInclusive: true, shortCallCountsUnanswered: false };
+const SPEC_RULE = { shortCallSeconds: 6, shortCallInclusive: false, shortCallCountsUnanswered: true };
 
 describe("FinOps pela API", () => {
   it("sem plano, o resumo vem do mês do calendário, sem franquia", async () => {
@@ -41,7 +42,7 @@ describe("FinOps pela API", () => {
   it("operador lê, mas não troca o plano nem os limites", async () => {
     expect(await call(putPlan, { cookie: operator, method: "PUT", body: { plan: "pro", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 403, code: "forbidden" });
     expect(await call(putLimits, { cookie: operator, method: "PUT", body: limits })).toMatchObject({ status: 403, code: "forbidden" });
-    expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+    expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, ...SPEC_RULE });
   });
 
   it("dono ou admin de uma empresa comum não troca o próprio plano nem afrouxa os limites", async () => {
@@ -53,7 +54,7 @@ describe("FinOps pela API", () => {
     }
     // A leitura continua: a tela da empresa mostra o plano e os limites, sem poder gravar.
     expect((await call(getPlan, { cookie: tenantOwner })).data).toMatchObject({ subscription: null, platform: false });
-    expect((await call(getLimits, { cookie: tenantOwner })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+    expect((await call(getLimits, { cookie: tenantOwner })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null, ...SPEC_RULE });
     expect((await call(getPlan, { cookie: owner })).data).toMatchObject({ platform: true });
   });
 

@@ -284,6 +284,9 @@ export interface OperationSettings {
   reducedCallsPerHour: number;
   telephonyBrlPerMinute: number | null;
   usdBrlRate: number | null;
+  shortCallSeconds: number;
+  shortCallInclusive: boolean;
+  shortCallCountsUnanswered: boolean;
 }
 
 export interface Finops {
