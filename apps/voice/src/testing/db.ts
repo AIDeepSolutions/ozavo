@@ -96,13 +96,15 @@ export async function createTrunk(
     callerId?: string | null;
     matchExtra?: string[];
     outboundHost?: string | null;
+    /** A linha de teste é TLS, salvo pedido: o banco faz nascer em UDP desde a 20261116T220000. */
+    sipTls?: boolean;
   } = {},
 ): Promise<string> {
   const id = randomUUID();
   const password = options.password === undefined ? "s3nha-do-tronco" : options.password;
   await withSystem(app, (q) =>
     q.exec(
-      "insert into trunks (id, organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host) values ($1, $2, 'Operadora', $3, $4, $5, $6, $7, $8, $9)",
+      "insert into trunks (id, organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host, sip_tls) values ($1, $2, 'Operadora', $3, $4, $5, $6, $7, $8, $9, $10)",
       [
         id,
         organizationId,
@@ -113,6 +115,7 @@ export async function createTrunk(
         options.callerId ?? null,
         options.matchExtra ?? [],
         options.outboundHost ?? null,
+        options.sipTls ?? true,
       ],
     ),
   );
