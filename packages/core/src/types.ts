@@ -72,8 +72,11 @@ export type CallEventKind = (typeof CALL_EVENT_KINDS)[number];
  */
 export const PRIVACY_EVENT_KINDS = ["recording_retention_changed", "recordings_purged", "transcript_retention_changed", "transcripts_purged", "caller_data_exported", "call_recording_changed", "caller_data_erased", "caller_recordings_erased", "share_created", "share_downloaded", "share_revoked", "caller_notes_purged", "caller_notes_retention_changed", "remote_recordings_orphans_purged"] as const;
 
-/** O que a empresa faz com o acesso de sistemas de fora: chaves de API, provisionamento e perfil. */
-export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed"] as const;
+/**
+ * O que a empresa faz com o acesso de sistemas de fora (chaves de API, provisionamento e perfil) e o
+ * que a plataforma faz com ela pela área de empresas (suspender, reativar, renovar o convite de dono).
+ */
+export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed", "tenant_status_changed", "tenant_owner_invite_renewed"] as const;
 
 /** O plano da organização: troca de plano, aviso de franquia e redução de cadência por chamadas curtas. */
 export const PLAN_EVENT_KINDS = ["plan_changed", "plan_usage_alert", "cadence_reduced"] as const;

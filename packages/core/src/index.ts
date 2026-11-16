@@ -9,6 +9,7 @@ export * from "./db";
 export * from "./erasures";
 export * from "./share-links";
 export * from "./tenants";
+export * from "./platform-tenants";
 export * from "./events";
 export * from "./follow-ups";
 export * from "./inbound-limit";

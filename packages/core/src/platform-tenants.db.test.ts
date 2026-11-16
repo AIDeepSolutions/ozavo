@@ -1,0 +1,195 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createOrganization, openTestDbs } from "../test/helpers";
+import { findInviteByToken } from "./invites";
+import { getPlanSubscription } from "./plans";
+import {
+  PlatformOnlyError,
+  createPlatformTenant,
+  getPlatformTenant,
+  listPlatformTenants,
+  renewOwnerInvite,
+  setPlatformTenantStatus,
+  type PanelTenantInput,
+} from "./platform-tenants";
+import { withOrg, withSystem } from "./with-org";
+
+/** A área de plataforma: só a organização da plataforma lê e altera as empresas clientes. */
+const { app, owner } = openTestDbs();
+afterAll(async () => {
+  await app.close();
+  await owner.close();
+});
+
+const at = (day: number, hour = 15): Date => new Date(Date.UTC(2030, 5, day, hour));
+let platform: string;
+let platformUser: string;
+let client: string;
+
+const agent = { name: "Nico", personaName: "Nico", voiceId: null, basePrompt: "", instructions: "Atenda.", greeting: null, engine: "simulated", tools: [] };
+const form = (extra: Partial<PanelTenantInput> = {}): PanelTenantInput => ({
+  requestId: randomUUID(),
+  companyName: `Empresa ${randomUUID().slice(0, 8)}`,
+  owner: { name: "Dona", email: `dona-${randomUUID()}@example.test` },
+  plan: "starter",
+  initialStatus: "active",
+  agent,
+  ...extra,
+});
+const eventKinds = (organizationId: string): Promise<string[]> =>
+  withSystem(app, async (q) => (await q.many<{ kind: string }>("select kind from organization_events where organization_id = $1 order by id", [organizationId])).map((row) => row.kind));
+
+beforeAll(async () => {
+  platform = await createOrganization(app, "plataforma das empresas");
+  await withSystem(app, (q) => q.exec("update organizations set platform = true where id = $1", [platform]));
+  platformUser = randomUUID();
+  await withSystem(app, (q) =>
+    q.exec("insert into users (id, organization_id, email, name, role, password_hash) values ($1, $2, $3, 'Admin', 'owner', 'h')", [platformUser, platform, `admin-${platformUser}@example.test`]),
+  );
+  client = await createOrganization(app, "empresa cliente comum");
+});
+
+describe("quem não é a plataforma", () => {
+  it("não lista, não lê, não cria, não suspende e não renova convite", async () => {
+    await expect(listPlatformTenants(app, client, at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+    await expect(getPlatformTenant(app, client, platform, at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+    await expect(createPlatformTenant(app, client, platformUser, form(), at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+    await expect(setPlatformTenantStatus(app, client, platformUser, client, "suspended", at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+    await expect(renewOwnerInvite(app, client, platformUser, client, at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+    await expect(listPlatformTenants(app, randomUUID(), at(1))).rejects.toBeInstanceOf(PlatformOnlyError);
+  });
+});
+
+describe("criar pela tela", () => {
+  it("cria com o plano do catálogo, convite de dono de uso único e origem do painel", async () => {
+    const input = form();
+    const result = await createPlatformTenant(app, platform, platformUser, input, at(2));
+    if ("refused" in result) throw new Error("refused");
+    expect(result.created).toBe(true);
+    const token = result.ownerInvite?.token ?? "";
+    expect(await findInviteByToken(app, token, at(2))).toMatchObject({ organizationId: result.organizationId, role: "owner", email: input.owner.email });
+
+    const row = (await listPlatformTenants(app, platform, at(2))).find((tenant) => tenant.organizationId === result.organizationId);
+    expect(row).toMatchObject({
+      name: input.companyName,
+      planCode: "starter",
+      status: "active",
+      origin: { kind: "panel" },
+      usage: { consumedSeconds: 0, includedSeconds: 300 * 60 },
+      ownerInvite: { ownerActive: false, pending: { email: input.owner.email, expired: false } },
+    });
+    expect(await eventKinds(result.organizationId)).toEqual(["tenant_provisioned", "plan_changed"]);
+    expect(await eventKinds(platform)).toContain("tenant_provisioned");
+  });
+
+  it("o mesmo formulário enviado duas vezes devolve a mesma empresa", async () => {
+    const input = form();
+    const first = await createPlatformTenant(app, platform, platformUser, input, at(3));
+    const again = await createPlatformTenant(app, platform, platformUser, input, at(3));
+    if ("refused" in first || "refused" in again) throw new Error("refused");
+    expect(again).toMatchObject({ created: false, organizationId: first.organizationId });
+    // O convite da primeira resposta foi trocado pelo novo: só um vale.
+    expect(await findInviteByToken(app, first.ownerInvite?.token ?? "", at(3))).toBeNull();
+    expect(await findInviteByToken(app, again.ownerInvite?.token ?? "", at(3))).not.toBeNull();
+  });
+
+  it("plano Personalizado contrata o que foi informado e a empresa pode nascer suspensa", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form({ plan: "custom", custom: { monthlyPriceCents: 300_000, includedMinutes: 4_000, maxConcurrentCalls: 10 }, initialStatus: "suspended" }), at(4));
+    if ("refused" in result) throw new Error("refused");
+    expect(await withOrg(app, result.organizationId, getPlanSubscription)).toMatchObject({ plan: "custom", monthlyPriceCents: 300_000, includedMinutes: 4_000, maxConcurrentCalls: 10 });
+    const detail = await getPlatformTenant(app, platform, result.organizationId, at(4));
+    expect(detail).toMatchObject({ status: "suspended", planCode: "custom", billedByAsaas: false });
+    expect(await eventKinds(result.organizationId)).toEqual(["tenant_provisioned", "plan_changed", "tenant_status_changed"]);
+  });
+
+  it("recusa e-mail de dono que já é de alguém nesta instalação", async () => {
+    const taken = await withSystem(app, async (q) => (await q.one<{ email: string }>("select email from users where id = $1", [platformUser]))?.email ?? "");
+    expect(await createPlatformTenant(app, platform, platformUser, form({ owner: { name: "X", email: taken } }), at(5))).toEqual({ refused: "email_taken" });
+  });
+});
+
+describe("lista e detalhe", () => {
+  it("não mostra a própria plataforma e o detalhe de outra organização qualquer é nulo", async () => {
+    const rows = await listPlatformTenants(app, platform, at(6));
+    expect(rows.some((row) => row.organizationId === platform)).toBe(false);
+    expect(await getPlatformTenant(app, platform, platform, at(6))).toBeNull();
+    expect(await getPlatformTenant(app, platform, randomUUID(), at(6))).toBeNull();
+  });
+
+  it("o detalhe traz só o registro da própria empresa", async () => {
+    const a = await createPlatformTenant(app, platform, platformUser, form(), at(6));
+    const b = await createPlatformTenant(app, platform, platformUser, form(), at(6));
+    if ("refused" in a || "refused" in b) throw new Error("refused");
+    await setPlatformTenantStatus(app, platform, platformUser, b.organizationId, "suspended", at(6));
+    const detail = await getPlatformTenant(app, platform, a.organizationId, at(6));
+    expect(detail?.events.map((event) => event.kind)).toEqual(["plan_changed", "tenant_provisioned"]);
+    expect(detail?.finops.subscription?.plan).toBe("starter");
+  });
+
+  it("assinatura cancelada no Asaas aparece como cancelada", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form(), at(7));
+    if ("refused" in result) throw new Error("refused");
+    await withSystem(app, (q) =>
+      q.exec("insert into asaas_subscriptions (organization_id, environment, subscription_id, tenant_id, cancelled) values ($1, 'sandbox', $2, $3, true)", [platform, `sub_${randomUUID()}`, result.organizationId]),
+    );
+    expect((await getPlatformTenant(app, platform, result.organizationId, at(7)))?.status).toBe("cancelled");
+  });
+});
+
+describe("suspender e reativar", () => {
+  it("registra dos dois lados e não repete o mesmo status", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form(), at(8));
+    if ("refused" in result) throw new Error("refused");
+    const tenant = result.organizationId;
+    expect(await setPlatformTenantStatus(app, platform, platformUser, tenant, "suspended", at(8))).toBe(true);
+    expect(await setPlatformTenantStatus(app, platform, platformUser, tenant, "suspended", at(8))).toBe(true);
+    expect(await setPlatformTenantStatus(app, platform, platformUser, tenant, "active", at(9))).toBe(true);
+    const events = await withSystem(app, (q) =>
+      q.many<{ payload: { status: string; byUserId?: string } }>("select payload from organization_events where organization_id = $1 and kind = 'tenant_status_changed' order by id", [tenant]),
+    );
+    expect(events.map((event) => event.payload.status)).toEqual(["suspended", "active"]);
+    expect(events[0]?.payload.byUserId).toBe(platformUser);
+    const mine = await withSystem(app, (q) =>
+      q.many<{ actor: string }>("select actor_user_id as actor from organization_events where organization_id = $1 and kind = 'tenant_status_changed' and payload->>'tenantId' = $2", [platform, tenant]),
+    );
+    expect(mine.map((row) => row.actor)).toEqual([platformUser, platformUser]);
+  });
+
+  it("não mexe na plataforma nem em empresa que não existe", async () => {
+    expect(await setPlatformTenantStatus(app, platform, platformUser, platform, "suspended", at(8))).toBe(false);
+    expect(await setPlatformTenantStatus(app, platform, platformUser, randomUUID(), "suspended", at(8))).toBe(false);
+  });
+
+  it("uma empresa antiga, sem perfil, ganha o perfil ao ser suspensa", async () => {
+    const legacy = await createOrganization(app, "empresa sem perfil");
+    expect(await setPlatformTenantStatus(app, platform, platformUser, legacy, "suspended", at(8))).toBe(true);
+    expect((await getPlatformTenant(app, platform, legacy, at(8)))?.status).toBe("suspended");
+  });
+});
+
+describe("renovar o convite de dono", () => {
+  it("troca o convite vencido por um novo e para de valer depois que o dono entra", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form(), at(10));
+    if ("refused" in result) throw new Error("refused");
+    const later = at(25);
+    expect((await getPlatformTenant(app, platform, result.organizationId, later))?.ownerInvite.pending?.expired).toBe(true);
+
+    const renewed = await renewOwnerInvite(app, platform, platformUser, result.organizationId, later);
+    if (!renewed.ok) throw new Error(renewed.reason);
+    expect(await findInviteByToken(app, renewed.invite.token, later)).toMatchObject({ organizationId: result.organizationId });
+    expect((await getPlatformTenant(app, platform, result.organizationId, later))?.ownerInvite.pending?.expired).toBe(false);
+    expect(await eventKinds(result.organizationId)).toContain("tenant_owner_invite_renewed");
+
+    await withSystem(app, (q) =>
+      q.exec("insert into users (organization_id, email, name, role, password_hash) values ($1, $2, 'Dona', 'owner', 'h')", [result.organizationId, `outra-${randomUUID()}@example.test`]),
+    );
+    expect(await renewOwnerInvite(app, platform, platformUser, result.organizationId, later)).toEqual({ ok: false, reason: "owner_active" });
+    expect((await getPlatformTenant(app, platform, result.organizationId, later))?.ownerInvite).toEqual({ ownerActive: true, pending: null });
+  });
+
+  it("sem convite anterior ou sem empresa, recusa", async () => {
+    const bare = await createOrganization(app, "empresa sem convite");
+    expect(await renewOwnerInvite(app, platform, platformUser, bare, at(10))).toEqual({ ok: false, reason: "no_invite" });
+    expect(await renewOwnerInvite(app, platform, platformUser, randomUUID(), at(10))).toEqual({ ok: false, reason: "not_found" });
+  });
+});
