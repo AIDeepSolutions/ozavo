@@ -57,7 +57,8 @@ de iniciar as aplicações. Não use as imagens de uma versão anterior para tes
 - [ ] Aviso de gravação e hipótese de tratamento definidos pela organização, acesso por função,
   gravação desligada por padrão; áudio cifrado em disco/MinIO, prazo próprio confirmado na tela.
 - [ ] Provar expurgo de uma gravação vencida e preservação de uma recente/de outra organização,
-  tanto em disco quanto S3; provar apagamento do titular e falha/reexecução da fila.
+  tanto em disco quanto S3; provar apagamento do titular e falha/reexecução da fila. Falha de
+  S3 não pode impedir as demais exclusões locais: o expurgo local termina antes das operações remotas.
 - [ ] Nenhum voiceprint, embedding biométrico ou reconhecimento de voz do interlocutor. TTS com
   voz escolhida pelo cliente não autoriza coletar biometria de quem ligou.
 

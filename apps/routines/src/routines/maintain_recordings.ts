@@ -20,34 +20,52 @@ const routine: Routine = {
     // restauração pode alterar mtime; ele só serve de fallback para arquivos órfãos.
     const calls = await withOrg(deps.db, task.organizationId, q => q.many<{ id: string; expired: boolean; ended: boolean }>(
       "select id, (erased_at is not null or coalesce(ended_at < $1, false)) as expired, ended_at is not null as ended from calls", [before]));
-    let recordings = await purgeRecordings(deps.recordingsDir, task.organizationId, before, new Set(calls.map(call => call.id)));
-    const names = new Set(await readdir(join(deps.recordingsDir, task.organizationId)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return [];
-      throw error;
-    }));
+    let recordings = 0;
+    const failures: unknown[] = [];
+    // Primeiro termina TODAS as exclusões locais. Nem uma cópia recente nem uma remoção
+    // remota podem impedir o expurgo seguinte, inclusive na reexecução da tarefa.
+    for (const call of calls) {
+      if (!call.expired) continue;
+      const file = recordingPath(deps.recordingsDir, task.organizationId, call.id);
+      for (const target of [`${file}.part`, file]) {
+        try { await rm(target); recordings += 1; }
+        catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) failures.push(error);
+        }
+      }
+    }
     try {
-      for (const call of calls) {
-        const file = recordingPath(deps.recordingsDir, task.organizationId, call.id);
-        if (call.expired) {
-          // Também corrige apagamentos a pedido cuja tarefa tenha esgotado tentativas.
-          for (const target of [`${file}.part`, file]) {
-            try { await rm(target); recordings += 1; }
-            catch (error) {
-              if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-            }
-          }
-          await deps.recordingArchive?.remove(task.organizationId, call.id);
-        } else if (call.ended && names.has(`${call.id}.wav`)) {
+      recordings += await purgeRecordings(deps.recordingsDir, task.organizationId, before, new Set(calls.map(call => call.id)));
+    } catch (error) { failures.push(error); }
+    if (recordings > 0) {
+      try {
+        await withOrg(deps.db, task.organizationId, q => recordOrgEvent(q, "recordings_purged", { recordings, retentionDays: days, before: before.toISOString() }, now));
+      } catch (error) { failures.push(error); }
+    }
+
+    let names = new Set<string>();
+    try { names = new Set(await readdir(join(deps.recordingsDir, task.organizationId))); }
+    catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) failures.push(error);
+    }
+    for (const call of calls) {
+      try {
+        if (call.expired) await deps.recordingArchive?.remove(task.organizationId, call.id);
+        else if (call.ended && names.has(`${call.id}.wav`)) {
+          const file = recordingPath(deps.recordingsDir, task.organizationId, call.id);
           await withOrg(deps.db, task.organizationId, async q => {
             if ((await lockCall(q, call.id)).erased) return;
             await sealLegacyRecording(file, deps.secretKey);
             await deps.recordingArchive?.put(task.organizationId, call.id, file);
           });
         }
-      }
-    } finally {
-      // Uma falha remota não esconde o que já saiu do disco.
-      if (recordings > 0) await withOrg(deps.db, task.organizationId, q => recordOrgEvent(q, "recordings_purged", { recordings, retentionDays: days, before: before.toISOString() }, now));
+      } catch (error) { failures.push(error); }
+    }
+    // A fila tenta novamente, sem perder o expurgo já concluído nem deixar um item
+    // inacessível impedir a tentativa dos demais objetos remotos.
+    if (failures.length > 0) {
+      const details = failures.map(error => error instanceof Error ? error.message : String(error)).join("; ");
+      throw new AggregateError(failures, `Recording maintenance failed (${failures.length} operations): ${details}`);
     }
   },
 };

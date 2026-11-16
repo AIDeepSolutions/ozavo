@@ -65,3 +65,51 @@ it("a manutenção corrige o arquivo local de chamada apagada, mesmo com mtime n
     expect(await readdir(dirname(file))).toEqual([]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+
+it.each(["remove", "put"] as const)("falha S3 em %s não bloqueia expurgo local nem outros objetos, inclusive no retry", async failedOperation => {
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-archive-failure-"));
+  try {
+    const org = await createOrganization(app, "archive failure retention");
+    const foreign = await createOrganization(app, "foreign archive failure retention");
+    const old = new Date(t0.getTime() - 120 * 86400000);
+    // A cópia recente vem antes das vencidas: put também pode falhar antes do expurgo.
+    const recent = await createCall(app, org, t0);
+    const expired = [await createCall(app, org, old), await createCall(app, org, old)];
+    const other = await createCall(app, foreign, old);
+    const wav = Buffer.alloc(48); wav.write("RIFF"); wav.writeUInt32LE(4, 40);
+    for (const [organizationId, callId, at] of [[org, recent, t0], ...expired.map(id => [org, id, old] as const), [foreign, other, old]] as const) {
+      await withSystem(app, q => q.exec("update calls set ended_at = $2 where id = $1", [callId, at]));
+      const file = recordingPath(dir, organizationId, callId);
+      await mkdir(dirname(file), { recursive: true }); await writeFile(file, wav); await utimes(file, t0, t0);
+    }
+    const removed: string[] = [];
+    const copied: string[] = [];
+    const snapshots: string[][] = [];
+    const deps = depsFor(app, { recordingsDir: dir, recordingArchive: {
+      async remove(organizationId, callId) {
+        expect(organizationId).toBe(org); removed.push(callId);
+        snapshots.push(await readdir(join(dir, org)));
+        if (failedOperation === "remove") throw new Error("invented S3 remove failure");
+      },
+      async put(organizationId, callId) {
+        expect(organizationId).toBe(org); copied.push(callId);
+        snapshots.push(await readdir(join(dir, org)));
+        if (failedOperation === "put") throw new Error("invented S3 put failure");
+      },
+    } });
+    for (const attempt of [1, 2]) {
+      await expect(maintenance.run({ ...task(org, "maintain_recordings"), attempts: attempt }, deps)).rejects.toThrow("Recording maintenance failed");
+      expect(await readdir(join(dir, org))).toEqual([`${recent}.wav`]);
+      expect(await readRecording(recordingPath(dir, org, recent), deps.secretKey)).toEqual(wav);
+      expect(await readdir(join(dir, foreign))).toEqual([`${other}.wav`]);
+      for (const id of expired) expect(removed.filter(callId => callId === id)).toHaveLength(attempt);
+      expect(copied).toHaveLength(attempt);
+      expect(snapshots.every(files => files.length === 1 && files[0] === `${recent}.wav`)).toBe(true);
+    }
+    const events = await withOrg(app, org, q => q.many<{ payload: { recordings: number } }>("select payload from organization_events where kind = 'recordings_purged'"));
+    expect(events.map(event => event.payload.recordings)).toEqual([2]);
+    const scheduled = await withOrg(app, org, q => q.many("select id from tasks where kind = 'maintain_recordings' and status = 'queued'"));
+    expect(scheduled).toHaveLength(1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

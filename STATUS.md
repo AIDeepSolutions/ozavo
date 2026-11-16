@@ -219,3 +219,17 @@ verify/tipos e 888 testes de banco terem passado no cluster novo do revisor:
 Após as correções: `pnpm verify` saída 0, 61 cercas/889 testes unitários; tipos do painel saída 0;
 dois testes de banco de manutenção passaram, incluindo as regressões. Nenhuma migration nova
 foi necessária. Nova conferência independente das correções está pendente.
+
+
+### Segunda revisão e expurgo sob falha remota (16/11/2026, 15h40 UTC)
+
+O pane-15 (handoff h-g) confirmou a resolução dos três achados anteriores e mediu verify/tipos
+mais 889 testes de banco verdes em cluster novo. Encontrou um novo P1 reproduzido: a primeira
+falha S3 interrompia as exclusões locais restantes e repetia o bloqueio no retry.
+
+A rotina foi separada em fases: conclui todas as exclusões locais antes de qualquer operação S3;
+também isola erros por item, tenta os demais objetos e só depois devolve um AggregateError para a
+fila reexecutar. A próxima passagem diária e a auditoria do que saiu continuam preservadas.
+Novos testes injetam falha tanto em remove quanto em put, com duas gravações vencidas e uma
+recente, conferem o disco antes de toda operação remota e repetem a tentativa. Os quatro testes
+de manutenção passaram no Postgres local. Nenhuma migration adicional, sem ação em produção.
