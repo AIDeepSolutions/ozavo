@@ -172,7 +172,7 @@ Sem push, sem deploy, sem conexão nem migration no Supabase de produção.
   em `install/test/02-env-and-templates.sh`; não foi alterada nesta tarefa.
 - Prova por sabotagem: desativada a cifra somente em worktree descartável do commit e35863b;
   o único teste executado reprovou no cabeçalho em claro, como previsto. Cópia descartável removida.
-- Revisão independente/adversária: pendente.
+- Revisão independente/adversária realizada (h-d, h-g, h-h); ver o fechamento e a pendência residual abaixo.
 
 ### Migration e integração
 
@@ -233,3 +233,36 @@ fila reexecutar. A próxima passagem diária e a auditoria do que saiu continuam
 Novos testes injetam falha tanto em remove quanto em put, com duas gravações vencidas e uma
 recente, conferem o disco antes de toda operação remota e repetem a tentativa. Os quatro testes
 de manutenção passaram no Postgres local. Nenhuma migration adicional, sem ação em produção.
+
+
+### Fechamento local da Fase 4 (16/11/2026)
+
+O pane-16 aprovou a correção específica do P1 de falha S3 (handoff h-h), sem encontrar regressão
+nova no delta `7f84f69..4b0bf7c`. Conferiu independentemente: verify saída 0 (61 cercas e 889
+unitários), tipos do painel/e2e saída 0, 37 testes de banco afetados e a suíte completa com
+**891 testes de banco verdes**, todos em cluster novo de loopback. Também comparou o código
+anterior e o atual, com falhas remove/put, erro local de .part, cifragem inválida e recuperação real
+na terceira tentativa da fila. Recentes e outra organização ficaram preservadas.
+
+**P2 herdado ainda aberto:** `packages/core/src/recordings.ts`, no fallback de arquivos órfãos
+(sem chamada no banco), interrompe os órfãos seguintes quando um item dá erro local; exclusões
+parciais anteriores a esse erro não entram na contagem de auditoria. Reproduzido em h-h também
+no código anterior ao último conserto. Não afeta a resolução do P1 das chamadas conhecidas, mas
+é pendência de robustez/conformidade para a liberação. A revisão não aprovou universalmente todos
+os caminhos de falha nem atestou produção real.
+
+Sem trabalho fora do escopo: não houve push, merge no main, deploy, envio de mensagens externas
+ou acesso ao Supabase de produção. As alterações de TLS do instalador comunitário preservam
+linhas legadas; a composição Supabase continua sem Postgres local e sem transporte UDP.
+Erros encontrados durante a implementação estão registrados nas três revisões acima e foram
+corrigidos nos commits locais, exceto o P2 herdado explicitado neste fechamento.
+
+Migration continua sendo apenas `db/migrations/20261116T180401_trunk_rcd_identity.sql`, aplicada
+somente em bancos descartáveis. Pendências operacionais continuam: build/boot Docker, chamada
+TLS/SRTP e PAI na B-leg com operadora, homologação RCD, certificado/renovação, armazenamento real,
+procedência da imagem MinIO ou S3 mantido, alertas entregues e ensaio de backup/DR. Nenhuma delas
+foi declarada provada por testes locais. Integrar este ramo às Fases 2/3 exige conciliar os arquivos
+compartilhados listados acima; a base permanece c077dfd.
+
+Painel de bancada e Postgres descartável do implementador foram encerrados. Logs e capturas
+ficaram em `/tmp`; os revisores também encerraram seus clusters e não alteraram o worktree.
