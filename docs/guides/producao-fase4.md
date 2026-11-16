@@ -1,7 +1,8 @@
 # Preparar e conferir a produção da Fase 4
 
 Este roteiro prepara uma VPS dedicada. Não substitui a implantação Coolify que já existe, nem deve
-ser executado contra ela durante a revisão. O Compose usa 80/443; a integração com um proxy já
+ser executado contra ela durante a revisão. Para subir as peças que faltam na implantação Coolify, veja
+[Produção no Coolify](producao-coolify.md). O Compose usa 80/443; a integração com um proxy já
 instalado exige conferir redes e portas antes de liberar o deploy. Não houve deploy nesta entrega.
 
 ## Preparo reproduzível
