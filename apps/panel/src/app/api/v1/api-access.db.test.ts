@@ -28,7 +28,7 @@ beforeAll(async () => {
   operator = await createUser(panel.app, org, "operator");
   agent = await insert(panel.app, org, "insert into agents (organization_id, name, engine) values ($1, 'Nico', 'simulated') returning id", [org]);
   platformOrg = await createOrganization(panel.app, "api access platform");
-  await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
+  await withSystem(panel.app, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
   platformOwner = await createUser(panel.app, platformOrg, "owner");
 });
 afterAll(() => panel.close());
@@ -183,12 +183,12 @@ describe("POST /api/v1/tenants/provision", () => {
     const badEngine = await call(provision, { method: "POST", headers: bearer(key.token), body: { ...request(`sub_${crypto.randomUUID()}`, "x@example.test"), agent: { engine: "made-up" } } });
     expect([badEngine.status, badEngine.code]).toEqual([400, "validation_error"]);
     // A chave com o escopo, mas de uma empresa que deixou de ser a plataforma, não provisiona.
-    await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = false where id = $1", [platformOrg]));
+    await withSystem(panel.app, (q) => q.exec("update organizations set platform = false where id = $1", [platformOrg]));
     try {
       const notPlatform = await call(provision, { method: "POST", headers: bearer(key.token), body: request(`sub_${crypto.randomUUID()}`, "y@example.test") });
       expect([notPlatform.status, notPlatform.code]).toEqual([403, "forbidden"]);
     } finally {
-      await withOrg(panel.app, platformOrg, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
+      await withSystem(panel.app, (q) => q.exec("update organizations set platform = true where id = $1", [platformOrg]));
     }
   });
 
