@@ -74,7 +74,7 @@ export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant
 /** O plano da organização: troca de plano, aviso de franquia e redução de cadência por chamadas curtas. */
 export const PLAN_EVENT_KINDS = ["plan_changed", "plan_usage_alert", "cadence_reduced"] as const;
 
-export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS] as const;
+export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS, "asaas_subscription_changed", "asaas_config_changed"] as const;
 
 export type OrgEventKind = (typeof ORG_EVENT_KINDS)[number];
 

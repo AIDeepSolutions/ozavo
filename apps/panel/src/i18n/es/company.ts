@@ -23,9 +23,9 @@ const company: CompanyDictionary = {
   suspended: "Esta empresa está suspendida: sus claves de API no valen hasta que se reactive.",
   saveProfile: "Guardar datos de la empresa",
   keysTitle: "Claves de API",
-  keysLead: "Una clave permite que un sistema externo, como n8n o un CRM, pida llamadas en nombre de la empresa. Cada clave hace solo lo que su alcance permite. Envíela en el encabezado Authorization: Bearer seguido de la clave.",
+  keysLead: "Una clave permite que un sistema externo, como un CRM, pida llamadas en nombre de la empresa. Cada clave hace solo lo que su alcance permite. Envíela en el encabezado Authorization: Bearer seguido de la clave.",
   keyName: "Nombre de la clave",
-  keyNameHint: "Para recordar quién la usa. Ejemplo: n8n de ventas.",
+  keyNameHint: "Para recordar quién la usa. Ejemplo: CRM de ventas.",
   scopesLabel: "Qué puede hacer la clave",
   scopes: {
     "calls:outbound": "Pedir llamadas salientes (POST /api/v1/calls/outbound). La llamada pasa por las mismas reglas de llamadas salientes.",

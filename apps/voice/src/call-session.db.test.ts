@@ -65,6 +65,16 @@ async function scene(label: string, agent: AgentOptions, manual?: ManualEngine, 
 
 const summaries = async (organizationId: string) => (await tasksOf(app, organizationId)).filter((task) => task.kind === "summarize_call");
 
+describe("tenant billing suspension", () => {
+  it("refuses audio before connecting an engine, records why and sends a failure signal", async () => {
+    const manual = manualEngine();
+    const s = await scene("suspended tenant", { engine: manual.engine.id }, manual);
+    await withSystem(app, (q) => q.exec("insert into tenant_profiles (organization_id, status, created_at, updated_at) values ($1, 'suspended', $2, $2)", [s.organizationId, s.harness.clock.now()]));
+    expect(await s.start().done).toMatchObject({ status: "refused", endReason: "tenant_suspended", costCents: 0 });
+    expect(await eventsOf(app, s.callId)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "call_refused", payload: { reason: "tenant_suspended" } })]));
+  });
+});
+
 describe("motor que cai no meio da chamada (Review Focus 1)", { timeout: 120_000 }, () => {
   const script: SimulatedScript = [{ say: "Só um momento." }, { fail: "OpenAI Realtime: a conexão caiu (código 1006)" }];
 

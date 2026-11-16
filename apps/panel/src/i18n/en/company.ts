@@ -23,9 +23,9 @@ const company: CompanyDictionary = {
   suspended: "This company is suspended: its API keys do not work until it is reactivated.",
   saveProfile: "Save company details",
   keysTitle: "API keys",
-  keysLead: "A key lets an outside system, such as n8n or a CRM, request calls on behalf of the company. Each key does only what its scope allows. Send it in the Authorization header as Bearer followed by the key.",
+  keysLead: "A key lets an outside system, such as a CRM, request calls on behalf of the company. Each key does only what its scope allows. Send it in the Authorization header as Bearer followed by the key.",
   keyName: "Key name",
-  keyNameHint: "To remember who uses it. Example: sales n8n.",
+  keyNameHint: "To remember who uses it. Example: sales CRM.",
   scopesLabel: "What the key can do",
   scopes: {
     "calls:outbound": "Request outbound calls (POST /api/v1/calls/outbound). The call goes through the same outbound call rules.",

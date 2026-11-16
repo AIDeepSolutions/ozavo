@@ -1,4 +1,4 @@
-# API para sistemas de fora (n8n, CRM, Asaas)
+# API para sistemas de fora e cobrança nativa
 
 Três coisas que um sistema de fora faz no Ozavo sem uma pessoa no painel: pedir uma ligação,
 criar uma empresa e receber o que aconteceu. Tudo sai de uma **chave de API**, criada em
@@ -30,7 +30,7 @@ Idempotency-Key: lead-42
 
 - `202` com `{ "callId": "...", "repeated": false }`: a ligação foi originada.
 - O mesmo `Idempotency-Key` (ou `requestKey` no corpo) devolve a mesma ligação com `200` e
-  `repeated: true`, sem ligar de novo. Use-o sempre que o n8n puder repetir o pedido.
+  `repeated: true`, sem ligar de novo. Use-o sempre que o integrador puder repetir o pedido.
 - `context` vai para o agente como dado sobre a pessoa e o motivo, nunca como instrução. Até 8 KB.
 - O pedido não passa pela fila de rotinas: vai direto ao processo de voz, que responde em até 5 s.
 - A ligação passa pela mesma política de ligação de saída de qualquer outra: desligada de fábrica,
@@ -40,15 +40,16 @@ Idempotency-Key: lead-42
 
 ## Criar uma empresa (provisionamento)
 
-Escopo `tenants:provision`, que só a organização que administra a instalação pode emitir. O n8n
-chama depois da assinatura do contrato e da confirmação do pagamento no Asaas.
+Escopo `tenants:provision`, que só a organização que administra a instalação pode emitir.
+Esta API continua disponível para integrações externas. A cobrança pelo Asaas é **nativa** no
+Ozavo: veja [configuração e recuperação](asaas-nativo.md). Nenhum orquestrador externo é necessário.
 
 ```http
 POST /api/v1/tenants/provision
 
 {
-  "source": "asaas",
-  "externalRef": "sub_000123",
+  "source": "external",
+  "externalRef": "contrato_000123",
   "company": { "legalName": "Clínica Exemplo Ltda", "tradeName": "Clínica Exemplo", "cnpj": "11.222.333/0001-81" },
   "owner": { "name": "Dona da clínica", "email": "dona@clinica.example" },
   "plan": { "code": "pro", "monthlyMinutes": 750 },
@@ -70,5 +71,5 @@ POST /api/v1/tenants/provision
 ## Receber o que aconteceu
 
 O agente chama os webhooks cadastrados em Configurações > Integrações (ferramenta `call_webhook`),
-e as rotinas entregam a eles depois da ligação (`deliver_webhook`). É por aí que o n8n recebe o
+e as rotinas entregam a eles depois da ligação (`deliver_webhook`). É por aí que um sistema de fora recebe o
 resultado e repassa a qualquer CRM ou ERP.

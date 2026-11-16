@@ -224,6 +224,7 @@ const timeline = {
     unknown: "Evento",
   },
   reasons: {
+    tenant_suspended: "Esta empresa está suspensa. Peça à plataforma para conferir a cobrança.",
     engine_not_configured: "O agente usa um motor de voz sem chave cadastrada.",
     engine_not_responding: "O provedor do motor de voz não respondeu a tempo. Confira a situação do provedor e a chave em Configurações → Inteligência artificial.",
     process_restarted: "O processo de voz reiniciou no meio da chamada.",

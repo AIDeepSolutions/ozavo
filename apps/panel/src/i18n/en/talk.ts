@@ -48,6 +48,7 @@ const talk: TalkDictionary = {
     unavailable: "The microphone could not be used. Close other programs that are using it and call again.",
     agent_not_found: "This agent no longer exists. Choose another one.",
     agent_disabled: "This agent is off. Turn the agent on in Agents.",
+    tenant_suspended: "This company is suspended. Ask the platform to review billing.",
     engine_not_configured: "The voice engine of this agent has no key. Add the key in Settings → Artificial intelligence.",
     engine_simulated: "This agent uses the simulated engine, which does not hold a conversation. Change the engine in Agents.",
     too_many_web_calls: "There are already three browser calls at the same time in this company. End one of them, or wait a minute, and call again.",

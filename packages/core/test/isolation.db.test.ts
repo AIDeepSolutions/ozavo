@@ -15,6 +15,9 @@ const unique = (prefix: string): string => `${prefix}-${randomUUID()}`;
 // Uma fábrica por tabela com `organization_id`, em ordem de dependência. Tabela nova sem fábrica
 // reprova este arquivo: é assim que ela é obrigada a entrar no teste de isolamento.
 const factories: Record<string, Factory> = {
+  asaas_events: (organization_id) => ({ organization_id, environment: "sandbox", event_id: unique("evt"), event_kind: "PAYMENT_RECEIVED", payload: {}, received_at: at }),
+  asaas_subscriptions: (organization_id) => ({ organization_id, environment: "sandbox", subscription_id: unique("sub"), tenant_id: organization_id }),
+  asaas_payments: (organization_id) => ({ organization_id, environment: "sandbox", subscription_id: unique("sub"), payment_id: unique("pay"), status: "paid" }),
   users: (organization_id) => ({ organization_id, email: `${unique("user")}@example.com`, name: "User", password_hash: "x", role: "owner" }),
   sessions: (organization_id, p) => ({ organization_id, user_id: p.users?.id, token_hash: unique("token"), expires_at: at }),
   invites: (organization_id, p) => ({ organization_id, email: `${unique("invite")}@example.com`, name: "Invited", role: "operator", token_hash: unique("invite-token"), expires_at: at, created_by: p.users?.id }),
@@ -31,7 +34,7 @@ const factories: Record<string, Factory> = {
   caller_notes: (organization_id, p) => ({ organization_id, call_id: p.calls?.id, caller_e164: "+5531999990000", text: "Nota", created_at: at }),
   outbound_policy: (organization_id) => ({ organization_id }),
   tenant_profiles: (organization_id) => ({ organization_id, created_at: at, updated_at: at }),
-  api_keys: (organization_id) => ({ organization_id, name: "n8n", key_prefix: "ozk_teste", key_hash: unique("api-key"), scopes: ["calls:outbound"], created_at: at }),
+  api_keys: (organization_id) => ({ organization_id, name: "crm", key_prefix: "ozk_teste", key_hash: unique("api-key"), scopes: ["calls:outbound"], created_at: at }),
   do_not_call: (organization_id) => ({ organization_id, e164: `+55${Math.floor(1e10 + Math.random() * 9e10)}` }),
   usage_ledger: (organization_id, p) => ({ organization_id, call_id: p.calls?.id, engine: "simulated", at }),
   plan_subscriptions: (organization_id) => ({ organization_id, plan: "starter", monthly_price_cents: 49700, included_minutes: 300, max_concurrent_calls: 2, cycle_started_on: "2026-01-15", updated_at: at }),

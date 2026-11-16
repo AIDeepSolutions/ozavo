@@ -1,6 +1,6 @@
-import { toE164, type Clock, type OrgQuery } from "@ozavo/core";
+import { readTenantProfile, toE164, type Clock, type OrgQuery } from "@ozavo/core";
 
-export type OutboundRefusalCode = "outbound_disabled" | "outside_window" | "do_not_call" | "daily_cap_reached" | "attempts_exhausted";
+export type OutboundRefusalCode = "tenant_suspended" | "outbound_disabled" | "outside_window" | "do_not_call" | "daily_cap_reached" | "attempts_exhausted";
 export type OutboundDecision = { allowed: true } | { allowed: false; code: OutboundRefusalCode; message: string };
 
 interface PolicyRow {
@@ -38,6 +38,7 @@ function localMinutes(at: Date, timeZone: string): number {
  * o teto diário conta todas as ligações de saída da organização.
  */
 export async function checkOutboundAllowed(q: OrgQuery, toE164Input: string, clock: Clock, lineE164?: string | null): Promise<OutboundDecision> {
+  if ((await readTenantProfile(q)).status !== "active") return refuse("tenant_suspended", "This company is suspended. Ask the platform to review billing.");
   const policy = await q.one<PolicyRow>(
     "select enabled, daily_cap_per_line, window_start::text, window_end::text, max_attempts_per_contact, timezone from outbound_policy where organization_id = $1 for update",
     [q.organizationId],

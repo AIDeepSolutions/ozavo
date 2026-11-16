@@ -38,3 +38,6 @@ export * from "./pacing";
 export * from "./plans";
 export * from "./short-calls";
 export * from "./talk-share";
+
+export * from "./asaas";
+export * from "./asaas-client";

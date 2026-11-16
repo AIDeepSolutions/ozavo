@@ -48,6 +48,7 @@ const talk: TalkDictionary = {
     unavailable: "No fue posible usar el micrófono. Cierra otros programas que lo estén usando y llama de nuevo.",
     agent_not_found: "Este agente ya no existe. Elige otro.",
     agent_disabled: "Este agente está apagado. Enciéndelo en Agentes.",
+    tenant_suspended: "Esta empresa está suspendida. Solicite a la plataforma que revise la facturación.",
     engine_not_configured: "El motor de voz de este agente no tiene clave. Registra la clave en Configuración → Inteligencia artificial.",
     engine_simulated: "Este agente usa el motor simulado, que no conversa. Cambia el motor en Agentes.",
     too_many_web_calls: "Ya hay tres llamadas por el navegador al mismo tiempo en esta empresa. Termina una de ellas, o espera un minuto, y llama de nuevo.",

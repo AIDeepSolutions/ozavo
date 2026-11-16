@@ -15,6 +15,7 @@ import { ActionStatus, useAction } from "../../../../ui/errors";
 import { Button, Field, Notice, Panel, TextInput } from "../../../../ui/kit";
 import { useCanConfigure } from "../../../../ui/me";
 import type { Setting } from "../../../../ui/types";
+import { AsaasPanel } from "../asaas-panel";
 import { AgendaPanel } from "../agenda-panel";
 import { URL_PREFIX, put } from "../setting-api";
 
@@ -63,6 +64,7 @@ export default function IntegrationsSettings() {
 
   return (
     <>
+      <AsaasPanel />
       {/* A agenda lê o resultado da autorização do Google no endereço: pede Suspense no Next. */}
       <Suspense>
         <AgendaPanel />

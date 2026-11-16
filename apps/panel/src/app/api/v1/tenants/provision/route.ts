@@ -1,4 +1,4 @@
-import { DEFAULT_PERSONA_NAME, encryptSecret, normalizeCnpj, provisionTenant } from "@ozavo/core";
+import { DEFAULT_PERSONA_NAME, defaultProvisionInstructions, encryptSecret, normalizeCnpj, provisionTenant } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError } from "../../../../../server/context";
 import { handleApiKey } from "../../../../../server/api-auth";
@@ -41,21 +41,11 @@ const body = z.object({
   credentials: z.record(z.string(), z.string().trim().min(1).max(500)).default({}),
 });
 
-/** A instrução de quem não mandou a dele: a persona, a empresa e o jeito de atender por telefone. */
-function defaultInstructions(persona: string, company: string): string {
-  return [
-    `Você é ${persona}, assistente virtual de ${company}, e atende ligações em português do Brasil.`,
-    "Fale de forma calma, cordial e direta, com frases curtas, como numa conversa por telefone.",
-    "Descubra o que a pessoa precisa. Se souber responder, responda. Se não souber, não invente: anote o recado e avise a equipe.",
-    "Se a pessoa pedir para falar com alguém, transfira a ligação. Antes de encerrar, pergunte se pode ajudar em mais alguma coisa.",
-  ].join("\n");
-}
-
 /**
- * Provisionamento automático: o n8n chama depois da assinatura do contrato e da confirmação do
- * pagamento no Asaas. Só uma chave `tenants:provision` da organização que administra a instalação
+ * Provisionamento por sistemas de fora. A integração nativa de cobrança recebe eventos na rota
+ * /api/v1/webhooks/asaas. Só uma chave `tenants:provision` da organização que administra a instalação
  * serve. Devolve a empresa pronta e o agente. O dono não recebe senha: recebe um convite de uso
- * único (`ownerInviteUrl`), em que ele mesmo escolhe a senha. Nenhuma senha passa pelo n8n.
+ * único (`ownerInviteUrl`), em que ele mesmo escolhe a senha. Nenhuma senha passa pelo chamador.
  */
 export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ key, body, deps }) => {
   if (!key.platform) throw new ApiError(403, "forbidden", "Only the organization that runs this installation can provision companies.");
@@ -80,7 +70,7 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
         personaName: persona,
         voiceId: body.agent.voiceId ?? null,
         basePrompt: body.agent.basePrompt ?? "",
-        instructions: body.agent.instructions ?? defaultInstructions(persona, company),
+        instructions: body.agent.instructions ?? defaultProvisionInstructions(persona, company),
         greeting: body.agent.greeting ?? null,
         engine: engineId,
         tools: await defaultToolNames(),

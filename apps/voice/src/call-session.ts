@@ -444,6 +444,13 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     await event("call_started", { direction: call.direction, from: call.from_e164, to: call.to_e164, agentId, ...input.started });
     transport.onHangup(() => void finish({ status: "completed", endReason: "caller_hangup", callerGone: true }));
 
+    if (tenant.status !== "active") {
+      resolveRecordingDecided();
+      return finish({ status: "refused", endReason: "tenant_suspended", tone: true,
+        events: [["call_refused", { reason: "tenant_suspended" }]],
+        notice: "Uma ligação foi recusada porque a empresa está suspensa. A plataforma precisa conferir a cobrança antes de reativar o atendimento.",
+      });
+    }
     const engineId = overrides?.engineId ?? agent.engine;
     engine = deps.engines.get(engineId);
     const notice = await q.one<{ value: unknown }>("select value from settings where organization_id = $1 and key = $2", [organizationId, RECORDING_NOTICE_SETTING]);

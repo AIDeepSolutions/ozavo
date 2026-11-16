@@ -46,6 +46,7 @@ const talk = {
     unavailable: "Não foi possível usar o microfone. Feche outros programas que estejam usando o microfone e ligue de novo.",
     agent_not_found: "Este agente não existe mais. Escolha outro.",
     agent_disabled: "Este agente está desligado. Ligue o agente em Agentes.",
+    tenant_suspended: "Esta empresa está suspensa. Peça à plataforma para conferir a cobrança.",
     engine_not_configured: "O motor de voz deste agente não tem chave cadastrada. Cadastre a chave em Configurações → Inteligência artificial.",
     engine_simulated: "Este agente usa o motor simulado, que não conversa. Troque o motor em Agentes.",
     too_many_web_calls: "Já há três chamadas pelo navegador ao mesmo tempo nesta empresa. Encerre uma delas, ou espere um minuto, e ligue de novo.",

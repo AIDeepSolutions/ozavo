@@ -1,0 +1,20 @@
+export default {
+  "title": "Asaas",
+  "lead": "Native platform billing. Set the same token in the Asaas webhook. Blank secrets keep saved values; changing environment requires both credentials.",
+  "environment": "Environment",
+  "sandbox": "Sandbox",
+  "production": "Production",
+  "apiKey": "API key",
+  "webhookToken": "Webhook token (at least 32 characters)",
+  "kept": "Already configured",
+  "mappings": "Subscription mappings (JSON)",
+  "mappingHelp": "Without a mapping, monthly value selects Starter (497), Pro (997), Growth (1,497) or Scale (1,997). For Custom use [{\"subscriptionId\":\"sub_example\",\"plan\":\"custom\",\"includedMinutes\":300,\"maxConcurrentCalls\":2}]. Price comes from the subscription.",
+  "invalidMappings": "Check the subscription mappings JSON.",
+  "save": "Save Asaas",
+  "retry": "Retry pending events",
+  "invites": "Owner invitations",
+  "ownerInvite": "Open owner invitation",
+  "events": "Last 50 events",
+  "processed": "Processed",
+  "pending": "Pending; check queue and configuration"
+};

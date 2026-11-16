@@ -23,9 +23,9 @@ const company = {
   suspended: "Esta empresa está suspensa: as chaves de API dela não valem até ser reativada.",
   saveProfile: "Salvar dados da empresa",
   keysTitle: "Chaves de API",
-  keysLead: "Uma chave deixa um sistema de fora, como o n8n ou um CRM, pedir ligações em nome da empresa. Cada chave faz só o que o escopo dela permite. Envie no cabeçalho Authorization: Bearer seguido da chave.",
+  keysLead: "Uma chave deixa um sistema de fora, como um CRM, pedir ligações em nome da empresa. Cada chave faz só o que o escopo dela permite. Envie no cabeçalho Authorization: Bearer seguido da chave.",
   keyName: "Nome da chave",
-  keyNameHint: "Para lembrar quem usa. Exemplo: n8n do comercial.",
+  keyNameHint: "Para lembrar quem usa. Exemplo: CRM do comercial.",
   scopesLabel: "O que a chave pode fazer",
   scopes: {
     "calls:outbound": "Pedir ligações de saída (POST /api/v1/calls/outbound). A ligação passa pelas mesmas regras de ligação de saída.",
