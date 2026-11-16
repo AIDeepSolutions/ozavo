@@ -10,7 +10,9 @@ import type { AgendaClient, AgendaService, AgendaSlot } from "./agenda";
  * Endpoints públicos da Calendar API v3 e do OAuth 2.0 do Google:
  * - `POST https://oauth2.googleapis.com/token` (troca do código e renovação do token);
  * - `POST https://www.googleapis.com/calendar/v3/freeBusy` com `{ timeMin, timeMax, items: [{ id }] }`;
- * - `POST /calendar/v3/calendars/{id}/events`, `GET` e `PATCH /calendar/v3/calendars/{id}/events/{eventId}`.
+ * - `POST /calendar/v3/calendars/{id}/events`, `GET` e `PATCH /calendar/v3/calendars/{id}/events/{eventId}`;
+ * - `DELETE /calendar/v3/calendars/{id}/events/{eventId}?sendUpdates=all`, resposta sem corpo
+ *   (https://developers.google.com/workspace/calendar/api/v3/reference/events/delete, conferido em 2026-11-16).
  */
 
 export const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -100,7 +102,8 @@ export function createGoogleAgenda(config: GoogleAgendaConfig, net: SafeFetchOpt
   const request = async (url: string, method: string, body?: string, contentType = "application/json"): Promise<unknown> => {
     const response = await safeFetch(url, { method, headers: { ...(accessToken && { Authorization: `Bearer ${accessToken}` }), ...(body && { "Content-Type": contentType }) }, body }, { ...net, maxBytes: MAX_BYTES });
     if (!response.ok || response.truncated) throw new Error(`Google answered HTTP ${response.status}${response.truncated ? " (truncated)" : ""}`);
-    return JSON.parse(response.body) as unknown;
+    // O DELETE do Google responde sem corpo.
+    return response.body.trim() === "" ? null : (JSON.parse(response.body) as unknown);
   };
   const authorized = async (): Promise<void> => {
     if (accessToken) return;
@@ -146,6 +149,10 @@ export function createGoogleAgenda(config: GoogleAgendaConfig, net: SafeFetchOpt
       const body = { start: { dateTime: startsAt.toISOString(), timeZone: config.timezone }, end: { dateTime: new Date(startsAt.getTime() + duration).toISOString(), timeZone: config.timezone } };
       const event = eventSchema.parse(await request(url, "PATCH", JSON.stringify(body)));
       return { id: event.id, startsAt: event.start.dateTime };
+    },
+    async cancel(input) {
+      await authorized();
+      await request(`${events}/${encodeURIComponent(input.appointmentId)}?sendUpdates=all`, "DELETE");
     },
   };
 }

@@ -16,11 +16,11 @@ export function agendaNotWired(outcome: string): string {
 }
 
 /** A agenda respondeu com erro ou não respondeu: a ligação continua, sem promessa falsa. */
-export function agendaUnavailable(outcome: string): string {
+export function agendaUnavailable(outcome: string, neverSay = "que está marcado"): string {
   return (
     `O sistema de agenda não respondeu agora, e ${outcome}. Diga à pessoa que não foi possível ` +
     "concluir neste momento e ofereça anotar o pedido para a equipe retornar (create_task) ou transferir " +
-    "para uma pessoa (transfer_to_human). NÃO diga que está marcado."
+    `para uma pessoa (transfer_to_human). NÃO diga ${neverSay}.`
   );
 }
 

@@ -46,6 +46,27 @@ describe("cliente do Google Agenda", () => {
     expect(JSON.parse(seen[2]?.body ?? "{}")).toMatchObject({ summary: "avaliação — +5511988887777", end: { dateTime: "2026-11-18T13:30:00.000Z" } });
   });
 
+  it("cancela apagando o evento e avisando os convidados; a resposta sem corpo é sucesso", async () => {
+    const seen: Array<{ url: string; method: string }> = [];
+    const answers: Array<{ status: number; body: string }> = [
+      { status: 200, body: JSON.stringify({ access_token: "ya29.teste" }) },
+      { status: 204, body: "" },
+      { status: 404, body: JSON.stringify({ error: { code: 404 } }) },
+    ];
+    const fetch = (async (url: string, init: { method: string }) => {
+      seen.push({ url, method: init.method });
+      const answer = answers.shift() ?? { status: 500, body: "" };
+      return new Response(answer.status === 204 ? null : answer.body, { status: answer.status });
+    }) as unknown as typeof globalThis.fetch;
+    const agenda = createGoogleAgenda(
+      { clientId: "cid", clientSecret: "csecret", refreshToken: "rt", calendarId: "primary", slotMinutes: 30, services: [], ...work },
+      { fetch, lookup: async () => ["142.250.0.1"] },
+    );
+    await agenda.cancel?.({ appointmentId: "ev 1", callId: "c1" });
+    expect(seen[1]).toEqual({ url: "https://www.googleapis.com/calendar/v3/calendars/primary/events/ev%201?sendUpdates=all", method: "DELETE" });
+    await expect(agenda.cancel?.({ appointmentId: "sumiu", callId: "c1" })).rejects.toThrow(/404/);
+  });
+
   it("pede o consentimento só com os escopos de eventos e ocupado/livre, e o token de renovação", () => {
     const url = new URL(googleConsentUrl({ clientId: "cid", redirectUri: "https://ozavo.example/api/v1/connectors/google/callback", state: "s" }));
     expect(url.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy");

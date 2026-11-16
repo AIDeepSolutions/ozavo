@@ -52,6 +52,17 @@ describe("agenda pelo Cal.com", () => {
     expect(seen[1]).toMatchObject({ url: "https://api.cal.com/v2/bookings/bk_1/reschedule", body: { start: "2026-11-19T12:00:00.000Z" } });
   });
 
+  it("cancela pelo uid da reserva, na versão de API documentada, e recusa resposta sem sucesso", async () => {
+    const { seen, net } = fakeCalcom([
+      { status: 200, body: { status: "success", data: { uid: "bk_1", status: "cancelled" } } },
+      { status: 200, body: { status: "error", data: {} } },
+    ]);
+    const agenda = createCalcomAgenda(config, net);
+    await agenda.cancel?.({ appointmentId: "bk_1", callId: "c1" });
+    expect(seen[0]).toMatchObject({ url: "https://api.cal.com/v2/bookings/bk_1/cancel", method: "POST", headers: { "cal-api-version": "2026-02-25" }, body: { cancellationReason: "Desmarcado por telefone" } });
+    await expect(agenda.cancel?.({ appointmentId: "bk_2", callId: "c1" })).rejects.toThrow(/did not confirm/);
+  });
+
   it("erro do Cal.com e tipo de atendimento desconhecido viram falha, para a ferramenta falar que não deu", async () => {
     const { net } = fakeCalcom([{ status: 401, body: { status: "error" } }]);
     const agenda = createCalcomAgenda(config, net);

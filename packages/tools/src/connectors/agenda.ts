@@ -75,6 +75,11 @@ export interface RescheduleRequest {
   callId: string;
 }
 
+export interface CancelRequest {
+  appointmentId: string;
+  callId: string;
+}
+
 /**
  * O contrato da agenda. Quem implementa fala com o CRM; as ferramentas não sabem de HTTP,
  * de rota nem de token.
@@ -83,6 +88,8 @@ export interface AgendaClient {
   freeSlots(request: FreeSlotsRequest): Promise<AgendaFreeSlots>;
   book(request: BookRequest): Promise<AgendaAppointment>;
   reschedule(request: RescheduleRequest): Promise<AgendaAppointment>;
+  /** Desmarca o compromisso. Opcional: conector que não sabe cancelar não declara, e a ferramenta diz isso. */
+  cancel?(request: CancelRequest): Promise<void>;
   /** Os tipos de atendimento cadastrados, quando o conector os conhece. */
   services?(): AgendaService[];
 }

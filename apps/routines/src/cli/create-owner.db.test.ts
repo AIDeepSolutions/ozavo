@@ -43,7 +43,7 @@ describe("createOwner", () => {
       language: "pt-BR",
       agent_enabled: true,
       // As de agenda entram: só são oferecidas na ligação quando a empresa conecta uma agenda.
-      tools: ["agenda_horarios_livres", "agenda_marcar", "agenda_remarcar", "call_webhook", "create_task", "end_call", "notify_human", "request_approval", "send_dtmf", "send_whatsapp", "stop_recording", "transfer_to_human"],
+      tools: ["agenda_cancelar", "agenda_horarios_livres", "agenda_marcar", "agenda_remarcar", "call_webhook", "create_task", "end_call", "notify_human", "request_approval", "send_dtmf", "send_whatsapp", "stop_recording", "transfer_to_human"],
     });
     expect(row?.greeting).toMatch(/Olá/);
     expect(row?.instructions).toMatch(/português do Brasil/);
