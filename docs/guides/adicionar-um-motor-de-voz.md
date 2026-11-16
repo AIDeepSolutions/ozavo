@@ -14,7 +14,7 @@ arquivo** em `packages/voice-engine/src/engines/`, descoberto pela pasta.
 | Tipo | Como funciona | Estado |
 |---|---|---|
 | Voz direta | Um único modelo ouve e fala. É o caso do Gemini Live e do OpenAI Realtime | Existe |
-| Pipeline | Três etapas: transcrição (STT), modelo de texto (LLM) e síntese de voz (TTS) | Frente aberta no [`ROADMAP.md`](../../ROADMAP.md) |
+| Pipeline | Três etapas: transcrição (STT), modelo de texto (LLM) e síntese de voz (TTS) | Existe: `deepgram-openrouter-cartesia`, com as peças em `packages/voice-engine/src/pipeline/` (barge-in, endpointing dinâmico, caixa postal) |
 
 A interface é a mesma para os dois. Um motor em pipeline é um motor que, por dentro, coordena
 três serviços e os apresenta como uma sessão só. É um trabalho maior: converse numa issue antes

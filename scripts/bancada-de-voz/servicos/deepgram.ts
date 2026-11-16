@@ -16,6 +16,7 @@
  * Chave: `BANCADA_DEEPGRAM_API_KEY`, no cabeçalho `Authorization: Token <chave>`. O serviço não
  * declara o custo na sessão, e a bancada estima pela duração do áudio enviado.
  */
+import { recognitionUrl } from "../../../packages/voice-engine/src/pipeline/deepgram-url";
 import { z } from "../dependencias";
 import type { Linha } from "../linhas";
 import { abrirSocket, aberto, erroDoServico, esperarFechamento, leitorDaChave, lerMensagem, motivoSemChave, type OpcoesDoExterno } from "./_externo";
@@ -24,7 +25,7 @@ import type { ServicoMedido } from "./tipos";
 export const VARIAVEL_DA_CHAVE = "BANCADA_DEEPGRAM_API_KEY";
 const URL_PADRAO = "wss://api.deepgram.com/v1/listen";
 const MODELO = "nova-3";
-const MAX_TERMOS = 100;
+
 
 const Mensagem = z.union([
   z.object({
@@ -38,20 +39,7 @@ const Mensagem = z.union([
 
 /** A URL de uma sessão: modelo, idioma, áudio cru, texto parcial e o vocabulário em `keyterm`. */
 export function urlDaSessao(base: string, idioma: string, taxaHz: number, vocabulario: readonly string[]): string {
-  const url = new URL(base);
-  const parametros: Record<string, string> = {
-    model: MODELO,
-    language: idioma,
-    encoding: "linear16",
-    sample_rate: String(taxaHz),
-    channels: "1",
-    interim_results: "true",
-    punctuate: "true",
-    smart_format: "true",
-  };
-  for (const [nome, valor] of Object.entries(parametros)) url.searchParams.set(nome, valor);
-  for (const termo of vocabulario.slice(0, MAX_TERMOS)) url.searchParams.append("keyterm", termo);
-  return url.toString();
+  return recognitionUrl(base, idioma, taxaHz, vocabulario, MODELO).toString();
 }
 
 export function criarDeepgram(opcoes: OpcoesDoExterno = {}): ServicoMedido {

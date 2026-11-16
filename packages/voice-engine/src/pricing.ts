@@ -11,7 +11,9 @@ function exactCostCents(pricing: EnginePricing, usage: Usage): number {
     ((usage.outputTokens ?? 0) / 1e6) * (pricing.centsPerMillionOutputTokens ?? 0) +
     ((usage.textInputTokens ?? 0) / 1e6) * (pricing.centsPerMillionTextInputTokens ?? pricing.centsPerMillionInputTokens ?? 0) +
     ((usage.cachedInputTokens ?? 0) / 1e6) * (pricing.centsPerMillionCachedInputTokens ?? pricing.centsPerMillionInputTokens ?? 0) +
-    ((usage.textOutputTokens ?? 0) / 1e6) * (pricing.centsPerMillionTextOutputTokens ?? pricing.centsPerMillionOutputTokens ?? 0)
+    ((usage.textOutputTokens ?? 0) / 1e6) * (pricing.centsPerMillionTextOutputTokens ?? pricing.centsPerMillionOutputTokens ?? 0) +
+    ((usage.characters ?? 0) / 1e6) * (pricing.centsPerMillionCharacters ?? 0) +
+    (usage.providerCostCents ?? 0)
   );
 }
 

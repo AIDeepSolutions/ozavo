@@ -21,9 +21,9 @@ export default {
 `;
 
 describe("loadEngines", () => {
-  it("descobre os três motores da fundação", async () => {
+  it("descobre os motores da pasta", async () => {
     const engines = await loadEngines();
-    expect([...engines.keys()].sort()).toEqual(["gemini-live", "openai-realtime", "simulated"]);
+    expect([...engines.keys()].sort()).toEqual(["deepgram-openrouter-cartesia", "gemini-live", "openai-realtime", "simulated"]);
     expect(engines.get("simulated")?.keyless).toBe(true);
     for (const engine of engines.values()) expect(engine.pricing.checkedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });

@@ -972,3 +972,31 @@ describe("gravação a pedido de quem ligou", { timeout: 120_000 }, () => {
     await rm(silent.dir, { recursive: true, force: true });
   });
 });
+
+
+describe("AMD nas ligações de saída", () => {
+  it.each(["machine", "unknown"] as const)("encerra saída com veredito %s e registra o motivo", async (verdict) => {
+    const manual = manualEngine({ keyless: true });
+    const { callId, transport, start } = await scene(`amd-${verdict}`, { engine: "manual" }, manual, "outbound");
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    expect(manual.configs[0]?.direction).toBe("outbound");
+    manual.emit("answeringMachine", { verdict, reason: verdict === "machine" ? "phrase" : "timeout" });
+    const reason = verdict === "machine" ? "answering_machine" : "no_human_response";
+    expect(await session.done).toMatchObject({ status: "completed", endReason: reason });
+    expect((await callOf(app, callId)).end_reason).toBe(reason);
+    expect(transport.hangups).toBe(1);
+    expect((await eventsOf(app, callId)).find((event) => event.kind === "call_ended")?.payload).toMatchObject({ reason });
+  });
+
+  it("não encerra entrada quando um motor emite AMD", async () => {
+    const manual = manualEngine({ keyless: true });
+    const { callId, start } = await scene("amd-inbound", { engine: "manual" }, manual);
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    manual.emit("answeringMachine", { verdict: "machine", reason: "phrase" });
+    expect((await callOf(app, callId)).status).toBe("in_progress");
+    session.stop("caller_hangup");
+    await session.done;
+  });
+});

@@ -240,6 +240,8 @@ const timeline = {
     max_duration: "A chamada atingiu a duração máxima definida no agente.",
     cost_ceiling: "A chamada atingiu o teto de custo definido no agente.",
     engine_failed: "O motor de voz falhou.",
+    answering_machine: "A ligação foi encerrada após detectar uma secretária eletrônica.",
+    no_human_response: "A ligação foi encerrada sem resposta humana.",
     script_finished: "O roteiro da simulação terminou.",
     shutdown: "O Ozavo foi desligado ou atualizado no meio da chamada.",
     internal_error: "O Ozavo teve um erro interno e encerrou a chamada.",

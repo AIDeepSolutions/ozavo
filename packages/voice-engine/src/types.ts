@@ -12,6 +12,8 @@ export interface ToolSpec {
 }
 
 export interface VoiceSessionConfig {
+  /** Entrada é o padrão; detecção de secretária só em saídas. */
+  direction?: "inbound" | "outbound";
   instructions: string;
   /** Fala de abertura. O agente fala primeiro quando presente. */
   greeting?: string;
@@ -47,6 +49,13 @@ export interface Usage {
   textInputTokens?: number;
   cachedInputTokens?: number;
   textOutputTokens?: number;
+  /** Caracteres enviados à síntese de voz, no motor em pipeline (o provedor cobra por caractere). */
+  characters?: number;
+  /**
+   * Custo que o próprio provedor declarou na resposta, em centavos de dólar (o OpenRouter devolve o
+   * valor cobrado de cada pedido). Entra na conta como está, sem passar pela tabela de preço.
+   */
+  providerCostCents?: number;
 }
 
 export interface VoiceSessionEvents {
@@ -65,11 +74,23 @@ export interface VoiceSessionEvents {
    * só detecção de início de fala.
    */
   callerActivity(signal: { words: boolean }): void;
+  /**
+   * O motor concluiu se do outro lado atendeu uma pessoa ou uma caixa postal (secretária eletrônica).
+   * Emitido no máximo uma vez, nos primeiros segundos. Só o motor em pipeline detecta; quem decide o
+   * que fazer (deixar recado, desligar) é quem conduz a chamada.
+   */
+  answeringMachine(detection: AnsweringMachineDetection): void;
   /** Incremento desde o último `usage` (não é acumulado): quem mede custo soma os eventos. */
   usage(usage: Usage): void;
   /** Seguido de `closed` quando é fatal; sozinho, a sessão continua. */
   error(error: Error): void;
   closed(reason: string): void;
+}
+
+export interface AnsweringMachineDetection {
+  verdict: "human" | "machine" | "unknown";
+  /** O sinal que decidiu: frase típica, saudação longa, bipe, resposta curta ou prazo sem decisão. */
+  reason: "phrase" | "long_greeting" | "beep" | "short_greeting" | "timeout";
 }
 
 export interface VoiceSession {
@@ -97,6 +118,8 @@ export interface EnginePricing {
   centsPerMillionTextInputTokens?: number;
   centsPerMillionCachedInputTokens?: number;
   centsPerMillionTextOutputTokens?: number;
+  /** Centavos de dólar por milhão de caracteres sintetizados, quando a síntese cobra por caractere. */
+  centsPerMillionCharacters?: number;
   /** Data em que o preço foi conferido na página do provedor (AAAA-MM-DD). */
   checkedOn: string;
   source: string;

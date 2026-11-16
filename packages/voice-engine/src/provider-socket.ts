@@ -12,6 +12,8 @@ const timer = (options: Pick<ConnectOptions, "schedule">, fn: () => void, delayM
 
 export interface ProviderSocket {
   send(message: object): void;
+  /** Quadro binário (áudio cru), para o provedor que recebe áudio fora do JSON (a Deepgram). */
+  sendBinary(data: Buffer): void;
   close(): Promise<void>;
 }
 
@@ -20,6 +22,8 @@ interface ProviderSocketOptions {
   headers?: Record<string, string>;
   /** Nome do provedor nas mensagens de erro. */
   label: string;
+  /** Omite detalhes externos que podem repetir credenciais. */
+  privateErrors?: boolean;
   emitter: SessionEmitter;
   /** Recebe cada mensagem já decodificada de JSON; validar o formato é de quem chama. */
   onMessage(message: unknown): void;
@@ -57,6 +61,9 @@ export function openProviderSocket(options: ProviderSocketOptions): Promise<Prov
         // Áudio ainda chegando da ponte depois do fechamento é esperado; não há a quem entregar.
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
       },
+      sendBinary(data) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      },
       close() {
         if (!closedByClient) {
           closedByClient = true;
@@ -87,7 +94,7 @@ export function openProviderSocket(options: ProviderSocketOptions): Promise<Prov
       markClosed();
       cancelTimeout();
       if (timedOut) return;
-      const detail = [lastError?.message, `código ${code}`, reason.toString()].filter(Boolean).join("; ");
+      const detail = options.privateErrors ? `código ${code}` : [lastError?.message, `código ${code}`, reason.toString()].filter(Boolean).join("; ");
       if (!opened) {
         reject(new Error(`${label}: não foi possível conectar (${detail})`));
         return;

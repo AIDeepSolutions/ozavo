@@ -239,6 +239,8 @@ const timeline: TimelineDictionary = {
     max_duration: "La llamada alcanzó la duración máxima definida en el agente.",
     cost_ceiling: "La llamada alcanzó el tope de costo definido en el agente.",
     engine_failed: "El motor de voz falló.",
+    answering_machine: "La llamada terminó tras detectar un contestador automático.",
+    no_human_response: "La llamada terminó sin respuesta humana.",
     script_finished: "El guion de la simulación terminó.",
     shutdown: "Ozavo se apagó o se actualizó en medio de la llamada.",
     internal_error: "Ozavo tuvo un error interno y terminó la llamada.",

@@ -168,7 +168,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
   let requestedEnd: Ending | undefined;
   let requestedFarewell: string | undefined;
   let costCents = 0;
-  const usage = { seconds: 0, inputTokens: 0, outputTokens: 0, textInputTokens: 0, cachedInputTokens: 0, textOutputTokens: 0 };
+  const usage = { seconds: 0, inputTokens: 0, outputTokens: 0, textInputTokens: 0, cachedInputTokens: 0, textOutputTokens: 0, characters: 0, providerCostCents: 0 };
   const cancelTimers: Array<() => void> = [];
   const toolsRunning = new Set<Promise<void>>();
   const callEnded = new AbortController();
@@ -292,6 +292,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     usage.textInputTokens += increment.textInputTokens ?? 0;
     usage.cachedInputTokens += increment.cachedInputTokens ?? 0;
     usage.textOutputTokens += increment.textOutputTokens ?? 0;
+    usage.characters += increment.characters ?? 0;
+    usage.providerCostCents += increment.providerCostCents ?? 0;
     // `usage` é incremento: o custo sai do total somado, e cada linha do extrato leva a diferença.
     // Assim a soma do extrato é sempre o custo da chamada, apesar do arredondamento.
     const total = estimateCostCents(engine.pricing, usage);
@@ -454,6 +456,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     if (engine && problem === undefined && !ending) {
       const connecting = engine.connect(
         {
+          direction: call.direction,
           instructions: overrides?.instructions ?? agent.instructions,
           // O aviso vem antes de tudo, e os motores falam a abertura ao conectar: o aviso entra
           // na frente da saudação. Lição do DeskcommCRM: na ligação recebida quem atende fala
@@ -518,6 +521,14 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     });
     guard = silenceGuard;
     session.on("callerActivity", (signal) => silenceGuard.callerActivity(signal));
+    session.on("answeringMachine", (detection) => {
+      if (call.direction !== "outbound" || detection.verdict === "human" || ending) return;
+      transport.clearAudio();
+      void finish({
+        status: "completed",
+        endReason: detection.verdict === "machine" ? "answering_machine" : "no_human_response",
+      });
+    });
     session.on("audio", (pcm) => {
       silenceGuard.agentAudio(pcm.length / PCM16_8K_BYTES_PER_MS);
       if (ending) return;
