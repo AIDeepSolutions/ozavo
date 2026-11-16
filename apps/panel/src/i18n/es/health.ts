@@ -29,6 +29,7 @@ const health: HealthDictionary = {
     panel_ok: "respondiendo",
     database_ok: "respondiendo",
     database_down: "la base de datos no respondió al panel",
+    database_bypasses_rls: "el panel se conecta a la base de datos con un rol que ignora el aislamiento entre organizaciones (superusuario o BYPASSRLS): una empresa puede ver los datos de otra",
     voice_ok: "respondiendo",
     voice_down: "el proceso de voz no respondió al panel: ninguna llamada se atiende",
     telephony_ok: "el proceso de voz está conectado a Asterisk",
@@ -74,6 +75,7 @@ const health: HealthDictionary = {
   },
   actions: {
     database_down: "Revisa en el servidor si Postgres está en pie y si hay disco libre. La revisión de salud muestra las dos cosas:",
+    database_bypasses_rls: "Apunta DATABASE_URL al rol ozavo_app, que no tiene BYPASSRLS ni es dueño de las tablas. La conexión del dueño de la base de datos sirve solo para las migraciones.",
     voice_down: "Revisa en el servidor el proceso de voz. La revisión de salud dice si el contenedor está detenido; sus registros dicen por qué:",
     telephony_down: "La causa más común es que Asterisk no leyó la configuración. Ejecuta de nuevo el instalador en el servidor, en la carpeta de Ozavo; conserva lo que ya existe:",
     routines_not_listening: "El proceso de rutinas se detuvo o perdió la conexión con la base de datos. Reinícialo en el servidor, en la carpeta de Ozavo; si se cae de nuevo, sus registros dicen por qué:",

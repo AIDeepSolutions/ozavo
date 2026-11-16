@@ -62,6 +62,7 @@ const common = {
     invalid_rcd_logo: "A imagem não pôde ser convertida. Envie PNG, JPEG ou BMP com até 8 MB.",
     fallback: "Não conseguimos concluir essa ação. Tente de novo em instantes.",
     platform_scope: "Só a organização que administra esta instalação cria chave que provisiona empresas.",
+    platform_only: "Só a organização que administra esta instalação altera plano e limites de operação.",
     agenda_not_google: "Salve a agenda do Google antes de autorizar.",
     network: "O painel não respondeu. Confira sua conexão e tente de novo.",
     internal_error: "Tivemos um problema no servidor. Nada foi alterado. Tente de novo em instantes.",

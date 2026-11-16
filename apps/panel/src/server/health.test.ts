@@ -83,7 +83,13 @@ describe("whatsapp line", () => {
 
 describe("panel, voice and the lines that ask the voice process", () => {
   it("separates the voice process from its link to Asterisk", () => {
-    expect([databaseLine(true), databaseLine(false)].map(brief)).toEqual(["ok database_ok", "fail database_down"]);
+    expect([databaseLine(true), databaseLine(false), databaseLine(true, false), databaseLine(true, true), databaseLine(false, true)].map(brief)).toEqual([
+      "ok database_ok",
+      "fail database_down",
+      "ok database_ok",
+      "fail database_bypasses_rls",
+      "fail database_down",
+    ]);
     expect([voiceLine(voice("ok")), voiceLine(null)].map(brief)).toEqual(["ok voice_ok", "fail voice_down"]);
     expect([telephonyLine(voice("ok")), telephonyLine(voice("fail")), telephonyLine(null)].map(brief)).toEqual(["ok telephony_ok", "fail telephony_down", "warn needs_voice"]);
   });

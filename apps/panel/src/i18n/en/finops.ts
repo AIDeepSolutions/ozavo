@@ -41,6 +41,7 @@ const finops: FinopsDictionary = {
   dayMinutes: "{n} min",
   dayCalls: "Calls: {n}",
   planTitle: "Contracted plan",
+  platformOnly: "The plan and the operation limits are set by the organization that runs this installation. Here you follow what was contracted.",
   planLead: "The plan sets the minute allowance, what happens when it runs out and how many calls fit at the same time.",
   plan: "Plan",
   plans: {

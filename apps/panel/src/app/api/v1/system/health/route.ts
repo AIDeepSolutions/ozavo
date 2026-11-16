@@ -1,4 +1,4 @@
-import { queueHealth, withOrg, withSystem, type OrgQuery } from "@ozavo/core";
+import { appRoleBypassesRls, queueHealth, withOrg, withSystem, type OrgQuery } from "@ozavo/core";
 import { ApiError, SESSION_COOKIE, findSession, handlePublic, readCookie, type Session } from "../../../../../server/context";
 import { keyCheckSetting, readKeyCheck } from "../../../../../server/engine-key";
 import { agentLine, anonymousEngineLine, databaseLine, engineLine, healthReport, panelLine, routinesLine, telephonyLine, trunkLine, voiceLine, whatsappCallsLine, whatsappLine, type EngineKeys, type HealthCheck, type HealthId } from "../../../../../server/health";
@@ -40,7 +40,10 @@ export const GET = handlePublic({}, async ({ request, deps }) => {
   const token = readCookie(request, SESSION_COOKIE);
   let session: Session | null = null;
   let engineKeys: EngineKeys | null = null;
+  let bypassesRls = false;
   try {
+    // O papel da conexão de aplicação, não o do sistema: é por ela que passa todo `withOrg`.
+    bypassesRls = await appRoleBypassesRls(deps.db);
     // A sessão vem antes do motor: com ela, as chaves e os testes são só da organização dela; sem
     // ela, a soma da instalação, que a linha pública mostra sem detalhe.
     session = await findSession(deps, token);
@@ -51,7 +54,7 @@ export const GET = handlePublic({}, async ({ request, deps }) => {
     process.stderr.write(`[panel] health: the database did not answer: ${error instanceof Error ? error.message : String(error)}\n`);
   }
   const database = engineKeys !== null;
-  lines.database = databaseLine(database);
+  lines.database = databaseLine(database, bypassesRls);
   // A sessão achada com o banco caindo logo depois: as linhas da organização dizem por que faltam.
   if (!database) session = null;
 

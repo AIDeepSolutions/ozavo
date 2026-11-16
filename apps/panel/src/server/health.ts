@@ -50,7 +50,14 @@ const minutes = (from: Date, to: Date): number => (to.getTime() - from.getTime()
 
 export const panelLine = (): HealthCheck => ok("panel_ok");
 
-export const databaseLine = (answered: boolean): HealthCheck => (answered ? ok("database_ok") : fail("database_down"));
+/**
+ * `bypassesRls`: a conexão de aplicação usa um papel que contorna o RLS. O banco responde, mas o
+ * isolamento entre organizações não vale, e isso é falha, nunca aviso.
+ */
+export const databaseLine = (answered: boolean, bypassesRls = false): HealthCheck => {
+  if (!answered) return fail("database_down");
+  return bypassesRls ? fail("database_bypasses_rls") : ok("database_ok");
+};
 
 /** `null`: o processo de voz não respondeu. */
 export const voiceLine = (voice: VoiceHealth | null): HealthCheck => (voice ? ok("voice_ok") : fail("voice_down"));

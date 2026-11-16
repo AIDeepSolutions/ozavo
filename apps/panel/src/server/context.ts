@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { DEFAULT_RECORDINGS_DIR, createDb, hashToken, loadConfig, systemClock, verifyPassword, withOrg, withSystem, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { DEFAULT_RECORDINGS_DIR, createDb, hashToken, isPlatformOrganization, loadConfig, systemClock, verifyPassword, withOrg, withSystem, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { wahaFromEnv, type WahaOptions } from "@ozavo/tools/waha";
 import type { z, ZodType } from "zod";
 import { trustedProxyHops } from "./client-ip";
@@ -205,6 +205,12 @@ interface HandleOptions<S extends ZodType, R> {
   /** Rota que altera configuração: só `owner` e `admin`. */
   configure?: boolean;
   /**
+   * Rota comercial (plano, franquia, limites da conta compartilhada): além de `configure`, só a
+   * organização que administra a instalação (`organizations.platform`). Uma empresa cliente lê,
+   * mas não grava: senão ela mesma subiria a própria franquia ou afrouxaria as travas.
+   */
+  platform?: boolean;
+  /**
    * Roda antes de abrir a transação, já com a sessão, o papel e a entrada conferidos. É onde cabe
    * uma consulta de rede de que a rota depende: destino lento não segura conexão do banco.
    */
@@ -225,14 +231,19 @@ export function handle<S extends ZodType = ZodType<undefined>, R = unknown>(
     try {
       const deps = serverDeps();
       const session = await requireSession(request, deps);
-      if (options.configure) requireRole(session);
+      if (options.configure || options.platform) requireRole(session);
       const params = (await context.params) ?? {};
       // Id malformado nunca chega ao banco: para quem chama, é só um registro que não existe.
       if (params.id !== undefined && !UUID.test(params.id)) throw new ApiError(404, "not_found", "Not found.");
       const base: Base<z.output<S>> = { session, params, body: await parseBody(request, options.body), url: new URL(request.url), deps };
       if (options.before) await options.before(base);
       const org = <T>(run: (q: OrgQuery) => Promise<T>): Promise<T> => withOrg(deps.db, session.organizationId, run);
-      const result = await org((q) => fn({ ...base, q }));
+      const result = await org(async (q) => {
+        if (options.platform && !(await isPlatformOrganization(q))) {
+          throw new ApiError(403, "platform_only", "Only the organization that runs this installation can change plans and operation limits.");
+        }
+        return fn({ ...base, q });
+      });
       return success(options.after ? await options.after(result, { ...base, org }) : result);
     } catch (error) {
       return failure(error);

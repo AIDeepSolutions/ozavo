@@ -1,4 +1,4 @@
-import { enqueueTask, listenTasks, withOrg, withSystem } from "@ozavo/core";
+import { createDb, enqueueTask, listenTasks, withOrg, withSystem } from "@ozavo/core";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AGENT_TOKEN, call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import type { HealthLine, HealthStatus } from "../../../server/health";
@@ -49,6 +49,24 @@ const routinesRunning = async (): Promise<void> => {
 const speak = () => call(agent, { method: "POST", body: { version: "0.1.0" }, headers: { authorization: `Bearer ${AGENT_TOKEN}` } });
 
 describe("system health", () => {
+  it("the panel connected with a role that bypasses RLS is a database failure, not a working database", async () => {
+    await routinesRunning();
+    expect(line(await read(), "database")).toBe("ok database_ok");
+    // DATABASE_URL apontada para um papel com BYPASSRLS: o banco responde, mas o isolamento não vale.
+    const systemUrl = process.env.TEST_SYSTEM_DATABASE_URL ?? "";
+    const bypassing = createDb(systemUrl, systemUrl);
+    const original = panel.deps.db;
+    panel.deps.db = bypassing;
+    try {
+      const report = await read();
+      expect(line(report, "database")).toBe("fail database_bypasses_rls");
+      expect(report.worst).toBe("fail");
+    } finally {
+      panel.deps.db = original;
+      await bypassing.close();
+    }
+  });
+
   it("without a session: the installation's parts, in order, each also under its id for the terminal check", async () => {
     await routinesRunning();
     const report = await read();
