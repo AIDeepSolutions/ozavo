@@ -13,14 +13,14 @@ Calma e precisa, na identidade visual oficial do Ozavo (manual da marca v1.0, ap
 16/11/2026 por pedido do dono): Deep Navy no texto e nos fundos escuros, Cyber Blue no que está
 ativo, Digital Teal nos indicadores de áudio, branco e Ice Slate nas superfícies. Cores sólidas,
 sem degradê e sem roxo. O acento continua marcando o que está vivo. A estrutura das telas (fio da
-linha do tempo, componentes, espaço) vem da família do DeskcommCRM, decidida na fundação
+linha do tempo, componentes, espaço) foi decidida na fundação, a partir do DeskcommCRM
 ([desenho da fundação](../specs/2026-11-10-fundacao-design.md), "Decisões do construtor").
 
 ## Do que ela é feita
 
 | Peça | Onde mora | O que faz |
 |---|---|---|
-| Cores | [`apps/panel/src/design/tokens.css`](../../apps/panel/src/design/tokens.css) | A fonte única. Cada cor é um token `--dv-*` com `light-dark()`: o tema segue o sistema, e `data-theme` no `<html>` força claro ou escuro. Superfícies (`bg` branco, `sunken` Ice Slate, `surface`, `line`), texto (`text` Deep Navy, `muted`), acento (`accent`: Cyber Blue no claro, Digital Teal no escuro, e variações), sinal de áudio (`signal`, Digital Teal) e estados (`ok`, `warn`, `fail`, cada um com a versão `-soft` para fundo) |
+| Cores | [`apps/panel/src/design/tokens.css`](../../apps/panel/src/design/tokens.css) | A fonte única. Cada cor é um token `--oz-*` com `light-dark()`: o tema segue o sistema, e `data-theme` no `<html>` força claro ou escuro. Superfícies (`bg` branco, `sunken` Ice Slate, `surface`, `line`), texto (`text` Deep Navy, `muted`), acento (`accent`: Cyber Blue no claro, Digital Teal no escuro, e variações), sinal de áudio (`signal`, Digital Teal) e estados (`ok`, `warn`, `fail`, cada um com a versão `-soft` para fundo) |
 | Ponte para o Tailwind | [`apps/panel/src/app/globals.css`](../../apps/panel/src/app/globals.css) | `--color-*: initial` apaga a paleta padrão do Tailwind, e cada token vira uma classe: `bg-surface`, `text-ink`, `text-muted`, `border-line`, `bg-accent` |
 | Texto | [`apps/panel/src/app/fonts/`](../../apps/panel/src/app/fonts/) | Inter (400, 500, 600, 700 e 800, com itálico 400) em tudo, com a reserva do manual: Segoe UI, Helvetica Neue, Arial. 800 nos títulos de página, 700 em subtítulos e cabeçalhos de tabela, 400 no corpo |
 | Marca | [`apps/panel/src/ui/brand.tsx`](../../apps/panel/src/ui/brand.tsx) e [`apps/panel/public/brand/`](../../apps/panel/public/brand/) | O logo horizontal oficial (positivo no claro, negativo no escuro), com a área de proteção do manual em volta, no cabeçalho e nas telas de entrada, convite e link público. A assinatura "Ozavo — Uma solução AI Deep Solutions" no rodapé dessas telas. Favicon e ícones só com o símbolo, de 16 a 1024 px |
@@ -58,12 +58,12 @@ Nenhuma cerca refaz essa conta: um token novo precisa ser conferido por quem o c
 | Escrever cor como valor (`#fff`, `rgb(`, `hsl(`, `oklch(`) num `.ts` ou `.tsx` do painel | A cor fica fora dos dois temas e da fonte única, e quem muda um token não a encontra. Cor nova vira token em `tokens.css`, com a ponte em `globals.css` | Cerca [`panel-colors-come-from-tokens`](../../fences/panel-colors-come-from-tokens.test.ts) |
 | Usar a paleta padrão do Tailwind (`bg-white`, `text-gray-500`) | Ela não acompanha o tema nem a família. Não é preciso lembrar: a classe não gera estilo nenhum | Configuração: `--color-*: initial` em `globals.css` |
 | Baixar fonte de fora (`next/font/google`, o serviço de fontes num CSS ou numa tela) | Sem acesso ao serviço, a imagem do painel não constrói; e o download passaria para o navegador de quem usa | Cerca [`fonts-are-vendored`](../../fences/fonts-are-vendored.test.ts) |
-| Trazer outra família de fonte | Duas famílias, uma para texto e uma para dado, já cobrem o painel; uma terceira quebra a voz da família do Deskcomm | Revisão |
+| Trazer outra família de fonte | Duas famílias, uma para texto e uma para dado, já cobrem o painel; uma terceira dilui a tipografia do manual, que é Inter | Revisão |
 | Usar degradê, ou roxo, violeta e magenta | O manual da marca proíbe. A ponta viva do fio é um trecho sólido, não um degradê | Revisão |
 | Pôr sombra, contorno ou efeito no logo, redesenhá-lo ou escrevê-lo em maiúsculas | O manual da marca proíbe. Use `BrandLogo`, que leva o arquivo oficial | Revisão |
 | Usar o acento fora do que está vivo ou da ação principal | Se tudo é acento, nada está vivo: quem opera perde o sinal de que há uma chamada ou um pedido esperando | Revisão |
 | Pôr sombra no que não flutua, ou sombra em preto puro | A sombra diz "isto está por cima". As sombras do painel usam a cor do texto neutro | Revisão |
-| Criar animação sem o caminho de movimento reduzido, ou estado que só existe em movimento | Com `prefers-reduced-motion`, as animações param, e o que estava vivo continua visível parado (barras em cobre, anel aberto). Estado novo precisa do mesmo | Revisão |
+| Criar animação sem o caminho de movimento reduzido, ou estado que só existe em movimento | Com `prefers-reduced-motion`, as animações param, e o que estava vivo continua visível parado (barras em Digital Teal, anel aberto). Estado novo precisa do mesmo | Revisão |
 | Escrever texto de tela fora do dicionário | Toda frase existe em pt-BR, inglês e espanhol | Cerca [`ui-text-lives-in-dictionaries`](../../fences/ui-text-lives-in-dictionaries.test.ts) |
 | Redesenhar o símbolo ou recompor o nome | A marca tem arquivo pronto | [`brand/README.md`](../../brand/README.md), "O que não fazer" |
 
