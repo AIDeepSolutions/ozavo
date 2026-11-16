@@ -1,4 +1,4 @@
-import { appRoleBypassesRls, queueHealth, withOrg, withSystem, type OrgQuery } from "@ozavo/core";
+import { appRoleBypassesRls, dbTransport, queueHealth, withOrg, withSystem, type OrgQuery } from "@ozavo/core";
 import { ApiError, SESSION_COOKIE, findSession, handlePublic, readCookie, type Session } from "../../../../../server/context";
 import { keyCheckSetting, readKeyCheck } from "../../../../../server/engine-key";
 import { agentLine, anonymousEngineLine, databaseLine, engineLine, healthReport, panelLine, routinesLine, telephonyLine, trunkLine, voiceLine, whatsappCallsLine, whatsappLine, type EngineKeys, type HealthCheck, type HealthId } from "../../../../../server/health";
@@ -54,7 +54,7 @@ const report = handlePublic({}, async ({ request, deps }) => {
     process.stderr.write(`[panel] health: the database did not answer: ${error instanceof Error ? error.message : String(error)}\n`);
   }
   const database = engineKeys !== null;
-  lines.database = databaseLine(database, bypassesRls);
+  lines.database = databaseLine(database, bypassesRls, dbTransport(deps.db));
   // A sessão achada com o banco caindo logo depois: as linhas da organização dizem por que faltam.
   if (!database) session = null;
 

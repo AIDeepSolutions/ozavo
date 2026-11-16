@@ -10,6 +10,9 @@ export interface Db {
   pool: Pool;
   /** Pool do papel de sistema (`ozavo_system`), que atravessa organizações. Só `withSystem` usa. */
   systemPool?: Pool;
+  /** Endereços das conexões, para a saúde dizer se alguma atravessa a rede sem TLS verificado. */
+  appUrl?: string;
+  systemUrl?: string;
   close(): Promise<void>;
 }
 

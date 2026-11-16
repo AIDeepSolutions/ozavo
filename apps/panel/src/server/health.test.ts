@@ -90,6 +90,12 @@ describe("panel, voice and the lines that ask the voice process", () => {
       "fail database_bypasses_rls",
       "fail database_down",
     ]);
+    expect([databaseLine(true, false, "verified"), databaseLine(true, false, "unverified"), databaseLine(true, false, "plaintext"), databaseLine(true, true, "plaintext")].map(brief)).toEqual([
+      "ok database_ok",
+      "warn database_tls_unverified",
+      "fail database_plaintext",
+      "fail database_bypasses_rls",
+    ]);
     expect([voiceLine(voice("ok")), voiceLine(null)].map(brief)).toEqual(["ok voice_ok", "fail voice_down"]);
     expect([telephonyLine(voice("ok")), telephonyLine(voice("fail")), telephonyLine(null)].map(brief)).toEqual(["ok telephony_ok", "fail telephony_down", "warn needs_voice"]);
   });

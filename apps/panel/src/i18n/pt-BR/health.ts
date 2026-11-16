@@ -29,6 +29,8 @@ const health = {
     database_ok: "respondendo",
     database_down: "o banco não respondeu ao painel",
     database_bypasses_rls: "o painel conecta ao banco com um papel que ignora o isolamento entre organizações (superusuário ou BYPASSRLS): uma empresa pode enxergar os dados de outra",
+    database_plaintext: "o banco está fora deste servidor e a conexão não usa TLS: senha e dados de cliente atravessam a rede em texto puro",
+    database_tls_unverified: "a conexão com o banco é cifrada, mas sem conferir o certificado do servidor",
     voice_ok: "respondendo",
     voice_down: "o processo de voz não respondeu ao painel: nenhuma ligação é atendida",
     telephony_ok: "o processo de voz está conectado ao Asterisk",
@@ -79,6 +81,8 @@ const health = {
   actions: {
     database_down: "Confira no servidor se o Postgres está de pé e se há disco livre. A checagem de saúde mostra as duas coisas:",
     database_bypasses_rls: "Aponte DATABASE_URL para o papel ozavo_app, que não tem BYPASSRLS nem é dono das tabelas. A conexão do dono do banco serve só para as migrations.",
+    database_plaintext: "Acrescente sslmode=verify-full a DATABASE_URL e a SYSTEM_DATABASE_URL. Se o provedor usa uma autoridade própria, informe também sslrootcert com o certificado dela.",
+    database_tls_unverified: "Troque o sslmode de DATABASE_URL e de SYSTEM_DATABASE_URL por verify-full, para o painel só conectar ao servidor com o certificado certo.",
     voice_down: "Confira no servidor o processo de voz. A checagem de saúde diz se o contêiner está parado; os registros dele dizem por quê:",
     telephony_down: "A causa mais comum é o Asterisk não ter lido a configuração. Rode o instalador de novo no servidor, na pasta do Ozavo; ele mantém o que já existe:",
     routines_not_listening: "O processo de rotinas parou ou perdeu a conexão com o banco. Reinicie-o no servidor, na pasta do Ozavo; se ele cair de novo, os registros dizem por quê:",

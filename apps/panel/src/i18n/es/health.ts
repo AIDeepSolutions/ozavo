@@ -30,6 +30,8 @@ const health: HealthDictionary = {
     database_ok: "respondiendo",
     database_down: "la base de datos no respondió al panel",
     database_bypasses_rls: "el panel se conecta a la base de datos con un rol que ignora el aislamiento entre organizaciones (superusuario o BYPASSRLS): una empresa puede ver los datos de otra",
+    database_plaintext: "la base de datos está fuera de este servidor y la conexión no usa TLS: contraseñas y datos de clientes cruzan la red en texto plano",
+    database_tls_unverified: "la conexión con la base de datos está cifrada, pero sin comprobar el certificado del servidor",
     voice_ok: "respondiendo",
     voice_down: "el proceso de voz no respondió al panel: ninguna llamada se atiende",
     telephony_ok: "el proceso de voz está conectado a Asterisk",
@@ -76,6 +78,8 @@ const health: HealthDictionary = {
   actions: {
     database_down: "Revisa en el servidor si Postgres está en pie y si hay disco libre. La revisión de salud muestra las dos cosas:",
     database_bypasses_rls: "Apunta DATABASE_URL al rol ozavo_app, que no tiene BYPASSRLS ni es dueño de las tablas. La conexión del dueño de la base de datos sirve solo para las migraciones.",
+    database_plaintext: "Agrega sslmode=verify-full a DATABASE_URL y a SYSTEM_DATABASE_URL. Si el proveedor usa una autoridad propia, indica también sslrootcert con su certificado.",
+    database_tls_unverified: "Cambia el sslmode de DATABASE_URL y de SYSTEM_DATABASE_URL a verify-full, para que el panel solo se conecte al servidor con el certificado correcto.",
     voice_down: "Revisa en el servidor el proceso de voz. La revisión de salud dice si el contenedor está detenido; sus registros dicen por qué:",
     telephony_down: "La causa más común es que Asterisk no leyó la configuración. Ejecuta de nuevo el instalador en el servidor, en la carpeta de Ozavo; conserva lo que ya existe:",
     routines_not_listening: "El proceso de rutinas se detuvo o perdió la conexión con la base de datos. Reinícialo en el servidor, en la carpeta de Ozavo; si se cae de nuevo, sus registros dicen por qué:",
