@@ -1,7 +1,23 @@
 # OZAVO — STATUS DE EXECUÇÃO
 
 > Atualizado sempre que algo muda. Quem lê: o agente (sempre) e o Macgyver (quando quiser).
-> Última atualização: 16/11/2026 ~07h50 UTC (16/11 04h50 BRT)
+> Última atualização: 16/11/2026 ~21h30 UTC (16/11 18h30 BRT), reconciliado depois da auditoria.
+
+## Estado atual (vale sobre as seções abaixo, que ficam como histórico)
+
+- Fases 1, 2, 3 e 4 estão na `main` (PRs #3, #5 e #6). As correções de segurança P0 da auditoria
+  (RLS anulado em produção e só a plataforma muda plano) entraram no PR #7.
+- Banco (Supabase): as 29 migrations da `main` estão aplicadas; a conexão usa `ozavo_app` e
+  `ozavo_system` com `sslmode=verify-full`. O ramo `feat/p2-auditoria` traz mais três migrations
+  aditivas, ainda **não aplicadas**: `20261116T211700`, `20261116T212500` e `20261116T213500`.
+- Coolify: o painel e, desde 16/11 ~21h UTC, as **rotinas** (segunda aplicação, alvo `routines`)
+  estão no ar; a saúde mostra `routines_ok`. Voz e Asterisk **não** sobem sem o número (tronco)
+  homologado, e por isso a saúde segue com `voice_down`. Ver
+  [docs/guides/producao-coolify.md](docs/guides/producao-coolify.md).
+- Inter já está versionada no painel (fonte local).
+- Bloqueado pelo número: ligação real, homologação de TLS/SRTP, PAI e RCD com a operadora.
+- Os bloqueios antigos das seções "BLOQUEIOS / PENDÊNCIAS" e "A FAZER" abaixo estão resolvidos,
+  salvo o que está nesta seção.
 
 ## ✅ FEITO
 - Supabase: conexão testada + **25 tabelas, 23 migrations aplicadas** (16/11 04h00)
