@@ -57,6 +57,13 @@ render_asterisk_config
 equal "a chave antiga 644 é fechada na atualização" 600 "$(mode_of "$G/tls/server.key")"
 equal "fechar a chave não troca o par" "$before" "$(cksum < "$G/tls/server.key")"
 check "par válido não é renovado nem reinicia o Asterisk" test ! -f "$G/.tls-rotated"
+# A chave já fechada numa passada anterior (dona: o usuário do Asterisk) não é mais de quem roda o
+# instalador: mexer na permissão dela falharia. A atualização seguinte passa sem tocá-la. Achado no CI.
+mkdir -p "$SANDBOX/nochmod"
+printf '#!/usr/bin/env bash\ncase "$*" in *server.key*) echo "chmod: Operation not permitted" >&2; exit 1 ;; esac\nexec /bin/chmod "$@"\n' > "$SANDBOX/nochmod/chmod"
+/bin/chmod +x "$SANDBOX/nochmod/chmod"
+( PATH="$SANDBOX/nochmod:$PATH"; source "$KIT/_common.sh"; render_asterisk_config ) >/dev/null 2>&1
+equal "chave já do Asterisk: a passada seguinte não falha" 0 "$?"
 # Sem poder passar a chave ao usuário do Asterisk (uid de outro e sudo pedindo senha): fica 644 para o
 # TLS continuar subindo, e o aviso diz o comando.
 touch "$FAKE_DIR/sudo_fail"

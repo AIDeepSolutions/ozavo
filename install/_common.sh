@@ -318,12 +318,18 @@ tls_cert_valid_for() {  # tls_cert_valid_for <certificado> <dias>: 0 se ainda va
 # nem sempre tem o uid 1000; sem poder trocar o dono (nem pelo sudo sem senha), a chave fica 644,
 # legível por outros usuários da VPS, para o SIP sobre TLS continuar subindo, e o aviso diz o comando.
 secure_tls_key() {  # secure_tls_key <chave>
-  local key="$1"
+  local key="$1" owner
   [ -f "$key" ] || return 0
-  if [ "$(id -u)" = "$ASTERISK_UID" ]; then chmod 600 "$key"; return 0; fi
-  chmod 600 "$key"
-  if chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo -n chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null; }; then return 0; fi
-  chmod 644 "$key"
+  owner="$(stat -c %u "$key" 2>/dev/null || stat -f %u "$key")"
+  # Já fechada numa passada anterior (inclusive pelo sudo): não há o que mexer, e quem roda pode nem
+  # ser mais o dono do arquivo.
+  if [ "$owner" = "$ASTERISK_UID" ] && [ "$(mode_of_file "$key")" = 600 ]; then return 0; fi
+  if [ "$(id -u)" = "$ASTERISK_UID" ] && chmod 600 "$key" 2>/dev/null; then return 0; fi
+  if { chmod 600 "$key" 2>/dev/null && chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null; } \
+    || { command -v sudo >/dev/null 2>&1 && sudo -n chown "$ASTERISK_UID:$ASTERISK_UID" "$key" 2>/dev/null && sudo -n chmod 600 "$key" 2>/dev/null; }; then
+    return 0
+  fi
+  chmod 644 "$key" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo -n chmod 644 "$key" 2>/dev/null; } || true
   warn "A chave do SIP sobre TLS ficou legível por outros usuários desta VPS: não consegui passá-la ao usuário do Asterisk (uid $ASTERISK_UID). Rode: sudo chown $ASTERISK_UID:$ASTERISK_UID $key && sudo chmod 600 $key"
 }
 # O que mudou num arquivo que o Asterisk já tinha fica anotado em ASTERISK_PENDING, para
