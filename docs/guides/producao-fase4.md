@@ -20,8 +20,12 @@ precisam de `sslmode=verify-full`; as três URLs precisam da conexão de sessão
 (hexadecimal de 32 bytes), a mesma chave da instalação. Não passe segredos em argumentos nem
 salve esse JSON no repositório. Não use credenciais de produção em testes.
 
-Sem `s3`, o preparo gera credenciais e habilita o perfil MinIO interno. Com `s3`, informe `endpoint`
-HTTPS, `bucket`, `region`, `accessKeyId`, `secretAccessKey`; o MinIO fica fora da composição ativa.
+**Em produção, use S3 gerenciado**: informe `s3` com `endpoint` HTTPS, `bucket`, `region`,
+`accessKeyId`, `secretAccessKey`; o MinIO fica fora da composição ativa. O MinIO da composição é um
+espelho não oficial (`dappros/minio`, fixado por digest), porque a imagem oficial deixou de ser
+pública: em 16/11/2026 o Docker Hub respondia "object not found" para `minio/minio` e o quay.io
+pedia autenticação. Ele serve para bancada, e o preparo só o liga com `localMinio: true` explícito;
+sem `s3` nem `localMinio`, o preparo recusa. Nesse caso ele gera as credenciais do MinIO interno.
 Credenciais S3 externas devem permitir apenas o bucket do Ozavo. Não habilite versionamento ou
 retenção imutável sem um mecanismo que também apague versões antigas no prazo e a pedido do titular.
 O aplicativo não remove versões anteriores nem remove backups fora desse bucket.
