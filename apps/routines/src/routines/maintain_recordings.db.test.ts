@@ -23,7 +23,10 @@ it("90 dias sem configuração: expurga só o vencido, cifra legado, copia S3 e 
     for (const [organizationId, callId, at] of [[org, expired, expiredAt], [org, recent, recentAt], [foreign, other, expiredAt]] as const) {
       await withSystem(app, q => q.exec("update calls set ended_at = $2 where id = $1", [callId, at]));
       const file = recordingPath(dir, organizationId, callId); await mkdir(dirname(file), { recursive: true });
-      await writeFile(file, wav); await utimes(file, at, at);
+      await writeFile(file, wav);
+      // Cópia restaurada renova mtime do vencido; a recente pode ter mtime antigo.
+      const modified = callId === expired ? t0 : callId === recent ? expiredAt : at;
+      await utimes(file, modified, modified);
     }
     const copied: string[] = []; const removed: string[] = [];
     const deps = depsFor(app, { recordingsDir: dir, recordingArchive: {
@@ -43,5 +46,22 @@ it("90 dias sem configuração: expurga só o vencido, cifra legado, copia S3 e 
     expect(scheduled).toEqual([{ run_at: new Date(t0.getTime() + 86400000) }]);
     const events = await withOrg(app, org, q => q.many<{ kind: string }>("select kind from organization_events where kind = 'recordings_purged'"));
     expect(events).toEqual([{ kind: "recordings_purged" }]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+
+it("a manutenção corrige o arquivo local de chamada apagada, mesmo com mtime novo e sem cópia remota", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-erased-maintenance-"));
+  try {
+    const org = await createOrganization(app, "erased audio maintenance");
+    const callId = await createCall(app, org, t0);
+    await withOrg(app, org, q => q.exec("update calls set ended_at = $2, erased_at = $2 where id = $1", [callId, t0]));
+    const file = recordingPath(dir, org, callId);
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "legacy erased audio");
+    await writeFile(`${file}.part`, "partial erased audio");
+    await utimes(file, t0, t0);
+    await maintenance.run(task(org, "maintain_recordings"), depsFor(app, { recordingsDir: dir }));
+    expect(await readdir(dirname(file))).toEqual([]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

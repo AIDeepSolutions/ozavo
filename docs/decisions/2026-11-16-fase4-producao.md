@@ -8,7 +8,7 @@ local para quem instala o projeto original. Isto é a exceção autorizada ao an
 A mudança não aplica nada no banco remoto nem implanta a composição.
 
 As conexões de aplicação, sistema e migration continuam distintas. O papel de aplicação tem RLS;
-o de sistema atravessa organizações nos caminhos já auditados. LISTEN requer conexão direta ou
+o de sistema atravessa organizações nos caminhos já auditados. LISTEN usa a conexão de aplicação (`DATABASE_URL`): ela também requer conexão direta ou
 pooler em modo sessão (5432), nunca o pooler transacional (6543). Todas as URLs geradas exigem
 `sslmode=verify-full`. Não se deve usar o papel de dono do banco para a aplicação.
 

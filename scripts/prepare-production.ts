@@ -8,12 +8,12 @@ import { z } from "zod";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const databaseUrl = z.url().refine(value => {
   const url = new URL(value);
-  return ["postgres:", "postgresql:"].includes(url.protocol) &&
+  return ["postgres:", "postgresql:"].includes(url.protocol) && url.port !== "6543" &&
     /\.(supabase\.co|supabase\.com)$/.test(url.hostname) && url.searchParams.get("sslmode") === "verify-full";
 });
 export const productionInput = z.object({
   databaseUrl: databaseUrl.refine(value => /^ozavo_app(?:\.[a-zA-Z0-9_-]+)?$/.test(decodeURIComponent(new URL(value).username))),
-  systemDatabaseUrl: databaseUrl.refine(value => new URL(value).port !== "6543" && /^ozavo_system(?:\.[a-zA-Z0-9_-]+)?$/.test(decodeURIComponent(new URL(value).username)), "LISTEN needs a session connection with the system role"),
+  systemDatabaseUrl: databaseUrl.refine(value => new URL(value).port !== "6543" && /^ozavo_system(?:\.[a-zA-Z0-9_-]+)?$/.test(decodeURIComponent(new URL(value).username)), "must use a session connection with the system role"),
   migrationDatabaseUrl: databaseUrl.refine(value => new URL(value).port !== "6543"),
   publicUrl: z.url().refine(value => new URL(value).protocol === "https:"),
   publicIp: z.ipv4(),
@@ -42,6 +42,7 @@ export async function prepareProduction(target: string, input: unknown): Promise
   await mkdir(target, { mode: 0o700 }); // EEXIST recusa sobrescrever uma instalação.
   const generated = join(target, "asterisk/generated");
   await mkdir(join(generated, "tls"), { recursive: true });
+  await chmod(join(generated, "tls"), 0o755);
   const ari = hex();
   const accessKeyId = data.s3?.accessKeyId ?? randomBytes(16).toString("hex");
   const secretAccessKey = data.s3?.secretAccessKey ?? hex();
@@ -62,11 +63,15 @@ export async function prepareProduction(target: string, input: unknown): Promise
   const replacements: Record<string, string> = { PUBLIC_IP: data.publicIp, ARI_PASSWORD: ari, RTP_START: "10000", RTP_END: "10200" };
   for (const [template, name] of [["extensions.conf", "extensions.conf"], ["http.conf", "http.conf"], ["ari.conf.tmpl", "ari.conf"], ["rtp.conf.tmpl", "rtp.conf"], ["pjsip.production.conf.base", "pjsip.conf"]]) {
     const source = await readFile(join(root, "deploy/asterisk", template ?? ""), "utf8");
-    await writeFile(join(generated, name ?? ""), source.replace(/\$\{([A-Z_]+)\}/g, (original: string, key: string) => replacements[key] ?? original), { mode: 0o644 });
+    const file = join(generated, name ?? "");
+    await writeFile(file, source.replace(/\$\{([A-Z_]+)\}/g, (original: string, key: string) => replacements[key] ?? original), { mode: 0o644 });
+    await chmod(file, 0o644);
   }
   // O diretório pai 0700 protege a chave; o Asterisk no contêiner precisa ler o bind mount.
   await writeFile(join(generated, "tls/server.crt"), certificate, { mode: 0o644 });
   await writeFile(join(generated, "tls/server.key"), privateKey, { mode: 0o644 });
+  await chmod(join(generated, "tls/server.crt"), 0o644);
+  await chmod(join(generated, "tls/server.key"), 0o644);
   await chmod(generated, 0o700);
   await copyFile(join(root, "deploy/Caddyfile"), join(target, "Caddyfile"));
   const compose = parse(await readFile(join(root, "deploy/docker-compose.supabase.yml"), "utf8"), { merge: true }) as { services: Record<string, { build?: { context: string } }> };

@@ -201,3 +201,21 @@ Sem push, sem deploy, sem conexão nem migration no Supabase de produção.
 Commit de implementação da Fase 4: `e35863b` (local). Em 16/11 às 15h15 UTC o `main` já estava
 em `d371971`, atualizado por outro trabalho durante esta etapa. Este ramo conserva sua base
 `c077dfd`; a Fase 4 não alterou nem integrou o main. Comparar o diff com essa base ao revisar.
+
+
+### Revisão independente e correções (16/11/2026, 15h30 UTC)
+
+A revisão do pane-14 (handoff h-d) reprovou a liberação com três reproduções válidas, apesar de
+verify/tipos e 888 testes de banco terem passado no cluster novo do revisor:
+
+- P1: mtime restaurado mantinha áudio vencido no disco. Corrigido para usar `ended_at`/`erased_at`
+  do banco em disco e S3. mtime agora só é fallback de arquivo órfão. O teste cobre vencido com
+  mtime novo, recente com mtime antigo e chamada apagada ainda presente no disco.
+- P1: `DATABASE_URL` transacional era aceito, mas LISTEN usa esse pool. Corrigido para rejeitar
+  6543 em todas as três URLs, preservando o pool/contagem de listeners existente. Documentação alinhada.
+- P2: umask 077 gerava arquivos ilegíveis ao UID do Asterisk. Corrigido com chmod explícito:
+  configurações/certificado/chave 0644, diretório TLS montado 0755, pai do acervo gerado 0700.
+
+Após as correções: `pnpm verify` saída 0, 61 cercas/889 testes unitários; tipos do painel saída 0;
+dois testes de banco de manutenção passaram, incluindo as regressões. Nenhuma migration nova
+foi necessária. Nova conferência independente das correções está pendente.

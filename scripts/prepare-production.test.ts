@@ -6,7 +6,8 @@ import { parse } from "yaml";
 import { expect, it } from "vitest";
 import { prepareProduction, productionInput } from "./prepare-production";
 
-it("prepara diretório novo com segredos separados, TLS e Compose sem banco local nem migration automática", async () => {
+it.each([0o022, 0o077])("prepara artefatos legíveis no contêiner com umask %s e segredos separados", async mask => {
+  const previousMask = process.umask(mask);
   const dir = await mkdtemp(join(tmpdir(), "ozavo-prepare-"));
   try {
     const tls = join(dir, "tls"); await mkdir(tls);
@@ -20,7 +21,12 @@ it("prepara diretório novo com segredos separados, TLS e Compose sem banco loca
     await prepareProduction(target, input);
     const app = await readFile(join(target, "app.env"), "utf8");
     expect(app).not.toContain("MIGRATION_DATABASE_URL"); expect(app).not.toContain("S3_SECRET_ACCESS_KEY");
+    expect((await stat(target)).mode & 0o777).toBe(0o700);
     expect((await stat(join(target, "app.env"))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(target, "asterisk/generated/tls"))).mode & 0o777).toBe(0o755);
+    for (const file of ["pjsip.conf", "ari.conf", "http.conf", "extensions.conf", "rtp.conf", "tls/server.crt", "tls/server.key"]) {
+      expect((await stat(join(target, "asterisk/generated", file))).mode & 0o777, file).toBe(0o644);
+    }
     const compose = parse(await readFile(join(target, "docker-compose.yml"), "utf8"));
     expect(compose.services.postgres).toBeUndefined();
     expect(compose.services.migrate.profiles).toEqual(["admin"]);
@@ -29,6 +35,8 @@ it("prepara diretório novo com segredos separados, TLS e Compose sem banco loca
     expect(await readFile(join(target, "asterisk/generated/pjsip.conf"), "utf8")).toContain("external_media_address=198.51.100.7");
     await expect(prepareProduction(target, input)).rejects.toThrow();
     expect(await readdir(target)).toContain("archive.env");
-    expect(productionInput.safeParse({ ...input, systemDatabaseUrl: input.systemDatabaseUrl.replace(":5432", ":6543") }).success).toBe(false);
-  } finally { await rm(dir, { recursive: true, force: true }); }
+    for (const field of ["databaseUrl", "systemDatabaseUrl", "migrationDatabaseUrl"] as const) {
+      expect(productionInput.safeParse({ ...input, [field]: input[field].replace(":5432", ":6543") }).success, field).toBe(false);
+    }
+  } finally { process.umask(previousMask); await rm(dir, { recursive: true, force: true }); }
 });

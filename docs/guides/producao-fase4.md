@@ -14,7 +14,7 @@ node --import tsx scripts/prepare-production.ts /caminho/absoluto/novo
 
 Campos obrigatórios: `databaseUrl`, `systemDatabaseUrl`, `migrationDatabaseUrl`, `publicUrl`
 (HTTPS), `publicIp`, `tlsCertificate`, `tlsPrivateKey` (dois caminhos absolutos). As URLs Supabase
-precisam de `sslmode=verify-full`; sistema/migration precisam da conexão de sessão. Use usuários
+precisam de `sslmode=verify-full`; as três URLs precisam da conexão de sessão, incluindo `DATABASE_URL`, usada por LISTEN. Use usuários
 `ozavo_app` e `ozavo_system` já provisionados. Para uma atualização forneça também `secretKey`
 (hexadecimal de 32 bytes), a mesma chave da instalação. Não passe segredos em argumentos nem
 salve esse JSON no repositório. Não use credenciais de produção em testes.
