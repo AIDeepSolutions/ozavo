@@ -16,6 +16,14 @@
  * sonic-3.6, voz padrão, pcm_mulaw 8 kHz: TTFB de 267, 265 e 266 ms. A meta de 100 ms
  * não foi atingida. Protocolo de áudio e `done` confirmados; qualidade perceptiva e ligação
  * telefônica real ainda não verificadas. Reproduzir: scripts/medir-pipeline.ts --live.
+ *
+ * Outra bancada no mesmo dia (5 pedidos por variação) confirmou ainda:
+ *   - `context_id` só aceita letras, números, `_` e `-`; outro caractere volta `error`
+ *     (os ids deste motor, `turn-N` e `say-N`, seguem a regra);
+ *   - a conta de teste tem limite de 2 contextos simultâneos (`concurrency limit of 2`): o
+ *     excedente volta `error`. Pesa no controle de concorrência de chamadas;
+ *   - TTFB de ~265 a ~310 ms (mediana ~305 ms) com ou sem `continue`/`max_buffer_delay_ms`;
+ *     `sonic-3` deu ~333 ms. O ping até a borda é de 3,5 ms: a demora é do provedor.
  */
 import type { Clock } from "@ozavo/core";
 import { z } from "zod";
