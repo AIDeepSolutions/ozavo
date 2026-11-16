@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { recordingPath, withOrg } from "@ozavo/core";
+import { Readable } from "node:stream";
+import { recordingPath, openRecordingAudio, withOrg } from "@ozavo/core";
 import { failure, notFound, requireSession, serverDeps } from "../../../../../../server/context";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -15,9 +15,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const call = await withOrg(deps.db, session.organizationId, (q) => q.one("select id from calls where id = $1", [id]));
     if (!call) throw notFound();
     const file = recordingPath(deps.recordingsDir, session.organizationId, id);
-    const wav = await readFile(file).catch(() => null);
+    const wav = await openRecordingAudio(file, deps.secretKey).catch(() => null);
     if (!wav) throw notFound();
-    return new Response(new Uint8Array(wav), { headers: { "content-type": "audio/wav", "content-length": String(wav.length), "cache-control": "private, no-store" } });
+    return new Response(Readable.toWeb(wav.stream) as ReadableStream<Uint8Array>, { headers: { "content-type": "audio/wav", "content-length": String(wav.size), "cache-control": "private, no-store" } });
   } catch (error) {
     return failure(error);
   }

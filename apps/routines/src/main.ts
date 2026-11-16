@@ -1,4 +1,4 @@
-import { DEFAULT_RECORDINGS_DIR, createDb, loadConfig, systemClock } from "@ozavo/core";
+import { DEFAULT_RECORDINGS_DIR, bootstrapRecordingMaintenance, recordingArchiveFromEnv, createDb, loadConfig, systemClock } from "@ozavo/core";
 import { loadRoutines } from "./load";
 import { createLogger } from "./log";
 import { startRunner } from "./runner";
@@ -8,7 +8,10 @@ const config = loadConfig(process.env);
 const db = createDb(config.databaseUrl, config.systemDatabaseUrl);
 const routines = await loadRoutines();
 
+await bootstrapRecordingMaintenance(db, systemClock.now());
+
 const runner = await startRunner({
+  recordingArchive: recordingArchiveFromEnv(process.env),
   db,
   clock: systemClock,
   secretKey: config.secretKey,

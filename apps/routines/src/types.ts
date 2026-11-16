@@ -1,8 +1,9 @@
-import type { ClaimedTask, Clock, Db } from "@ozavo/core";
+import type { ClaimedTask, Clock, Db, RecordingArchive } from "@ozavo/core";
 import type { WhatsAppDeps } from "@ozavo/tools";
 
 /** O que toda rotina recebe. `fetch`, `lookup` e `waha` existem para o teste não tocar a rede. */
 export interface RoutineDeps extends WhatsAppDeps {
+  recordingArchive?: RecordingArchive;
   db: Db;
   clock: Clock;
   /** Decifra os segredos de `settings`. */

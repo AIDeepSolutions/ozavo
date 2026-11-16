@@ -23,3 +23,7 @@ export * from "./secrets";
 export * from "./vocabulary";
 export * from "./voicemail";
 export * from "./with-org";
+export * from "./recording-crypto";
+export * from "./recording-retention";
+export * from "./recording-archive";
+export * from "./rcd";

@@ -8,6 +8,11 @@
  * Configuração que o operador escolhe não é variável de ambiente: mora em `settings` e tem tela.
  */
 export const ENV_ALLOWLIST: Record<string, "generated" | "default"> = {
+  S3_ENDPOINT: "default",
+  S3_BUCKET: "default",
+  S3_REGION: "default",
+  S3_ACCESS_KEY_ID: "generated",
+  S3_SECRET_ACCESS_KEY: "generated",
   DATABASE_URL: "generated",
   OZAVO_SECRET_KEY: "generated",
   PUBLIC_URL: "generated",

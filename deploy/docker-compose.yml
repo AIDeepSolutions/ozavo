@@ -239,7 +239,8 @@ services:
     mem_limit: 256m
     ports:
       # Só UDP. A ARI (8088) é o controle total das chamadas e nunca sai da rede interna.
-      - "5060:5060/udp"
+      - "5060:5060/udp" # Compatibilidade das linhas instaladas; produção Supabase só publica TLS.
+      - "5061:5061/tcp"
       # Faixa de RTP: precisa ser idêntica à de asterisk/generated/rtp.conf.
       - "${RTP_START:-10000}-${RTP_END:-10200}:${RTP_START:-10000}-${RTP_END:-10200}/udp"
     volumes:
@@ -249,6 +250,7 @@ services:
       - ./asterisk/generated/http.conf:/etc/asterisk/http.conf:ro
       - ./asterisk/generated/ari.conf:/etc/asterisk/ari.conf:ro
       - ./asterisk/generated/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./asterisk/generated/tls:/etc/asterisk/keys:ro
       - ./asterisk/generated/pjsip.conf:/etc/asterisk/pjsip.conf:ro
       - asterisk-generated:/etc/asterisk/generated
     healthcheck:

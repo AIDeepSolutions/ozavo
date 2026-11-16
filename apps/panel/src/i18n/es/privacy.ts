@@ -8,13 +8,13 @@ const privacy: PrivacyDictionary = {
   recordingDisk:
     "Cada minuto de llamada ocupa cerca de 1,9 MB en el disco del servidor. Es la cuenta del formato (dos canales, 8 kHz, 16 bits), y no una medición.",
   recordingKeeps:
-    "Encender o apagar no borra nada. Las grabaciones ya hechas siguen el plazo de conservación de abajo: salen junto con el texto de la conversación, y sin plazo se conservan para siempre. Las copias de seguridad de hoy no incluyen las grabaciones. Verifique que el aviso del inicio de la llamada, en Configuración → Llamadas, diga a quien llama que la conversación queda registrada.",
+    "El audio cifrado tiene su propio plazo, de 90 días por defecto. Cambiar la grabación no borra archivos anteriores. Las copias externas deben seguir el mismo plazo.",
   recordingForever:
-    "El plazo de conservación está vacío: las grabaciones se conservan para siempre, y el disco del servidor crece sin límite, cerca de 1,9 MB por minuto de llamada. Defina un plazo abajo para que las grabaciones antiguas salgan.",
+    "El audio sigue su propio plazo abajo, incluso si la transcripción no tiene plazo.",
   recordingStates: { on: "encendida", off: "apagada" },
   retentionTitle: "Plazo de conservación de las conversaciones",
   retentionLead:
-    "La transcripción de cada llamada, lo que dijeron quien llamó y el agente, queda en la base de datos hasta salir del plazo. Después, el texto se reemplaza por una marca y la grabación, si la hay, se borra; la llamada, la hora y el resto de la línea de tiempo se mantienen. El resumen de la llamada se escribe a partir de lo dicho y sale con el plazo, y la pantalla dice que salió. Los pendientes cerrados hace más tiempo que el plazo, contado desde el cierre, también se borran; el pendiente abierto queda hasta que alguien lo cierre. Las notas del agente de la misma edad también salen.",
+    "La transcripción de cada llamada, lo que dijeron quien llamó y el agente, queda en la base de datos hasta salir del plazo. Después, el texto se reemplaza por una marca y el audio sigue su propio plazo; la llamada, la hora y el resto de la línea de tiempo se mantienen. El resumen de la llamada se escribe a partir de lo dicho y sale con el plazo, y la pantalla dice que salió. Los pendientes cerrados hace más tiempo que el plazo, contado desde el cierre, también se borran; el pendiente abierto queda hasta que alguien lo cierre. Las notas del agente de la misma edad también salen.",
   retentionDays: "Conservar durante (días)",
   retentionHint: "Vacío conserva para siempre. El plazo mínimo es de {min} días.",
   currentForever: "Hoy esta organización conserva la transcripción para siempre.",
@@ -24,7 +24,7 @@ const privacy: PrivacyDictionary = {
   save: "Guardar plazo",
   confirmTitle: "¿Borrar el texto de las conversaciones de más de {days} días?",
   confirmBody:
-    "El texto de esas conversaciones sale de la base de datos en unos instantes, y desde entonces una vez al día; su grabación, si la hay, sale junto. Lo que sale no vuelve. Las copias de seguridad ya hechas mantienen el texto hasta ser descartadas.",
+    "El texto de esas conversaciones sale de la base de datos en unos instantes, y desde entonces una vez al día; el audio sigue su propio plazo de grabaciones. Lo que sale no vuelve. Las copias de seguridad ya hechas mantienen el texto hasta ser descartadas.",
   confirmYes: "Borrar y conservar durante {days} días",
   notesTitle: "Memoria entre llamadas",
   notesLead:
@@ -72,6 +72,8 @@ const privacy: PrivacyDictionary = {
   historyLead: "Quién cambió el plazo o la grabación, qué salió por el plazo, quién exportó los datos de qué teléfono, quién borró datos a pedido de quien llamó y qué pasó con los enlaces de grabación para quien llamó. Los 50 más recientes.",
   historyEmpty: "Nada registrado todavía.",
   history: {
+    recording_retention_changed: "{who} cambió el plazo del audio de {from} a {to}.",
+    recordings_purged: "Grabaciones de más de {days} días borradas: {count}.",
     transcript_retention_changed: "{who} cambió el plazo de conservación de {from} a {to}.",
     transcripts_purged: "El texto de lo dicho y los resúmenes de las llamadas de hace más de {days} días fueron borrados por el plazo. Fragmentos y resúmenes borrados: {count}.",
     caller_data_exported: "{who} exportó los datos de {phone}. Llamadas: {calls}. Eventos: {events}.",

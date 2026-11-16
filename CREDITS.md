@@ -142,3 +142,18 @@ versão. A regra está em [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 Trouxe código, trecho de configuração ou ideia de outro projeto? Diga no PR de onde veio e sob
 qual licença, e acrescente uma linha neste arquivo. Código sem origem declarada não entra.
+
+### Armazenamento e ativos de telefonia (Fase 4)
+
+- **MinIO**: serviço externo, AGPL-3.0, sem código incorporado ao Ozavo.
+  Fonte: https://github.com/minio/minio/tree/RELEASE.2025-09-07T16-13-09Z.
+  O perfil local referencia o espelho não oficial Dappros, fixado por digest de manifest
+  amd64/arm64 conferido no registro em 16/11/2026:
+  https://hub.docker.com/r/dappros/minio. O mantenedor declara cópia sem alterações;
+  não reconstruímos nem auditamos seus binários. As imagens oficiais retornaram 401 nessa data.
+- **AWS SDK for JavaScript**: cliente S3, Apache-2.0,
+  https://github.com/aws/aws-sdk-js-v3.
+- **Pillow**: conversão de logos RCD via processo Python, licença HPND,
+  https://github.com/python-pillow/Pillow. Logos fornecidos pelo operador continuam sendo dele.
+- Ativo de teste de RCD: kit da marca Ozavo fornecido por AI Deep Solutions,
+  pasta `brand/_brandkit/04_Telecom_ABR_Origem_Verificada` na cópia de trabalho original.

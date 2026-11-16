@@ -1,9 +1,9 @@
 // A conversa sobre um transporte nas mãos do teste: falhas do motor (Review Focus 1 e 2), teto de
 // duração e teto de custo.
-import { mkdtemp, open, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, open, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { encryptSecret, recordingPath, withSystem } from "@ozavo/core";
+import { encryptSecret, recordingPath, readRecording, withSystem } from "@ozavo/core";
 import type { SimulatedScript } from "@ozavo/voice-engine";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { openTestDbs } from "../../../packages/core/test/helpers";
@@ -403,7 +403,7 @@ describe("gravação do áudio, por organização (registro 0016)", { timeout: 1
 
   it("ligada na organização: a chamada vira um WAV estéreo na pasta dela", async () => {
     const { file, callId, cleanup } = await talk("recording-on", true);
-    const wav = await readFile(file);
+    const wav = await readRecording(file, secretKey);
     expect(wav.subarray(0, 4).toString()).toBe("RIFF");
     expect(wav.readUInt16LE(22)).toBe(2);
     expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
@@ -425,7 +425,7 @@ describe("gravação do áudio, por organização (registro 0016)", { timeout: 1
     made.harness.clock.advance(5000);
     made.transport.callerHangup();
     await session.done;
-    const wav = await readFile(recordingPath(dir, made.organizationId, made.callId));
+    const wav = await readRecording(recordingPath(dir, made.organizationId, made.callId), secretKey);
     const seconds = wav.readUInt32LE(40) / (8000 * 2 * 2); // PCM16 estéreo a 8 kHz
     expect(seconds).toBeGreaterThan(4.5);
     expect(seconds).toBeLessThan(5.5);
@@ -446,7 +446,7 @@ describe("gravação do áudio, por organização (registro 0016)", { timeout: 1
     made.harness.clock.advance(5000);
     made.harness.timers.fire(6000);
     await session.done;
-    const wav = await readFile(recordingPath(dir, made.organizationId, made.callId));
+    const wav = await readRecording(recordingPath(dir, made.organizationId, made.callId), secretKey);
     expect(wav.readUInt32LE(40) / (8000 * 2 * 2)).toBeGreaterThan(19.5);
     await rm(dir, { recursive: true, force: true });
   });
@@ -905,7 +905,7 @@ describe("gravação a pedido de quem ligou", { timeout: 120_000 }, () => {
     expect((await kindsOf(app, made.callId)).filter((kind) => kind === "recording_paused")).toHaveLength(1);
 
     // 8 kHz, 16 bits, dois canais: 32 bytes por milissegundo de áudio.
-    const wav = await readFile(file);
+    const wav = await readRecording(file, secretKey);
     const audio = wav.length - 44;
     expect(audio).toBeGreaterThan(200 * 32 * 0.8); // o pedido (200 ms) ficou gravado
     expect(audio).toBeLessThan(300 * 32 * 0.9); // os 100 ms ditos depois da parada, não
@@ -958,7 +958,7 @@ describe("gravação a pedido de quem ligou", { timeout: 120_000 }, () => {
     expect(await recorded.session.stopRecording(USER, "de novo")).toBe("already_stopped");
     recorded.made.transport.callerHangup();
     await recorded.session.done;
-    expect((await readFile(recorded.file)).length).toBeGreaterThan(44);
+    expect((await readRecording(recorded.file, secretKey)).length).toBeGreaterThan(44);
     // Chamada encerrada: não há mais o que pedir a ela.
     expect(await recorded.session.stopRecording(USER, null)).toBe("call_ended");
     await rm(recorded.dir, { recursive: true, force: true });

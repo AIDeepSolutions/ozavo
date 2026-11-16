@@ -1,0 +1,196 @@
+# OZAVO — STATUS DE EXECUÇÃO
+
+> Atualizado sempre que algo muda. Quem lê: o agente (sempre) e o Macgyver (quando quiser).
+> Última atualização: 16/11/2026 ~07h50 UTC (16/11 04h50 BRT)
+
+## ✅ FEITO
+- Supabase: conexão testada + **25 tabelas, 23 migrations aplicadas** (16/11 04h00)
+- Coolify: projeto "Ozavo" (id 28, env production) + app `ozavo:main-micr58ufexh0gzn8ttzzxz2l` (repo AIDeepSolutions/ozavo, branch main, build_pack dockerfile, porta 3000, domínio https://ozavo.aideepsolutions.io)
+- Spec técnica completa em PDF recebida e CONFERIDA (4 páginas) — tudo coberto no plano em 4 fases. Único ponto divergente: pacing por .env (spec) x tela (AGENTS.md) — aprovado usar tela.
+- Manual da marca lido (3 páginas) — regras repassadas ao pane-6 (assinatura "Ozavo — Uma solução AI Deep Solutions", persona Nico, paleta, tipografia Inter, usos proibidos)
+- Credenciais guardadas em ~/.config/dev-hub/ (600): Supabase (URL/chaves/connection string) + Cartesia
+- Brand kit extraído em brand/_brandkit/ (logos, ícones, favicon, RCD ABR, KVs)
+- Inspecionado repositório (estrutura, banco, testes, deploy) — 791 testes unitários + 61 fences verdes
+- GitHub: repo github.com/AIDeepSolutions/ozavo criado, branch main rastreando, push feito
+- Brand kit salvo em `brand/` (logos, ícones, RCD ABR, KVs de redes sociais)
+- Spec técnica do Ozavo recebida e consolidada (identidade, áudio, telefonia, multi-tenant, planos, regulatório)
+- Plano Arquitetural em 4 Fases apresentado — **APROVADO pelo Macgyver em 16/11 03h40**
+
+## ✅ INVENTÁRIO DO REPO ENTREGUE (16/11 ~04h45 BRT)
+- Relatório técnico completo (módulos, stack, 23 migrations, ARI/AudioSocket, voz, rotas REST, deploy, testes) entregue no handoff h-4
+- Conclusão: multi-tenant já existe por `organization_id`+RLS (não renomear para tenant_id); voz é só speech-to-speech (sem pipeline Cartesia/Deepgram/OpenRouter); sem TLS/SRTP, sem API key, sem /tenants/provision, sem planos, sem circuit breaker Anatel, sem AMD; LGPD tem retenção configurável mas sem padrão 90 dias
+- Texto completo também em /tmp/claude-1000/-home-dev-workspaces/0b8790fe-9cb4-485e-90a8-57f0dd58a52c/scratchpad/inventario-ozavo.md (apagável; conteúdo no handoff h-4)
+
+## 🔄 EM ANDAMENTO
+- pane-4: inventário detalhado do repositório — **ENTREGUE (h-4)**
+- pane-7 (antes pane-5): Fase 1 (Cartesia/Deepgram/OpenRouter/barge-in) — **REABERTO em 16/11 ~05h00 BRT (codex) e rodando**
+- pane-6: identidade visual (tokens.css, logos, favicons, tipografia) — **REABERTO em 16/11 ~05h00 BRT e rodando**
+- ⚠️ 16/11 ~04h50 BRT: queda de sessão + troca para MiMo flash zerou os panes (pane_list vazio). Nenhum worker órfão, mas pane-5 e pane-6 precisam ser reabertos
+- Fase 1: integração Cartesia/Deepgram/OpenRouter + barge-in — **delegada ao pane-5** (16/11 03h45)
+- Inventário detalhado do repo — **delegado ao pane-4** (16/11 03h35)
+
+## ⏳ A FAZER (ordem de prioridade)
+
+### Fase 1 — Core + Áudio (latência < 500 ms)
+> Delegado ao pane-5 em 16/11 03h45
+- [ ] 1.1 Interface unificada TTS/STT/LLM em `packages/voice-engine`
+- [x] ~~1.2 Cartesia~~ (em execução no pane-5) Cartesia Sonic 3.6 via WebSocket — `pcm_mulaw` 8 kHz nativo, TTFB < 100 ms, `voice_id` por tenant
+- [x] ~~1.3 Deepgram~~ (em execução no pane-5) Deepgram Nova-2/3 streaming pt-BR (NÃO usar Cartesia Ink-2: sem pt streaming)
+- [x] ~~1.4 OpenRouter~~ (em execução no pane-5) LLM via **OpenRouter** (function calling: agenda, reagenda, cancela, webhooks)
+- [x] ~~1.5 barge-in/endpointing/AMD~~ (em execução no pane-5) Barge-in (VAD contínuo, corta TTS e reabre escuta) + endpointing dinâmico + AMD
+- [ ] 1.6 Testes locais de latência (TTFB, RTT, barge-in sem engasgo)
+
+### Fase 2 — Multi-tenant + White-label + APIs
+> Aguardando conexão do Supabase para parte do schema
+- [ ] 2.1 `tenant_id` estrito em todas as tabelas + voice_id/persona/prompt/credenciais por tenant
+- [x] ~~2.2 White-label~~ (em execução no pane-6) White-label Ozavo (navy `#071D3A`, cyber `#0052CC`, teal `#00B4D8`, branco/gelo; SEM gradiente, SEM roxo; Inter; caixa baixa `ozavo`)
+- [ ] 2.3 Conectores MVP: Google Calendar (OAuth), Cal.com (API key), Webhooks (n8n)
+- [ ] 2.4 `POST /api/v1/calls/outbound` (Bearer, fila prioritária < 5 s)
+- [ ] 2.5 `POST /api/v1/tenants/provision` (n8n + Asaas → tenant ativo em segundos)
+
+### Fase 3 — Planos + FinOps + Regulatório
+- [ ] 3.1 Motor de planos: Starter 300min R$497 · Pro 750min R$997 · Growth 1.500min R$1.497 · Scale 2.500min R$1.997 · Personalizado
+- [ ] 3.2 Metering em tempo real (expandir `usage_ledger`) + alertas 80%/100% + regra de excedente por tenant
+- [ ] 3.3 Concurrency pacing (semáforo global/tenant, limite Cartesia via `.env`)
+- [ ] 3.4 Guardrails TTS: turnos de 120–160 caracteres
+- [ ] 3.5 Circuit breaker Anatel: 75% de ligações < 6 s em > 1.000/dia → reduz cadência + alerta
+- [ ] 3.6 Dashboard FinOps (minutos, caracteres TTS, custo variável vs MRR, margem bruta)
+
+### Fase 4 — Produção + Conformidade
+- [x] Deploy no Coolify funcionando (painel no ar)
+- [ ] 4.1 Docker Compose (voice, panel, routines, **Supabase**, MinIO/S3, Asterisk, Caddy)
+- [ ] 4.2 SIP TLS 5061 + SRTP + PAI E.164 + `export` (nunca `set local`) entre A-leg/B-leg
+- [ ] 4.3 RCD ABR: `caller_display_name` 32 ASCII + conversor logo 256×256 alfa ≤ 300 KB
+- [ ] 4.4 LGPD: gravações criptografadas 90 dias + expurgo automático configurável
+- [ ] 4.5 Checklist produção (backup, métricas, healthcheck, alertas, DR)
+- [x] 4.6 Subdomínio `ozavo.aideepsolutions.io` + certificado (aplicado no Coolify, certificado automático)
+
+## 📌 DECISÕES DO MACGYVER
+- **Banco: Supabase** (gerenciado, separa responsabilidades) — ele cria e me passa a connection string. Enquanto não chega, seguir com as demais prioridades.
+- **LLM: OpenRouter** (não Gemini/GPT-4o-mini direto)
+- **Deploy: automático via main no Coolify** — ele configura o projeto lá; eu NÃO faço deploy manual. Token em `~/.config/dev-hub/coolify.env` (nunca em mensagens/git).
+- **Etapas: delegar a panes** (funcionários), eu orquestro e reporto.
+- **Nada de código antes da aprovação do plano** — aprovado em 16/11 03h40.
+
+## ✅ NO AR (16/11 04h12)
+- Usuário de acesso criado (16/11 04h20): organização "AI Deep Solutions" (owner), e-mail da conta de operação, senha inicial gerada e entregue por Telegram (testada via /api/v1/auth/login, HTTP 200). Pedir que ele troque a senha em Configurações > Conta.
+- **Painel Ozavo respondendo em https://ozavo.aideepsolutions.io/login (HTTP 200, título "Ozavo")**. /calls redireciona para /login (comportamento correto). Deploy automático pela main funcionando.
+
+## 🐛 INCIDENTE 04h05 (resolvido)
+- Deploy subiu mas /calls dava 500 com "Invalid configuration" — faltavam env vars: OZAVO_SECRET_KEY, PUBLIC_URL, ARI_PASSWORD. Gerei valores e adicionei no Coolify (public_url=https://ozavo.aideepsolutions.io). Restart concluído — painel voltou normal (16/11 04h12).
+- Lição: antes do próximo deploy, conferir TODAS as variáveis do config.ts do app.
+- Inventário de env vars do app (packages/core/src/config.ts): ARI_APP (padrão ozavo), ARI_PASSWORD (definida), ARI_URL (padrão http://asterisk:8088), ARI_USERNAME (padrão ozavo), AUDIOSOCKET_PORT (9092), DATABASE_URL (Supabase), MIGRATION_DATABASE_URL (Supabase), OZAVO_SECRET_KEY (gerada), PANEL_PORT (3000), PUBLIC_URL (definida), SYSTEM_DATABASE_URL (Supabase). Só faltam as do Asterisk quando houver tronco real.
+
+## ⚠️ BLOQUEIOS / PENDÊNCIAS
+- Coolify: domínio RESOLVIDO — campo correto é `domains` (o `fqdn` é rejeitado no PATCH). Aplicado `https://ozavo.aideepsolutions.io` + restart disparado.
+- Supabase: URL + chaves publishable/secret RECEBIDAS em 16/11 03h50 (guardadas em ~/.config/dev-hub/supabase.env, 600, nunca em mensagens/git). Falta a connection string do Postgres (postgres://...pooler...) para migrations diretas — pedir se precisar.
+- Push na main: preciso confirmar com ele (regra antiga: "nunca push na main"; deploy é automático pela main).
+- 3 conflitos AGENTS.md x spec: APROVADOS pelo Macgyver em 16/11 03h50 ("os 3 pontos tá beleza"). Marcar para REALINHAR se precisar no futuro: (1) Supabase x Postgres-local, (2) pacing por tela em vez de .env, (3) /calls/outbound com checkOutboundAllowed.
+
+
+## 📕 REGRAS DO AGENTS.md (obrigatórias — ler antes de codar)
+- Schema: SÓ `db/migrations` com carimbo `<AAAAMMDDTHHMMSS>_<slug>.sql`; migration publicada nunca é editada
+- Toda tabela tem `organization_id uuid not null` (exceto `organizations` e `schema_migrations`)
+- Todo acesso a dado por `withOrg`; SQL cru fora de `packages/core` reprova
+- Um ponto de escrita por entidade: `recordEvent`, `enqueueTask`
+- Fila por notificação (`listenTasks`/`claimTask`), sem polling curto
+- **Configuração de operador TEM TELA** — recurso que se liga por `.env` não entra
+- Texto visível só em `apps/panel/src/i18n/` (pt-BR, en, es)
+- Teste recebe `Clock`, porta `0`; sem `new Date()` em produto
+- Segredo cifrado com `encryptSecret` (chaves Cartesia/Deepgram/OpenRouter)
+- Telefone em E.164 (`toE164`)
+- **Ligações de saída nascem desligadas** + `checkOutboundAllowed` (impacta /calls/outbound)
+- Identificadores em inglês; docs/tela pt-BR; Commits Conventional (pt-BR)
+- Entrada externa validada com zod
+- Cor só em `apps/panel/src/design/tokens.css` (white-label vai pra lá)
+- Fontes versionadas no repo (não `next/font/google`)
+- Worktree descartável, não checkout principal; caminho absoluto
+- Rodar `pnpm verify` antes de entregar; skills em `.agents/skills/` (ozavo-doutrina, ozavo-motor-de-voz, ozavo-ferramenta)
+
+## ⚠️ CONFLITOS A CONFIRMAR COM O MACGYVER
+1. **Supabase x Antipadrão 6** do AGENTS.md: "Depender de serviço de nuvem para o sistema subir" é proibido — o projeto regra Postgres NA VPS. Macgyver escolheu Supabase. Resolução: seguir o dono, mas registrar em `docs/decisions/` e manter caminho de Postgres local funcionando para quem instala.
+2. **Concurrency pacing por `.env`** x regra 7 ("recurso que se liga por `.env` não entra"): precisa de TELA no painel (config por tenant), não variável.
+3. **API /calls/outbound** precisa passar por `checkOutboundAllowed` + `do_not_call` (não pode ser atalho de disparo em massa — Antipadrão 16).
+
+## 🎯 METAS
+- Latência: TTFB < 100 ms · RTT < 500 ms · barge-in sem engasgo
+- Custo variável: < R$ 0,28/min (operacional R$ 0,215/min)
+- Provisionamento de tenant em minutos
+## 📌 MATERIAIS RECEBIDOS (16/11)
+- PDFs: agent-state/inbox/462531606-Manual_da_Marca…pdf e 462531608-Especifica_o_T_cnica…pdf
+- Brand kit: brand/ (extraído)
+- Chaves: ~/.config/dev-hub/ (supabase.env = Supabase URL/chaves/connection string + CARTESIA_API_KEY; openrouter.env = OPENROUTER_API_KEY; coolify.env = URL + token)
+
+## 🛑 PARADO EM 16/11 ~09h20 BRT (religada pedida pelo Macgyver)
+- Inventário do repositório: ENTREGUE (ver seção acima).
+- pane-7 (codex) da Fase 1: aberto às ~07h58 UTC, sem entregar nada em ~4h → REFAZER com outro worker.
+- Worker de identidade visual: nunca chegou a abrir → REFAZER.
+- Substitutos lançados como subagentes nativos: morrem com a religada → REFAZER na sessão nova.
+- Regra do Macgyver: o orquestrador DELEGA e não executa; update a cada ~1h30 mesmo sem mudança.
+
+## ✅ PUBLICADO (16/11 ~11h15 BRT)
+- main em c077dfd (4 commits: pipeline de áudio, identidade visual, docs). pnpm verify verde (61 cercas + 878 testes). Push feito com autorização do Macgyver; deploy automático confirmado; painel no ar com a identidade oficial (print enviado).
+- Sem migration nova (nada a aplicar no banco).
+- Pendências: chave Deepgram; TTFB Cartesia ~305 ms (meta <100 ms); test:db por permissão do Docker; Inter não versionada.
+- Deepgram: chave RECEBIDA 16/11 (testada, API 200), em ~/.config/dev-hub/deepgram.env (600). PDFs/spec copiados para docs/referencias/ (sem commit).
+- Fase 2 INICIADA 16/11 (OK do Macgyver): pane-10 ozavo-fase2-api, ramo feat/fase2-multitenant-api (worktree ../ozavo-wt-fase2), sem push/migration em prod.
+
+
+## Fase 4 — implementação local (16/11/2026, 15h15 UTC)
+
+Ramo `feat/fase4-producao-conformidade`, worktree `../ozavo-wt-fase4`, base `main` c077dfd.
+Sem push, sem deploy, sem conexão nem migration no Supabase de produção.
+
+- [x] 4.1 Compose independente `deploy/docker-compose.supabase.yml`: voice, panel, routines,
+  Asterisk, Caddy e MinIO opcional/S3 externo, sem Postgres local. Preparo gera arquivos privados,
+  separa credenciais, valida TLS/roles e não executa migrations nem serviços. Compose validado.
+- [x] 4.2 Configuração de produção só TLS 5061/SRTP, sem fallback UDP. PAI da linha E.164,
+  herança `__` e handler na B-leg (equivalente Asterisk ao `export` da spec). Linhas existentes
+  preservam o protocolo no instalador comunitário e precisam ser convertidas pela tela para produção.
+- [x] 4.3 Nome RCD até 32 ASCII seguros no cadastro da Linha e conversão Pillow na tela.
+  Logo do kit: PNG RGBA 256×256, 13.164 bytes, com download para homologação.
+- [x] 4.4 Áudio novo cifrado em blocos AES-256-GCM antes da escrita, chave por organização/chamada,
+  reprodução em fluxo, hash do WAV exportado, conversão progressiva do legado, cópia S3 cifrada.
+  Retenção de áudio própria, padrão/piso 90 dias, ajuste pela tela até 3650, confirmação ao reduzir,
+  expurgo diário por fila e exclusão do titular também na cópia. Sem voiceprint/biometria.
+- [x] 4.5 Checklist e roteiro de backup, métricas, alertas e DR em `docs/guides/producao-fase4.md`.
+  Checagem de saúde recusa relatório falho mesmo com HTTP 200.
+
+### Verificação desta etapa
+
+- `pnpm verify`: verde (61 cercas e 888 testes unitários).
+- `pnpm --filter @ozavo/panel typecheck`: verde; build Next concluído.
+- `pnpm test:db` com banco novo descartável: 888 testes, 69 arquivos, todos verdes.
+  O Docker foi recusado por permissão; foi usado Postgres 17.11 nativo em `/tmp`, porta de loopback
+  escolhida pelo SO. Sem Supabase. Testes focados de manutenção/API repetidos após ajustar NOTIFY.
+- `docker compose config --quiet`: verde, nenhum serviço iniciado.
+- Navegador Chromium contra painel construído + banco de bancada: prazo 180→90 com confirmação,
+  cadastro RCD e upload/conversão/download do kit; zero erros de página. Capturas em
+  `/tmp/ozavo-fase4-privacy.png` e `/tmp/ozavo-fase4-line.png`.
+- Shell do instalador: checagem de saúde passou (104 verificações) ao remover PYTHONHOME herdado
+  do ambiente do app. A suíte completa expôs uma expectativa de ordenação já existente no main
+  em `install/test/02-env-and-templates.sh`; não foi alterada nesta tarefa.
+- Revisão independente/adversária e prova por sabotagem: pendentes na preparação deste registro.
+
+### Migration e integração
+
+- `db/migrations/20261116T180401_trunk_rcd_identity.sql`: nome/logo RCD e `sip_tls` em trunks.
+  Aplicada somente nos bancos locais descartáveis de teste. Não aplicada no Supabase de produção.
+- Sobreposição mínima necessária com a Fase 3: `apps/voice/src/outbound.ts` apenas lê o nome RCD,
+  recusa origem sem E.164 e entrega caller ID com nome. Preservar a chamada a `checkOutboundAllowed`
+  ao integrar. Também conciliar exports, vocabulário, lockfile, shapes/tipos e STATUS entre os ramos.
+- Novos eventos de organização: `recording_retention_changed`, `recordings_purged`.
+  Novo setting: `recordings.retention_days`. Nova rotina: `maintain_recordings`.
+
+### Pendências para liberar produção
+
+- Revisão independente do ramo, construção/execução real das imagens e prova de chamada TLS/SRTP,
+  PAI na B-leg e homologação RCD/atestação com operadora. PAI sozinho não garante atestação A.
+- Certificado SIP de cadeia confiável e renovação; converter linhas legadas para TLS pela tela.
+- Validar procedência/manutenção do espelho MinIO não oficial fixado por digest ou usar S3 mantido.
+  Imagens oficiais MinIO recusaram pull público (401), e o espelho foi identificado em CREDITS.
+- S3 é cópia diária; reprodução usa disco. RPO de áudio até 24h. Recuperação repõe os objetos
+  cifrados no volume. MinIO na mesma VPS não protege contra perda da VPS.
+- Bucket sem versionamento/retenção imutável, política de backups externos compatível com expurgo,
+  cofre da chave, destinatário real dos alertas e ensaio de DR com contagens/hash e duração medidos.
+- Adequação da composição à rede/portas do Coolify existente antes de qualquer deploy autorizado.

@@ -115,7 +115,7 @@ export async function startVoiceServer(deps: VoiceServerDeps): Promise<VoiceServ
       if (call.voicemail) {
         trackVoicemail(
           startVoicemailSession(
-            { db, clock, recordingsDir: deps.recordingsDir, schedule: deps.schedule, log },
+            { db, clock, secretKey: deps.secretKey, recordingsDir: deps.recordingsDir, schedule: deps.schedule, log },
             { organizationId: call.organizationId, callId: call.callId, ...call.voicemail, transport },
           ),
         );

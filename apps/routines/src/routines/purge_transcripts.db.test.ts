@@ -125,12 +125,10 @@ describe("purge_transcripts", () => {
 
       await purgeTranscripts.run(task(org, "purge_transcripts"), { ...depsFor(app), recordingsDir: dir });
 
-      // Saiu só a gravação velha desta organização; a recente e a de outra empresa ficam.
-      expect(await readdir(path.join(dir, org))).toEqual(["22222222-2222-4222-8222-222222222222.wav"]);
+      // Prazo do texto não apaga áudio: maintain_recordings aplica o piso próprio de 90 dias.
+      expect((await readdir(path.join(dir, org))).sort()).toEqual(["11111111-1111-4111-8111-111111111111.wav", "22222222-2222-4222-8222-222222222222.wav"]);
       expect(await readdir(path.join(dir, other))).toEqual(["33333333-3333-4333-8333-333333333333.wav"]);
-      expect(await orgEventsOf(org)).toEqual([
-        { kind: "transcripts_purged", actor_user_id: null, payload: { count: 0, recordings: 1, retentionDays: 30, before: daysAgo(30).toISOString() } },
-      ]);
+      expect(await orgEventsOf(org)).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

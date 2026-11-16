@@ -1,4 +1,4 @@
-import { checkVocabulary, toE164, type OrgQuery } from "@ozavo/core";
+import { checkVocabulary, callerDisplayNameSchema, toE164, type OrgQuery } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError } from "./context";
 import { listEngines } from "./pieces";
@@ -76,7 +76,7 @@ export const AGENT_DEFAULTS: Omit<AgentValues, "name" | "engine"> = {
   listeningEnvironment: "normal",
 };
 
-export const TRUNK_COLUMNS = `id, name, host, username, auth_mode as "authMode", caller_id_e164 as "callerId",
+export const TRUNK_COLUMNS = `id, name, host, username, auth_mode as "authMode", caller_id_e164 as "callerId", caller_display_name as "callerDisplayName", sip_tls as "sipTls",
   match_extra as "matchExtra", outbound_host as "outboundHost", status,
   last_check_at as "lastCheckAt", last_error as "lastError", json_build_object('configured', secret_enc is not null) as secret`;
 
@@ -89,6 +89,8 @@ const trunkFields = z.object({
   username: z.union([z.null(), z.literal("").transform(() => null), z.string().regex(/^[^\s;[\]]{1,80}$/, "cannot contain spaces, ';' or brackets")]),
   password: z.string().regex(/^[^\r\n]{1,200}$/, "cannot be empty or contain line breaks"),
   authMode: z.enum(["register", "ip"]),
+  sipTls: z.boolean().optional(),
+  callerDisplayName: callerDisplayNameSchema.nullable().optional(),
   callerId: optionalPhone,
   // O mesmo provedor entrega a ligação por vários blocos (um por região): todos entram no
   // `identify`, e a linha antiga, sem lista, continua com o `host` sozinho.

@@ -41,7 +41,7 @@ describe("gerador de pjsip_trunks.conf", { timeout: 60_000 }, () => {
 
 [trunk-${A}]
 type=endpoint
-transport=transport-udp
+transport=transport-tls
 context=from-trunk
 disallow=all
 allow=ulaw
@@ -50,6 +50,12 @@ aors=trunk-${A}
 outbound_auth=trunk-${A}-auth
 from_user=conta100
 from_domain=203.0.113.10
+send_pai=yes
+send_rpid=no
+trust_id_inbound=no
+trust_id_outbound=yes
+media_encryption=sdes
+media_encryption_optimistic=no
 direct_media=no
 rtp_symmetric=yes
 force_rport=yes
@@ -57,7 +63,7 @@ rewrite_contact=yes
 
 [trunk-${A}]
 type=aor
-contact=sip:sip.operadora.example:5060
+contact=sip:sip.operadora.example:5060;transport=tls
 qualify_frequency=30
 
 [trunk-${A}-auth]
@@ -68,10 +74,10 @@ password=s3nha\\;com#simbolos[]
 
 [trunk-${A}-registration]
 type=registration
-transport=transport-udp
+transport=transport-tls
 outbound_auth=trunk-${A}-auth
-server_uri=sip:sip.operadora.example:5060
-client_uri=sip:conta100@sip.operadora.example:5060
+server_uri=sip:sip.operadora.example:5060;transport=tls
+client_uri=sip:conta100@sip.operadora.example:5060;transport=tls
 line=yes
 endpoint=trunk-${A}
 retry_interval=60
@@ -85,14 +91,14 @@ retry_interval=60
     expect(sections(conf)).toEqual([`[trunk-${A}]`, `[trunk-${A}]`, `[trunk-${A}-identify]`, `[trunk-${A}-auth]`, `[trunk-${A}-registration]`]);
     expect(conf).toContain(`[trunk-${A}-identify]\ntype=identify\nendpoint=trunk-${A}\nmatch=198.51.100.30\n`);
     expect(conf).toContain(`line=yes\nendpoint=trunk-${A}\n`);
-    expect(conf).toContain("server_uri=sip:198.51.100.30:5080\n");
+    expect(conf).toContain("server_uri=sip:198.51.100.30:5080;transport=tls\n");
   });
 
   it("modo ip: sem auth, sem registration e sem from_domain quando não há IP público", () => {
     const { conf, skipped } = renderTrunksConf([byIp]);
     expect(skipped).toEqual([]);
     expect(sections(conf)).toEqual([`[trunk-${B}]`, `[trunk-${B}]`, `[trunk-${B}-identify]`]);
-    expect(conf).toContain("contact=sip:198.51.100.20\n");
+    expect(conf).toContain("contact=sip:198.51.100.20:5061;transport=tls\n");
     expect(conf).toContain("match=198.51.100.20\n");
     expect(conf).not.toMatch(/auth|registration|from_domain|from_user/);
   });
@@ -327,10 +333,10 @@ retry_interval=60
 
     it("o endereço vai para o arquivo na forma canônica, não na que foi digitada", () => {
       const written = (host: string): string[] => renderTrunksConf([{ ...byIp, host }]).conf.split("\n").filter((line) => /^(match|contact)=/.test(line));
-      expect(written("192.168.001.010")).toEqual(["contact=sip:192.168.1.10", "match=192.168.1.10"]);
-      expect(written("::ffff:203.0.113.5")).toEqual(["contact=sip:203.0.113.5", "match=203.0.113.5"]);
-      expect(written("2001:0DB8:0000:0000:0000:0000:0000:0001")).toEqual(["contact=sip:[2001:db8::1]", "match=2001:db8::1"]);
-      expect(written("[2001:DB8::1]:5080")).toEqual(["contact=sip:[2001:db8::1]:5080", "match=2001:db8::1"]);
+      expect(written("192.168.001.010")).toEqual(["contact=sip:192.168.1.10:5061;transport=tls", "match=192.168.1.10"]);
+      expect(written("::ffff:203.0.113.5")).toEqual(["contact=sip:203.0.113.5:5061;transport=tls", "match=203.0.113.5"]);
+      expect(written("2001:0DB8:0000:0000:0000:0000:0000:0001")).toEqual(["contact=sip:[2001:db8::1]:5061;transport=tls", "match=2001:db8::1"]);
+      expect(written("[2001:DB8::1]:5080")).toEqual(["contact=sip:[2001:db8::1]:5080;transport=tls", "match=2001:db8::1"]);
       expect(written("203.000.113.077/024")).toEqual(["match=203.0.113.0/24"]);
       expect(written("2001:DB8:0:0:8:FFFF::/80")).toEqual(["match=2001:db8:0:0:8::/80"]);
     });
@@ -488,4 +494,15 @@ retry_interval=60
       expect(await readFile(path.join(target, "dentro.conf"), "utf8")).toBe("conteúdo\n");
     });
   });
+});
+
+it("TLS exporta a identidade da linha por herança sem substituir quem ligou na entrada", () => {
+  const result = renderTrunksConf([{ ...register, sipTls: true, callerId: "+553133334444", callerDisplayName: "OZAVO TESTE" }]);
+  expect(result.skipped).toEqual([]);
+  expect(result.conf).toContain("transport=transport-tls");
+  expect(result.conf).toContain("media_encryption=sdes\nmedia_encryption_optimistic=no");
+  expect(result.conf).toContain("send_pai=yes\nsend_rpid=no\ntrust_id_inbound=no");
+  expect(result.conf).toContain("set_var=__OZAVO_CALLER_E164=+553133334444");
+  expect(result.conf).toContain("set_var=__OZAVO_CALLER_NAME=OZAVO TESTE");
+  expect(result.conf).not.toMatch(/^callerid=/m);
 });

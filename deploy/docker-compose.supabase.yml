@@ -1,0 +1,123 @@
+# Composição de produção desta instalação. Independente do Compose do instalador comunitário.
+# Preparo: node --import tsx scripts/prepare-production.ts <diretório absoluto>
+# Nunca inicia migrations automaticamente. app.env usa papéis separados no Supabase.
+name: ozavo-production
+
+x-app: &app
+  restart: unless-stopped
+  env_file: app.env
+  networks: [internal]
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  panel:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-panel:${OZAVO_VERSION:-dev}
+    build: { context: .., target: panel }
+    volumes: ["recordings:/recordings:ro"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  voice:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-voice:${OZAVO_VERSION:-dev}
+    build: { context: .., target: voice }
+    depends_on: { asterisk: { condition: service_healthy } }
+    volumes: ["recordings:/recordings", "asterisk-generated:/asterisk-generated"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  routines:
+    <<: *app
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-routines:${OZAVO_VERSION:-dev}
+    build: { context: .., target: routines }
+    env_file: [app.env, archive.env]
+    volumes: ["recordings:/recordings"]
+    # A saúde da fila é medida por /api/v1/system/health (listener + atraso), não por PID.
+
+  # Ferramentas administrativas explícitas: não fazem parte de `up`.
+  migrate:
+    <<: *app
+    profiles: [admin]
+    restart: "no"
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-routines:${OZAVO_VERSION:-dev}
+    build: { context: .., target: routines }
+    env_file: [app.env, migrate.env]
+    command: [pnpm, --filter, '@ozavo/routines', run, migrate]
+
+  storage-init:
+    <<: *app
+    profiles: [admin]
+    restart: "no"
+    image: ${OZAVO_IMAGE_PREFIX:-localhost}/ozavo-routines:${OZAVO_VERSION:-dev}
+    build: { context: .., target: routines }
+    env_file: archive.env
+    command: [pnpm, exec, tsx, apps/routines/src/cli/init-recording-storage.ts]
+
+  minio:
+    profiles: [minio]
+    # Espelho não oficial, amd64/arm64, manifest conferido em 16/11/2026. Ver CREDITS.md.
+    image: dappros/minio:RELEASE.2025-09-07T16-13-09Z@sha256:624bad2fe79a8613aa3c5c9b765ebcab365080b8445cf1b05c357cc7753725f0
+    restart: unless-stopped
+    env_file: minio.env
+    command: [server, /data, --console-address, ':9001']
+    volumes: ["minio-data:/data"]
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://127.0.0.1:9000/minio/health/ready']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    logging: *logging
+
+  asterisk:
+    image: andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27
+    restart: unless-stopped
+    ports:
+      - '5061:5061/tcp'
+      - '${RTP_START:-10000}-${RTP_END:-10200}:${RTP_START:-10000}-${RTP_END:-10200}/udp'
+    volumes:
+      - ./asterisk/generated/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./asterisk/generated/http.conf:/etc/asterisk/http.conf:ro
+      - ./asterisk/generated/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./asterisk/generated/rtp.conf:/etc/asterisk/rtp.conf:ro
+      - ./asterisk/generated/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk/generated/tls:/etc/asterisk/keys:ro
+      - asterisk-generated:/etc/asterisk/generated
+    healthcheck:
+      test: [CMD, asterisk, -rx, 'core show uptime']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    logging: *logging
+
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+    restart: unless-stopped
+    environment: { CADDY_SITE: '${PUBLIC_HOST:?Use o preparo de produção}' }
+    ports: ['80:80/tcp', '443:443/tcp', '443:443/udp']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: { panel: { condition: service_healthy } }
+    networks: [internal]
+    logging: *logging
+
+networks:
+  internal: # Precisa de saída para Supabase e provedores; nenhum serviço interno publica porta.
+volumes:
+  recordings:
+  asterisk-generated:
+  minio-data:
+  caddy-data:
+  caddy-config:

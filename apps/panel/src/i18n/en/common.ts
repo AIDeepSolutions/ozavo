@@ -60,6 +60,7 @@ const common: CommonDictionary = {
   noAgent: "No agent",
   readOnly: "Your role is operator: you follow calls and answer approvals. To change this screen, talk to an owner or administrator.",
   errors: {
+    invalid_rcd_logo: "Could not convert the image. Upload PNG, JPEG or BMP up to 8 MB.",
     fallback: "We could not complete this action. Try again in a moment.",
     network: "The panel did not answer. Check your connection and try again.",
     internal_error: "We had a problem on the server. Nothing was changed. Try again in a moment.",

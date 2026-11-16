@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { chmod, chown, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { decryptSecret, withSystem, type Clock, type Db } from "@ozavo/core";
+import { decryptSecret, toE164, withSystem, type Clock, type Db } from "@ozavo/core";
 import { trunkEndpointName, type AriClient } from "./ari";
 import { messageOf, type Logger } from "./log";
 import { realSchedule, type Schedule } from "./transport";
@@ -21,6 +21,9 @@ import { hostsOverlap, isBlockTooWide, parseTrunkHost, type TrunkHost } from "./
 export const DEFAULT_TRUNKS_FILE = "/asterisk-generated/pjsip_trunks.conf";
 
 export interface TrunkConfig {
+  sipTls?: boolean;
+  callerId?: string | null;
+  callerDisplayName?: string | null;
   id: string;
   host: string;
   username: string | null;
@@ -59,6 +62,7 @@ const hasControl = (text: string): boolean => [...text].some((char) => (char.cod
  * Devolve o motivo da recusa, ou `null`.
  */
 export function trunkProblem(trunk: TrunkConfig): string | null {
+  if (trunk.callerDisplayName && !/^[A-Za-z0-9 .&()+_\/-]{1,32}$/.test(trunk.callerDisplayName)) return "caller display name must be safe ASCII, at most 32 characters";
   if (!UUID.test(trunk.id)) return "the line id is not a uuid";
   const host = parseTrunkHost(trunk.host);
   if (!host) return "the host is not a server name, an IP address or an address block";
@@ -98,6 +102,11 @@ const value = (text: string): string => text.replaceAll(";", "\\;");
  * leva o IP privado do contêiner e há provedor que derruba a ligação) e `ulaw`/`alaw`, que casam
  * com o AudioSocket sem transcodificar.
  */
+function tlsDestination(uri: string): string {
+  // Nome/IPv4 sem porta e IPv6 entre colchetes usam a porta TLS padrão.
+  return /\]:\d+$|^[^:]+:\d+$/.test(uri) ? uri : `${uri}:5061`;
+}
+
 function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): string {
   const name = trunkEndpointName(trunk.id);
   const withAuth = trunk.username !== null && trunk.password !== null;
@@ -105,7 +114,7 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
   const lines = [
     `[${name}]`,
     "type=endpoint",
-    "transport=transport-udp",
+    `transport=${trunk.sipTls === false ? "transport-udp" : "transport-tls"}`,
     "context=from-trunk",
     "disallow=all",
     "allow=ulaw",
@@ -113,6 +122,15 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
     `aors=${name}`,
     ...(withAuth ? [`outbound_auth=${name}-auth`, `from_user=${value(trunk.username ?? "")}`] : []),
     ...(publicIp ? [`from_domain=${publicIp}`] : []),
+    "send_pai=yes",
+    "send_rpid=no",
+    "trust_id_inbound=no",
+    "trust_id_outbound=yes",
+    ...(trunk.sipTls === false ? [] : ["media_encryption=sdes", "media_encryption_optimistic=no"]),
+    ...(trunk.callerId && toE164(trunk.callerId) === trunk.callerId ? [
+      `set_var=__OZAVO_CALLER_E164=${trunk.callerId}`,
+      `set_var=__OZAVO_CALLER_NAME=${trunk.callerDisplayName ?? ""}`,
+    ] : []),
     "direct_media=no",
     "rtp_symmetric=yes",
     "force_rport=yes",
@@ -122,7 +140,7 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
     "type=aor",
     // Bloco de endereços não é destino: a linha só recebe. Um `outbound_host` dá destino à linha
     // que recebe por bloco (a Twilio recebe por /30 e atende pelo nome da conta).
-    ...(inbound.destination === null ? [] : [`contact=sip:${inbound.destination.uri}`]),
+    ...(inbound.destination === null ? [] : [`contact=sip:${trunk.sipTls === false ? inbound.destination.uri : `${tlsDestination(inbound.destination.uri ?? "")};transport=tls`}`]),
     "qualify_frequency=30",
   ];
   // O `identify` casa a chamada recebida pelo endereço de origem. Só sai com endereço numérico
@@ -141,10 +159,10 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
       "",
       `[${name}-registration]`,
       "type=registration",
-      "transport=transport-udp",
+      `transport=${trunk.sipTls === false ? "transport-udp" : "transport-tls"}`,
       `outbound_auth=${name}-auth`,
-      `server_uri=sip:${inbound.host.uri}`,
-      `client_uri=sip:${value(trunk.username ?? "")}@${inbound.host.uri}`,
+      `server_uri=sip:${trunk.sipTls === false ? inbound.host.uri : `${tlsDestination(inbound.host.uri ?? "")};transport=tls`}`,
+      `client_uri=sip:${value(trunk.username ?? "")}@${trunk.sipTls === false ? inbound.host.uri : `${tlsDestination(inbound.host.uri ?? "")};transport=tls`}`,
       // O Asterisk põe um parâmetro `line` único no Contact do registro e casa a chamada recebida
       // com este endpoint por ele: é o que separa duas contas na mesma operadora.
       "line=yes",
@@ -347,8 +365,11 @@ export async function applyTrunks(deps: TrunksDeps): Promise<{ applied: boolean;
       match_extra: string[] | null;
       outbound_host: string | null;
       public_ip: unknown;
+      caller_id_e164: string | null;
+      sip_tls: boolean;
+      caller_display_name: string | null;
     }>(
-      `select t.id, t.organization_id, t.host, t.username, t.secret_enc, t.auth_mode, t.match_extra, t.outbound_host,
+      `select t.id, t.organization_id, t.host, t.username, t.secret_enc, t.auth_mode, t.match_extra, t.outbound_host, t.caller_id_e164, t.caller_display_name, t.sip_tls,
               (select s.value from settings s where s.organization_id = t.organization_id and s.key = 'network.public_ip') as public_ip
          from trunks t order by t.id`,
     ),
@@ -358,6 +379,9 @@ export async function applyTrunks(deps: TrunksDeps): Promise<{ applied: boolean;
   for (const row of rows) {
     try {
       trunks.push({
+        sipTls: row.sip_tls,
+        callerId: row.caller_id_e164,
+        callerDisplayName: row.caller_display_name,
         organizationId: row.organization_id,
         id: row.id,
         host: row.host.trim(),
