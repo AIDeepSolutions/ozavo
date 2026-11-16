@@ -61,7 +61,7 @@ export async function failTask(db: Db, taskId: string, error: string, now: Date)
   return { status: row.status, runAt: row.run_at };
 }
 
-const TASKS_CHANNEL = "tasks";
+export const TASKS_CHANNEL = "tasks";
 
 /** Acorda `onWake` a cada tarefa enfileirada. Devolve a função que encerra a escuta. */
 export function listenTasks(db: Db, onWake: () => void, onError?: (error: Error) => void): Promise<() => Promise<void>> {

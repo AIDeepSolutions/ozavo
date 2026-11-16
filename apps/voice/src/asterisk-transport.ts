@@ -17,7 +17,7 @@
  * Lição do módulo de voz do DeskcommCRM (MIT, mesmo autor; ver CREDITS.md): a mídia nunca passa
  * por bridge + externalMedia. Por isso a transferência é do dialplan, e não uma bridge da ARI.
  */
-import { lockCall, recordEvent, withOrg, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { toE164, lockCall, recordEvent, withOrg, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { trunkEndpointName, type AriClient } from "./ari";
 import type { AudioSocketConnection } from "./audiosocket";
 import { messageOf, type Logger } from "./log";
@@ -116,6 +116,11 @@ export class AsteriskCalls {
       return;
     }
     try {
+      const identity = await withOrg(this.deps.db, call.organizationId, q => q.one<{ caller_id_e164: string | null; caller_display_name: string | null }>(
+        "select caller_id_e164, caller_display_name from trunks where id = $1", [call.trunkId]));
+      if (!identity?.caller_id_e164 || toE164(identity.caller_id_e164) !== identity.caller_id_e164) throw new Error("The transfer needs the owning line E.164 identity");
+      await this.deps.ari.setVariable(channelId, "__OZAVO_CALLER_E164", identity.caller_id_e164);
+      await this.deps.ari.setVariable(channelId, "__OZAVO_CALLER_NAME", identity.caller_display_name ?? "");
       await this.deps.ari.setVariable(channelId, "OZAVO_TRANSFER_TO", call.transferTo.replace(/^\+/, ""));
       await this.deps.ari.setVariable(channelId, "OZAVO_TRUNK", trunkEndpointName(call.trunkId));
       await this.deps.ari.continueDialplan(channelId, "ozavo-transfer", "s");

@@ -11,6 +11,24 @@ endpoint_identifier_order=line,ip,username,anonymous
 type=transport
 protocol=udp
 bind=0.0.0.0:5060
+external_media_address=${PUBLIC_IP}
+external_signaling_address=${PUBLIC_IP}
+local_net=172.16.0.0/12
+local_net=10.0.0.0/8
+local_net=192.168.0.0/16
+
+[transport-tls]
+type=transport
+protocol=tls
+bind=0.0.0.0:5061
+cert_file=/etc/asterisk/keys/server.crt
+priv_key_file=/etc/asterisk/keys/server.key
+ca_list_file=/etc/ssl/certs/ca-certificates.crt
+method=tlsv1_2
+verify_server=yes
+verify_client=no
+require_client_cert=no
+allow_reload=no
 ; Sem o IP público aqui o Asterisk anuncia o IP privado do contêiner no SDP:
 ; a sinalização funciona e nenhum pacote de áudio volta.
 external_media_address=${PUBLIC_IP}

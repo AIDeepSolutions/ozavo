@@ -1,3 +1,4 @@
+import { recordingEncryptor, recordingKey, openRecordingAudio } from "@ozavo/core";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readdir, rename, rm, statfs } from "node:fs/promises";
@@ -18,10 +19,11 @@ export type RecordingOutcome = { bytes: number; sha256: string | null; sha256Err
  * A impressão digital lida do arquivo já fechado, por stream: uma hora de conversa passa de 100 MB,
  * e o fim da chamada não é lugar para carregar isso na memória.
  */
-async function sha256Of(file: string): Promise<string> {
+async function sha256Of(file: string, key?: Buffer): Promise<string> {
   const digest = createHash("sha256");
+  const source = key ? (await openRecordingAudio(file, key)).stream : createReadStream(file);
   await new Promise<void>((resolve, reject) => {
-    createReadStream(file)
+    source
       .on("data", (bloco) => digest.update(bloco))
       .on("error", reject)
       .on("end", resolve);
@@ -221,13 +223,26 @@ export type RecordingFailureReason = "disk_full" | "write_failed" | "disk_too_sl
 export async function startRecording(
   file: string,
   now: () => number,
-  options: { sampleRate?: number; onFailure?: (reason: RecordingFailureReason, error: Error) => void } = {},
+  options: { encryptionKey?: Buffer; sampleRate?: number; onFailure?: (reason: RecordingFailureReason, error: Error) => void } = {},
 ): Promise<Recording> {
   const { sampleRate = 8000, onFailure } = options;
   const maxQueuedBytes = MAX_QUEUED_AUDIO_SECONDS * sampleRate * 4;
+  const encryption = options.encryptionKey ? recordingEncryptor(recordingKey(file, options.encryptionKey)) : undefined;
   await mkdir(path.dirname(file), { recursive: true });
   const partial = `${file}.part`;
-  const handle = await open(partial, "w", 0o640);
+  const handle = await open(partial, "w", 0o600);
+  const writeAll = async (data: Buffer, at: number): Promise<void> => {
+    for (let done = 0; done < data.length;) {
+      const result = await handle.write(data, done, data.length - done, at + done);
+      if (result.bytesWritten === 0) throw new Error("Recording write made no progress");
+      done += result.bytesWritten;
+    }
+  };
+  let encryptedPosition = encryption?.header.length ?? 0;
+  if (encryption) {
+    try { await writeAll(encryption.header, 0); }
+    catch (error) { await handle.close(); await rm(partial, { force: true }); throw error; }
+  }
   let failure: Error | undefined;
   const fail = (reason: RecordingFailureReason, error: Error): void => {
     if (failure !== undefined) return;
@@ -237,7 +252,12 @@ export async function startRecording(
   let writing: Promise<void> = Promise.resolve();
   let queuedBytes = 0;
   let closing = false;
+  let headerQueued = false;
   const append = (data: Buffer, at: number): void => {
+    if (encryption && at === 0) {
+      if (headerQueued && !closing) return; // Pausa não reescreve o cabeçalho cifrado em disco.
+      headerQueued = true;
+    }
     if (failure !== undefined) return;
     // Medido antes de cada bloco, durante a chamada: a fila passa do teto por no máximo um bloco.
     // No fim não: depois do resto da fala do agente e do cabeçalho, nada mais entra na fila, e o
@@ -248,7 +268,11 @@ export async function startRecording(
     queuedBytes += data.length;
     writing = writing
       .then(async () => {
-        if (failure === undefined) await handle.write(data, 0, data.length, at);
+        if (failure === undefined) {
+          const block = encryption ? encryption.frame(data, at) : data;
+          await writeAll(block, encryption ? encryptedPosition : at);
+          if (encryption) encryptedPosition += block.length;
+        }
       })
       .catch((error: unknown) => {
         const full = error instanceof Error && "code" in error && error.code === "ENOSPC";
@@ -293,6 +317,15 @@ export async function startRecording(
       const bytes = recorder.end();
       if (bytes > 0) append(wavHeader(bytes, sampleRate), 0);
       await writing;
+      if (encryption && failure === undefined && bytes > 0) {
+        try {
+          const end = encryption.end(WAV_HEADER_BYTES + bytes);
+          await writeAll(end, encryptedPosition);
+          await handle.sync();
+        } catch (error) {
+          fail("write_failed", error instanceof Error ? error : new Error(String(error)));
+        }
+      }
       await handle.close();
       if (failure !== undefined || bytes === 0) {
         await rm(partial, { force: true });
@@ -306,7 +339,7 @@ export async function startRecording(
       // ela vira `null`, e o motivo vai junto para o log e a linha do tempo (issue 278).
       const size = WAV_HEADER_BYTES + bytes;
       try {
-        return { bytes: size, sha256: await sha256Of(file) };
+        return { bytes: size, sha256: await sha256Of(file, options.encryptionKey) };
       } catch (error) {
         return { bytes: size, sha256: null, sha256Error: error instanceof Error ? error.message : String(error) };
       }
@@ -327,7 +360,7 @@ export async function removePartialRecordings(dir: string): Promise<number> {
   for (const folder of folders) {
     if (!folder.isDirectory()) continue;
     for (const name of await readdir(path.join(dir, folder.name))) {
-      if (!name.endsWith(".wav.part")) continue;
+      if (!name.endsWith(".wav.part") && !name.endsWith(".encrypting")) continue;
       await rm(path.join(dir, folder.name, name), { force: true });
       removed += 1;
     }

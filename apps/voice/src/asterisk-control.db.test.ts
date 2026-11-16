@@ -104,7 +104,7 @@ describe("troncos", { timeout: 120_000 }, () => {
 
     const conf = await readFile(file, "utf8");
     expect(conf).toContain("match=54.171.127.192/30\nmatch=35.156.191.128/30\n");
-    expect(conf).toContain("contact=sip:conta.pstn.twilio.com\n");
+    expect(conf).toContain("contact=sip:conta.pstn.twilio.com:5061;transport=tls\n");
     expect(conf).toContain(`[trunk-${twilio}-identify]`);
     expect(conf).not.toContain(named);
     expect(conf).not.toContain(wide);

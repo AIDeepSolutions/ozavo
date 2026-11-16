@@ -16,6 +16,7 @@ import { formatDateTime, formatPhone } from "../../../ui/format";
 import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Skeleton, TextArea, TextInput, type Tone } from "../../../ui/kit";
 import { useCanConfigure } from "../../../ui/me";
 import { trunkFailure } from "../../../ui/trunk-status";
+import { RcdLogoPanel } from "./rcd-logo-panel";
 import type { Agent, PhoneNumber, Setting, Trunk } from "../../../ui/types";
 
 type StepStatus = "ok" | "warn" | "fail" | "skipped";
@@ -125,6 +126,8 @@ function TrunkForm({ trunk, t, cancel, numbersCount, onSaved }: { trunk: Trunk |
     username: trunk?.username ?? "",
     password: "",
     callerId: formatPhone(trunk?.callerId),
+    callerDisplayName: trunk?.callerDisplayName ?? "",
+    sipTls: trunk?.sipTls ?? true,
     matchExtra: (trunk?.matchExtra ?? []).join("\n"),
     outboundHost: trunk?.outboundHost ?? "",
   });
@@ -151,6 +154,7 @@ function TrunkForm({ trunk, t, cancel, numbersCount, onSaved }: { trunk: Trunk |
         method: trunk ? "PATCH" : "POST",
         body: {
           ...rest,
+          callerDisplayName: rest.callerDisplayName.trim() || null,
           matchExtra: rest.authMode === "ip" ? addresses : [],
           outboundHost: rest.authMode === "ip" && outboundHost.trim() !== "" ? outboundHost.trim() : null,
           ...(password && { password }),
@@ -182,6 +186,12 @@ function TrunkForm({ trunk, t, cancel, numbersCount, onSaved }: { trunk: Trunk |
               <option value="register">{t.authRegister}</option>
               <option value="ip">{t.authIp}</option>
             </Select>
+          </Field>
+          <Field label={t.sipTls} hint={t.sipTlsHint}>
+            <input className="size-4 justify-self-start" aria-label={t.sipTls} type="checkbox" checked={draft.sipTls} onChange={event => setDraft(current => ({ ...current, sipTls: event.target.checked }))} />
+          </Field>
+          <Field label={t.callerDisplayName} hint={t.callerDisplayNameHint}>
+            <TextInput maxLength={32} value={draft.callerDisplayName} onChange={event => set("callerDisplayName", event.target.value)} />
           </Field>
           <Field label={t.callerId} hint={t.callerIdHint}>
             <TextInput mono type="tel" value={draft.callerId} onChange={(event) => set("callerId", event.target.value)} />
@@ -380,6 +390,7 @@ export default function LinePage() {
         </div>
       </Panel>
 
+      {list.map(trunk => <RcdLogoPanel key={trunk.id} trunk={trunk} />)}
       <Panel title={t.helpTitle} description={t.helpBody}>
         <div className="grid gap-5">
           <ul className="grid max-w-[72ch] list-disc gap-2 pl-5 marker:text-line-strong">

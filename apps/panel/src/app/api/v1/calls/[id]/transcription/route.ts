@@ -1,5 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
-import { TRANSCRIPT_RETENTION_SETTING, decryptSecret, enqueueTask, lockCall, recordEvent, recordingPath, transcriptRetentionOf, type OrgQuery } from "@ozavo/core";
+import { stat } from "node:fs/promises";
+import { TRANSCRIPT_RETENTION_SETTING, decryptSecret, enqueueTask, lockCall, recordEvent, recordingPath, readRecording, transcriptRetentionOf, type OrgQuery } from "@ozavo/core";
 // Pelo caminho do arquivo: o índice do pacote carrega a descoberta por pasta, que não existe no Next.
 import { MICROCENTS_PER_CENT } from "@ozavo/voice-engine/pricing";
 import { recordingSideEstimate, splitRecording } from "@ozavo/voice-engine/transcription";
@@ -184,7 +184,7 @@ export const POST = handle(
     if (fileBytes === null) throw new ApiError(404, "transcription_no_recording", "This call has no recording.");
     const estimate = recordingSideEstimate(fileBytes);
     if (estimate && estimate.sideBytes > transcriber.maxAudioBytes) throw tooLong(transcriber, estimate.sideBytes, estimate.seconds);
-    const wav = await readFile(recording).catch(() => null);
+    const wav = await readRecording(recording, deps.secretKey).catch(() => null);
     if (!wav) throw new ApiError(404, "transcription_no_recording", "This call has no recording.");
     const sides = splitRecording(new Uint8Array(wav));
     if (!sides) throw new ApiError(422, "transcription_unreadable", "The recording is not the stereo file the recorder writes.");

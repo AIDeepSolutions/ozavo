@@ -59,6 +59,7 @@ const common = {
   noAgent: "Sem agente",
   readOnly: "Seu papel é de operador: você acompanha chamadas e responde aprovações. Para alterar esta tela, fale com um dono ou administrador.",
   errors: {
+    invalid_rcd_logo: "A imagem não pôde ser convertida. Envie PNG, JPEG ou BMP com até 8 MB.",
     fallback: "Não conseguimos concluir essa ação. Tente de novo em instantes.",
     platform_scope: "Só a organização que administra esta instalação cria chave que provisiona empresas.",
     agenda_not_google: "Salve a agenda do Google antes de autorizar.",

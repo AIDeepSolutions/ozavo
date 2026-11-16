@@ -61,6 +61,7 @@ const common: CommonDictionary = {
   noAgent: "No agent",
   readOnly: "Your role is operator: you follow calls and answer approvals. To change this screen, talk to an owner or administrator.",
   errors: {
+    invalid_rcd_logo: "Could not convert the image. Upload PNG, JPEG or BMP up to 8 MB.",
     fallback: "We could not complete this action. Try again in a moment.",
     platform_scope: "Only the organization that runs this installation can create a key that provisions companies.",
     agenda_not_google: "Save the Google calendar before authorizing.",

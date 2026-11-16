@@ -11,6 +11,7 @@
     "reset-password": "tsx src/cli/reset-password.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1169.0",
     "@ozavo/core": "workspace:^",
     "@ozavo/tools": "workspace:^",
     "@ozavo/voice-engine": "workspace:^",

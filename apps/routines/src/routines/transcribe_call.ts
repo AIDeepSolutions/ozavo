@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import {
   MAX_TASK_ATTEMPTS,
   TRANSCRIPT_RETENTION_SETTING,
@@ -6,7 +6,7 @@ import {
   enqueueTask,
   lockCall,
   recordEvent,
-  recordingPath,
+  recordingPath, readRecording,
   transcriptRetentionOf,
   withOrg,
   type ClaimedTask,
@@ -158,7 +158,7 @@ async function transcribe(task: ClaimedTask, deps: RoutineDeps): Promise<void> {
       await recordEvent(q, callId, "transcription_failed", { reason: TOO_LONG, engine: agent.engine }, now);
       return null;
     }
-    const wav = await readFile(recording).catch(() => null);
+    const wav = await readRecording(recording, deps.secretKey).catch(() => null);
     if (wav === null) return null;
     const sides = splitRecording(wav);
     if (sides === null || sides.caller === null || sides.agent === null) {

@@ -1,5 +1,5 @@
 import { readFile, rm } from "node:fs/promises";
-import { enqueueTask, recordEvent, recordingPath, withOrg, type Clock, type Db, type VoicemailLanguage } from "@ozavo/core";
+import { enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type Clock, type Db, type VoicemailLanguage } from "@ozavo/core";
 import { messageOf, silentLogger, type Logger } from "./log";
 import { panelNotice } from "./panel-notice";
 import { MIN_FREE_BYTES_TO_RECORD, freeBytes, startRecording, type Recording, type RecordingFailureReason, type RecordingOutcome } from "./recording";
@@ -70,6 +70,7 @@ export async function voicemailNotice(language: VoicemailLanguage): Promise<Buff
 }
 
 export interface VoicemailDeps {
+  secretKey?: Buffer;
   db: Db;
   clock: Clock;
   /** Pasta das gravações; sem ela, o recado não tem onde ficar e a chamada é encerrada. */
@@ -272,10 +273,12 @@ export function startVoicemailSession(deps: VoicemailDeps, input: VoicemailInput
   async function open(): Promise<{ notice: Buffer } | { failure: { reason: string; error: string } }> {
     try {
       if (!dir) return { failure: { reason: "unavailable", error: "RECORDINGS_DIR is not configured" } };
+      await withOrg(db, organizationId, q => scheduleRecordingMaintenance(q, clock.now()));
       const free = await freeBytes(dir);
       if (free < MIN_FREE_BYTES_TO_RECORD) return { failure: { reason: "low_disk", error: `${free} bytes free` } };
       const notice = Buffer.concat([await voicemailNotice(input.language), voicemailPrompt()]);
       recorder = await startRecording(recordingPath(dir, organizationId, callId), () => clock.now().getTime(), {
+        encryptionKey: deps.secretKey,
         onFailure: (reason: RecordingFailureReason, error: Error) => {
           log("error", "the voicemail recording failed; the call ends", { reason, error: error.message });
           void finish({ cause: "record_failed", failure: { reason, error: error.message } });

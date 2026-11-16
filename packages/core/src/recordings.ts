@@ -19,9 +19,9 @@ export function recordingPath(dir: string, organizationId: string, callId: strin
 /**
  * Prazo de guarda das gravações: apaga as de UMA organização gravadas antes de `before` e devolve
  * quantas saíram. A data é a do arquivo, escrito quando a chamada termina. Sem pasta (nenhuma
- * chamada gravada ainda), não há o que apagar.
+ * chamada gravada ainda), não há o que apagar. `knownCallIds` exclui chamadas cuja idade é decidida pelo banco.
  */
-export async function purgeRecordings(dir: string, organizationId: string, before: Date): Promise<number> {
+export async function purgeRecordings(dir: string, organizationId: string, before: Date, knownCallIds: ReadonlySet<string> = new Set()): Promise<number> {
   if (!/^[0-9a-f-]{36}$/i.test(organizationId)) throw new Error("purgeRecordings needs one organization id");
   const folder = path.join(dir, organizationId);
   const names = await readdir(folder).catch((error: NodeJS.ErrnoException) => {
@@ -30,7 +30,7 @@ export async function purgeRecordings(dir: string, organizationId: string, befor
   });
   let removed = 0;
   for (const name of names) {
-    if (!name.endsWith(".wav")) continue;
+    if (!name.endsWith(".wav") || knownCallIds.has(name.slice(0, -4))) continue;
     const file = path.join(folder, name);
     const info = await stat(file).catch(() => null);
     if (!info || info.mtime >= before) continue;

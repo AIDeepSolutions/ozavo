@@ -1,4 +1,4 @@
-import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
 import { EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
@@ -247,9 +247,11 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     const minFreeBytes = deps.recordingMinFreeBytes ?? MIN_FREE_BYTES_TO_RECORD;
     let opened: Recording;
     try {
+      await withOrg(deps.db, organizationId, q => scheduleRecordingMaintenance(q, clock.now()));
       const free = await freeBytes(dir);
       if (free < minFreeBytes) return void (await event("recording_skipped", { reason: "low_disk", freeBytes: free, minFreeBytes }));
       opened = await startRecording(recordingPath(dir, organizationId, callId), () => clock.now().getTime(), {
+        encryptionKey: deps.secretKey,
         // A chamada segue sem gravar, e a linha do tempo diz na hora que a gravação parou.
         onFailure: (reason, error) => {
           log("error", "the call recording failed; the call goes on without it", { reason, error: error.message });

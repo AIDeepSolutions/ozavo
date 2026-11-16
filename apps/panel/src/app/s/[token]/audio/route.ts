@@ -1,6 +1,5 @@
-import { open } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { consumeShareUse, findLiveShare, recordOrgEvent, recordingPath, withOrg } from "@ozavo/core";
+import { consumeShareUse, findLiveShare, recordOrgEvent, recordingPath, openRecordingAudio, withOrg } from "@ozavo/core";
 import { serverDeps } from "../../../../server/context";
 
 /**
@@ -23,10 +22,10 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
 
   const share = await findLiveShare(deps.db, token, now);
   if (!share) return back();
-  const file = await open(recordingPath(deps.recordingsDir, share.organizationId, share.callId)).catch(() => null);
+  const file = await openRecordingAudio(recordingPath(deps.recordingsDir, share.organizationId, share.callId), deps.secretKey).catch(() => null);
   if (!file) return back();
   try {
-    const { size } = await file.stat();
+    const size = file.size;
     const used = await withOrg(deps.db, share.organizationId, async (q) => {
       const use = await consumeShareUse(q, share.id, now);
       if (use) await recordOrgEvent(q, "share_downloaded", { callId: share.callId, linkId: share.id, use: use.uses, maxUses: use.maxUses }, now, null);
@@ -37,7 +36,7 @@ export async function GET(_request: Request, context: { params: Promise<{ token:
       return back();
     }
     // O fluxo fecha o arquivo ao terminar, ou quando quem baixa desiste no meio.
-    return new Response(Readable.toWeb(file.createReadStream()) as ReadableStream<Uint8Array>, {
+    return new Response(Readable.toWeb(file.stream) as ReadableStream<Uint8Array>, {
       headers: {
         ...NO_TRACE,
         "content-type": "audio/wav",

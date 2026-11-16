@@ -17,10 +17,12 @@ export const PATCH = handle(
       secretEnc: string | null;
       authMode: string;
       callerId: string | null;
+      callerDisplayName: string | null;
+      sipTls: boolean;
       matchExtra: string[];
       outboundHost: string | null;
     }>(
-      `select name, host, username, secret_enc as "secretEnc", auth_mode as "authMode", caller_id_e164 as "callerId",
+      `select name, host, username, secret_enc as "secretEnc", auth_mode as "authMode", caller_id_e164 as "callerId", caller_display_name as "callerDisplayName", sip_tls as "sipTls",
               match_extra as "matchExtra", outbound_host as "outboundHost" from trunks where id = $1`,
       [params.id],
     );
@@ -41,9 +43,9 @@ export const PATCH = handle(
     const next = { ...merged, secretEnc };
     // Linha alterada volta a "não verificada": o teste anterior valia para a configuração antiga.
     return q.one(
-      `update trunks set name = $2, host = $3, username = $4, secret_enc = $5, auth_mode = $6, caller_id_e164 = $7, match_extra = $8, outbound_host = $9, status = 'unverified'
+      `update trunks set name = $2, host = $3, username = $4, secret_enc = $5, auth_mode = $6, caller_id_e164 = $7, match_extra = $8, outbound_host = $9, caller_display_name = $10, sip_tls = $11, status = 'unverified'
         where id = $1 returning ${TRUNK_COLUMNS}`,
-      [params.id, next.name, next.host, next.username, next.secretEnc, next.authMode, next.callerId, next.matchExtra ?? [], next.outboundHost ?? null],
+      [params.id, next.name, next.host, next.username, next.secretEnc, next.authMode, next.callerId, next.matchExtra ?? [], next.outboundHost ?? null, next.callerDisplayName ?? null, next.sipTls],
     );
   },
 );

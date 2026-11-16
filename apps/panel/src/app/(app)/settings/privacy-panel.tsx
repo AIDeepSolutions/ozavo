@@ -1,4 +1,5 @@
 "use client";
+import { RecordingRetentionPanel } from "./recording-retention-panel";
 
 import { useEffect, useState } from "react";
 import commonEn from "../../../i18n/en/common";
@@ -84,6 +85,10 @@ function describe(entry: Entry, t: PrivacyDictionary, locale: Locale): string {
   const span = (value: unknown): string => (typeof value === "number" ? fill(t.days, { n: value }) : t.forever);
   const who = entry.actorName ?? t.removedPerson;
   switch (entry.kind) {
+    case "recording_retention_changed":
+      return fill(t.history.recording_retention_changed, { who, from: span(p.from), to: span(p.to) });
+    case "recordings_purged":
+      return fill(t.history.recordings_purged, { days: numberOf(p.retentionDays), count: numberOf(p.recordings) });
     case "transcript_retention_changed":
       return fill(t.history.transcript_retention_changed, { who, from: span(p.from), to: span(p.to) });
     case "transcripts_purged": {
@@ -203,6 +208,7 @@ export function PrivacyPanel() {
         </div>
       </Panel>
 
+      <RecordingRetentionPanel onChanged={state.reload} />
       <Panel title={t.retentionTitle} description={t.retentionLead}>
         <form
           className="grid max-w-xl gap-4"

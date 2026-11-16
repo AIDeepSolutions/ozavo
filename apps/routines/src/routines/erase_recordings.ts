@@ -11,7 +11,7 @@ const routine: Routine = {
   kind: ERASE_RECORDINGS_TASK,
   async run(task, deps) {
     if (!deps.recordingsDir) throw new Error("erase_recordings needs RECORDINGS_DIR: the recordings of erased calls were not removed");
-    const result = await removeErasedRecordings(deps.db, { dir: deps.recordingsDir, organizationId: task.organizationId, now: deps.clock.now() });
+    const result = await removeErasedRecordings(deps.db, { dir: deps.recordingsDir, organizationId: task.organizationId, now: deps.clock.now(), removeArchive: deps.recordingArchive?.remove });
     if (result.left > 0) throw new Error(`${result.left} recording(s) of erased calls were not removed: ${result.errors.join("; ")}`);
   },
 };

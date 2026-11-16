@@ -239,12 +239,14 @@ export async function eraseCaller(q: OrgQuery, options: { dir: string; phoneE164
  * ponytail: passa por todas as chamadas com `erased_at` a cada execução; são só as apagadas a pedido,
  * poucas. Se crescerem, uma coluna `recording_erased_at` limita a varredura às pendentes.
  */
-export async function removeErasedRecordings(db: Db, options: { dir: string; organizationId: string; now: Date }): Promise<{ removed: number; left: number; errors: string[] }> {
+export async function removeErasedRecordings(db: Db, options: { dir: string; organizationId: string; now: Date; removeArchive?: (organizationId: string, callId: string) => Promise<void> }): Promise<{ removed: number; left: number; errors: string[] }> {
   const { dir, organizationId, now } = options;
   const ids = await withOrg(db, organizationId, (q) => q.many<{ id: string }>("select id from calls where erased_at is not null"));
   let removed = 0;
   const errors: string[] = [];
   for (const { id } of ids) {
+    try { await options.removeArchive?.(organizationId, id); }
+    catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
     const file = recordingPath(dir, organizationId, id);
     for (const target of [`${file}.part`, file]) {
       try {

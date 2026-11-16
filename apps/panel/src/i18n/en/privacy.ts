@@ -8,13 +8,13 @@ const privacy: PrivacyDictionary = {
   recordingDisk:
     "Each minute of a call takes about 1.9 MB on the server disk. That is arithmetic from the format (two channels, 8 kHz, 16 bits), not a measurement.",
   recordingKeeps:
-    "Turning it on or off deletes nothing. Recordings already made follow the retention period below: they are removed together with the conversation text, and without a period they are kept forever. Today's backups do not include the recordings. Check that the notice at the start of the call, under Settings → Calls, tells callers the conversation is kept.",
+    "Encrypted audio has its own retention period, 90 days by default. Changing recording does not delete existing files. External backups must follow the same period.",
   recordingForever:
-    "The retention period is empty: recordings are kept forever, and the server disk grows without limit, about 1.9 MB per minute of call. Set a period below so old recordings are removed.",
+    "Audio follows its own retention period below, even when transcripts are kept forever.",
   recordingStates: { on: "on", off: "off" },
   retentionTitle: "How long conversations are kept",
   retentionLead:
-    "The transcript of each call, what the caller and the agent said, stays in the database until it falls outside the retention period. After that, the text is replaced by a marker and the recording, if any, is deleted; the call, its time and the rest of the timeline remain. The call summary is written from the speech and goes with it, and the screen says it went. Follow-ups closed longer ago than the period, counted from when they were closed, are deleted too; an open follow-up stays until someone closes it. Agent notes of the same age are deleted too.",
+    "The transcript of each call, what the caller and the agent said, stays in the database until it falls outside the retention period. After that, the text is replaced by a marker and audio follows its own retention period; the call, its time and the rest of the timeline remain. The call summary is written from the speech and goes with it, and the screen says it went. Follow-ups closed longer ago than the period, counted from when they were closed, are deleted too; an open follow-up stays until someone closes it. Agent notes of the same age are deleted too.",
   retentionDays: "Keep for (days)",
   retentionHint: "Empty keeps it forever. The shortest period is {min} days.",
   currentForever: "This organization currently keeps transcripts forever.",
@@ -24,7 +24,7 @@ const privacy: PrivacyDictionary = {
   save: "Save period",
   confirmTitle: "Delete the text of conversations older than {days} days?",
   confirmBody:
-    "The text of those conversations leaves the database in a moment, and once a day from then on; their recordings, if any, go with it. What is removed does not come back. Backups already made keep the text until they are discarded.",
+    "The text of those conversations leaves the database in a moment, and once a day from then on; audio follows its own recording retention period. What is removed does not come back. Backups already made keep the text until they are discarded.",
   confirmYes: "Delete and keep for {days} days",
   notesTitle: "Memory between calls",
   notesLead:
@@ -72,6 +72,8 @@ const privacy: PrivacyDictionary = {
   historyLead: "Who changed the period or the recording, what was removed by it, who exported the data of which phone, who erased data at a caller's request, and what happened to the recording links for callers. The 50 most recent.",
   historyEmpty: "Nothing recorded yet.",
   history: {
+    recording_retention_changed: "{who} changed audio retention from {from} to {to}.",
+    recordings_purged: "Recordings older than {days} days deleted: {count}.",
     transcript_retention_changed: "{who} changed the retention period from {from} to {to}.",
     transcripts_purged: "The text of speech and the call summaries older than {days} days were deleted by the retention period. Speech and summaries deleted: {count}.",
     caller_data_exported: "{who} exported the data of {phone}. Calls: {calls}. Events: {events}.",

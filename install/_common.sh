@@ -286,6 +286,12 @@ render_asterisk_config() {
   render_asterisk_file ari.conf.tmpl ari.conf
   render_asterisk_file rtp.conf.tmpl rtp.conf
   render_asterisk_file pjsip.conf.base pjsip.conf
+  if [ ! -s "$GENERATED_DIR/tls/server.key" ]; then
+    mkdir -p "$GENERATED_DIR/tls"
+    openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=$PUBLIC_IP" \
+      -keyout "$GENERATED_DIR/tls/server.key" -out "$GENERATED_DIR/tls/server.crt" >/dev/null 2>&1
+    chmod 644 "$GENERATED_DIR/tls/server.key"
+  fi
   unset ARI_PASSWORD
 }
 # O que mudou num arquivo que o Asterisk já tinha fica anotado em ASTERISK_PENDING, para

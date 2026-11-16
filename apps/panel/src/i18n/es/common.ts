@@ -61,6 +61,7 @@ const common: CommonDictionary = {
   noAgent: "Sin agente",
   readOnly: "Tu rol es de operador: sigues las llamadas y respondes aprobaciones. Para cambiar esta pantalla, habla con un dueño o administrador.",
   errors: {
+    invalid_rcd_logo: "No se pudo convertir la imagen. Envía PNG, JPEG o BMP de hasta 8 MB.",
     fallback: "No pudimos completar esta acción. Intenta de nuevo en un momento.",
     platform_scope: "Solo la organización que administra esta instalación crea una clave que provisiona empresas.",
     agenda_not_google: "Guarda la agenda de Google antes de autorizar.",

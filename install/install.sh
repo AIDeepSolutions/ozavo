@@ -286,7 +286,8 @@ case "$(nat_status "$public_ip" "$local_ip")" in
     info "Isso quer dizer que a VPS fica atrás de um roteador do provedor (NAT). O Ozavo já"
     info "anuncia o IP público para a operadora. O que EU NÃO consigo fazer daqui: liberar as"
     info "portas no painel do provedor. Confira lá (firewall / security group) se estão abertas:"
-    info "    5060/udp   e   ${rtp_start}-${rtp_end}/udp" ;;
+    info "    5060/udp   e   ${rtp_start}-${rtp_end}/udp"
+    info "    Linhas TLS novas: libere também 5061/tcp no provedor." ;;
   *) warn "IP público $public_ip. Não consegui ler o IP da placa de rede para saber se há NAT; se houver firewall no painel do provedor, libere 5060/udp e ${rtp_start}-${rtp_end}/udp." ;;
 esac
 

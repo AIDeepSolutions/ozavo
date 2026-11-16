@@ -1,10 +1,10 @@
 // Chamada pelo navegador, de ponta a ponta: a API interna entrega o token, um cliente WebSocket de
 // verdade faz o papel da tela, o motor segue um roteiro e o banco é real.
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { recordingPath, withSystem } from "@ozavo/core";
+import { recordingPath, readRecording, withSystem } from "@ozavo/core";
 import { loadTools } from "@ozavo/tools";
 import { createSimulatedEngine, type SimulatedScript, type VoiceEngine } from "@ozavo/voice-engine";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -232,7 +232,7 @@ describe("chamada pelo navegador", { timeout: 120_000 }, () => {
     expect((await tasksOf(app, made.organizationId)).filter((task) => task.kind === "summarize_call" && task.call_id === callId)).toHaveLength(1);
 
     // A conversa ficou gravada: WAV estéreo 8 kHz, com a fala do agente inteira no canal direito.
-    const wav = await waitFor(() => readFile(recordingPath(path.join(scratch, "recordings"), made.organizationId, callId)).catch(() => undefined), "the recording");
+    const wav = await waitFor(() => readRecording(recordingPath(path.join(scratch, "recordings"), made.organizationId, callId), secretKey).catch(() => undefined), "the recording");
     expect(wav.subarray(0, 4).toString()).toBe("RIFF");
     expect(wav.readUInt16LE(22)).toBe(2);
     expect(wav.readUInt32LE(24)).toBe(8000);

@@ -35,7 +35,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
   const to = toE164(input.toE164);
   if (!to) return { code: "invalid_number", message: "The destination is not a valid phone number." };
 
-  type Line = { id: string; caller_id_e164: string | null };
+  type Line = { id: string; caller_id_e164: string | null; caller_display_name: string | null };
   const prepare = (): Promise<{ callId: string; trunk: Line } | OutboundResult> => withOrg(db, input.organizationId, async (q): Promise<{ callId: string; trunk: Line } | OutboundResult> => {
     if (input.requestKey !== undefined) {
       const earlier = await q.one<{ id: string; status: string; end_reason: string | null }>("select id, status, end_reason from calls where request_key = $1", [input.requestKey]);
@@ -47,7 +47,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     if (!agent.enabled) return { code: "agent_disabled", message: "This agent is turned off." };
     // A linha de saída é a do número do agente; sem número, a única linha da organização.
     const trunks = await q.many<Line>(
-      `select t.id, t.caller_id_e164 from trunks t
+      `select t.id, t.caller_id_e164, t.caller_display_name from trunks t
         where exists (select 1 from phone_numbers p where p.trunk_id = t.id and p.agent_id = $1)
            or not exists (select 1 from phone_numbers p where p.agent_id = $1)
         order by t.id limit 2`,
@@ -56,6 +56,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     const trunk = trunks.length === 1 ? trunks[0] : undefined;
     if (!trunk) return { code: "no_line", message: "There is no single phone line for this agent to call from. Give the agent a number in the phone line settings." };
 
+    if (!trunk.caller_id_e164 || toE164(trunk.caller_id_e164) !== trunk.caller_id_e164) return { code: "no_line", message: "The outgoing line needs its own E.164 caller ID." };
     const policy = await checkOutboundAllowed(q, to, clock, trunk.caller_id_e164);
     const decision = policy.allowed ? await checkPacingAllowed(q, clock.now(), { lineE164: trunk.caller_id_e164, globalActive: deps.calls.inProgress }) : policy;
     const call = await q.one<{ id: string }>(
@@ -104,7 +105,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
       context: "ozavo-audio",
       extension: "s",
       channelId: callId,
-      callerId: trunk.caller_id_e164 ?? undefined,
+      callerId: trunk.caller_display_name ? `${trunk.caller_display_name} <${trunk.caller_id_e164}>` : trunk.caller_id_e164 ?? undefined,
       variables: { AUDIOSOCKET_UUID: callId },
     });
   } catch (error) {

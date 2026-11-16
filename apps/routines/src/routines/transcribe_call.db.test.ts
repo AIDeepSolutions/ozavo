@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { MAX_TASK_ATTEMPTS, encryptSecret, recordEvent, withOrg, withSystem } from "@ozavo/core";
@@ -56,16 +56,16 @@ afterAll(async () => {
   await owner.close();
 });
 
-// `readFile` espiado: o que se prova é que a gravação longa demais nem é lida.
+// A abertura do áudio é espiada: o que se prova é que a gravação longa demais nem é lida.
 vi.mock("node:fs/promises", async (importOriginal) => {
   const real = await importOriginal<typeof FsPromises>();
-  return { ...real, readFile: vi.fn(real.readFile) };
+  return { ...real, open: vi.fn(real.open) };
 });
 
 beforeEach(() => {
   PROVEDOR.transcribe.mockClear();
   PROVEDOR.maxAudioBytes = 25 * 1024 * 1024;
-  vi.mocked(readFile).mockClear();
+  vi.mocked(open).mockClear();
 });
 
 /**
@@ -130,7 +130,7 @@ async function gravar(org: string, callId: string, frames = 8000 * 3): Promise<s
 const rodar = (org: string, callId: string, recordingsDir?: string): Promise<void> =>
   transcribeCall.run(task(org, "transcribe_call", {}, callId), depsFor(app, { recordingsDir, fetch: (async () => new Response("{}")) as unknown as typeof fetch }));
 
-const leuAGravacao = (callId: string): boolean => vi.mocked(readFile).mock.calls.some(([file]) => String(file).endsWith(`${callId}.wav`));
+const leuAGravacao = (callId: string): boolean => vi.mocked(open).mock.calls.some(([file]) => String(file).endsWith(`${callId}.wav`));
 
 const falas = async (callId: string) =>
   (await eventsOf(app, callId)).filter((event) => event.kind === "transcript_user" || event.kind === "transcript_agent");

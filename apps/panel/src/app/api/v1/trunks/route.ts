@@ -15,8 +15,8 @@ export const POST = handle(
     requireIpModeForAddresses(body.authMode, body.matchExtra?.length ?? 0, body.outboundHost ?? null);
     requireNumericInbound(body.authMode, body.host, body.matchExtra ?? []);
     return q.one(
-      `insert into trunks (organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning ${TRUNK_COLUMNS}`,
+      `insert into trunks (organization_id, name, host, username, secret_enc, auth_mode, caller_id_e164, match_extra, outbound_host, caller_display_name, sip_tls)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning ${TRUNK_COLUMNS}`,
       [
         q.organizationId,
         body.name,
@@ -27,6 +27,8 @@ export const POST = handle(
         body.callerId ?? null,
         body.matchExtra ?? [],
         body.outboundHost ?? null,
+        body.callerDisplayName ?? null,
+        body.sipTls ?? true,
       ],
     );
   },
