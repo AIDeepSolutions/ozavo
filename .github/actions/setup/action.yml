@@ -29,3 +29,14 @@ runs:
     - name: Instalar dependências
       shell: bash
       run: pnpm install --frozen-lockfile
+
+    # O conversor de logo do RCD (packages/core/src/rcd.ts) chama `python3` com Pillow, e o teste
+    # dele também. As imagens de produção instalam `py3-pillow` (Dockerfile); aqui o runner não
+    # traz o módulo, então ele vem do apt, na versão da distribuição do runner, e a checagem
+    # abaixo falha cedo e com mensagem clara se o módulo não importar.
+    - name: Instalar o Pillow (conversor de logo do RCD)
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --no-install-recommends python3-pil
+        python3 -E -c 'import PIL; print("Pillow", PIL.__version__)'
