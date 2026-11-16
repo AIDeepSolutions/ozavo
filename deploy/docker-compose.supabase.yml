@@ -79,7 +79,7 @@ services:
     logging: *logging
 
   asterisk:
-    image: andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27
+    image: andrius/asterisk@sha256:3b8821840c860a41cd770c71295a5ae38f218ff17229b691bf617de0a33782c6
     restart: unless-stopped
     ports:
       - '5061:5061/tcp'
