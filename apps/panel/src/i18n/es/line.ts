@@ -24,7 +24,7 @@ const line: LineDictionary = {
   passwordKept: "Contraseña configurada. Deja en blanco para mantener la actual.",
   passwordAgain: "Cambiaste la dirección o el usuario: escribe la contraseña de nuevo. La contraseña guardada vale solo para el proveedor anterior.",
   sipTls: "Cifrar señalización y audio",
-  sipTlsHint: "TLS 5061 y SRTP. Obligatorio en producción Supabase; desactivar solo conserva compatibilidad con el instalador comunitario.",
+  sipTlsHint: "TLS en el puerto 5061 y audio SRTP. Márquelo solo si su operadora acepta SIP sobre TLS: la mayoría habla solo UDP, y la línea marcada sin ese soporte no se registra. La producción homologada con la operadora (Supabase) usa TLS.",
   callerDisplayName: "Nombre en la llamada (RCD)",
   callerDisplayNameHint: "Hasta 32 caracteres ASCII, sin acentos. SIP TLS 5061 y SRTP son obligatorios.",
   callerId: "Número mostrado",
