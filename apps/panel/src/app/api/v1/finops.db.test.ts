@@ -1,0 +1,54 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
+import { GET as getPlan, PUT as putPlan } from "./finops/plan/route";
+import { GET as getSummary } from "./finops/route";
+import { GET as getLimits, PUT as putLimits } from "./finops/settings/route";
+
+const panel = startPanel();
+let org: string;
+let owner: string;
+let operator: string;
+
+beforeAll(async () => {
+  org = await createOrganization(panel.app, "finops api");
+  owner = (await createUser(panel.app, org, "owner")).cookie;
+  operator = (await createUser(panel.app, org, "operator")).cookie;
+});
+afterAll(() => panel.close());
+
+const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4 };
+
+describe("FinOps pela API", () => {
+  it("sem plano, o resumo vem do mês do calendário, sem franquia", async () => {
+    const summary = await call(getSummary, { cookie: operator });
+    expect(summary.data).toMatchObject({ subscription: null, includedSeconds: null, consumedSeconds: 0, period: { start: "2026-03-01", end: "2026-04-01" }, alerts: [], cadenceBreakers: [] });
+    expect((await call(getPlan, { cookie: operator })).data).toMatchObject({ subscription: null, catalog: { starter: { monthlyPriceCents: 49_700, includedMinutes: 300 } } });
+  });
+
+  it("operador lê, mas não troca o plano nem os limites", async () => {
+    expect(await call(putPlan, { cookie: operator, method: "PUT", body: { plan: "pro", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 403, code: "forbidden" });
+    expect(await call(putLimits, { cookie: operator, method: "PUT", body: limits })).toMatchObject({ status: 403, code: "forbidden" });
+    expect((await call(getLimits, { cookie: operator })).data).toEqual({ ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null });
+  });
+
+  it("dono contrata o plano do catálogo, e o ciclo começa hoje no calendário da organização", async () => {
+    const saved = await call(putPlan, { cookie: owner, method: "PUT", body: { plan: "growth", overageRule: "bill_overage", overagePriceCentsPerMinute: 120, monthlyPriceCents: 1 } });
+    expect(saved.data).toMatchObject({
+      subscription: { plan: "growth", monthlyPriceCents: 149_700, includedMinutes: 1500, overageRule: "bill_overage", overagePriceCentsPerMinute: 120, maxConcurrentCalls: 4, cycleStartedOn: "2026-03-01" },
+    });
+    expect((await call(getSummary, { cookie: owner })).data).toMatchObject({ subscription: { plan: "growth" }, includedSeconds: 90_000, period: { start: "2026-03-01", end: "2026-04-01" }, margin: { revenueCents: 149_700, variableCostCents: null } });
+  });
+
+  it("o plano Personalizado exige preço, franquia e chamadas simultâneas", async () => {
+    const base = { plan: "custom", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 };
+    expect(await call(putPlan, { cookie: owner, method: "PUT", body: base })).toMatchObject({ status: 400, code: "validation_error" });
+    const saved = await call(putPlan, { cookie: owner, method: "PUT", body: { ...base, monthlyPriceCents: 350_000, includedMinutes: 6000, maxConcurrentCalls: 20, cycleStartedOn: "2026-02-10" } });
+    expect(saved.data).toMatchObject({ subscription: { plan: "custom", monthlyPriceCents: 350_000, includedMinutes: 6000, maxConcurrentCalls: 20, cycleStartedOn: "2026-02-10" } });
+  });
+
+  it("dono grava os limites de operação, e o resumo passa a ter custo de telefonia", async () => {
+    expect((await call(putLimits, { cookie: owner, method: "PUT", body: limits })).data).toEqual(limits);
+    expect(await call(putLimits, { cookie: owner, method: "PUT", body: { ...limits, ttsConcurrencyLimit: 0 } })).toMatchObject({ status: 400, code: "validation_error" });
+    expect((await call(getSummary, { cookie: owner })).data).toMatchObject({ settings: limits, margin: { providerCostCents: 0, telephonyCostCents: 0, variableCostCents: 0 } });
+  });
+});
