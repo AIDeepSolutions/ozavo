@@ -49,7 +49,7 @@ allow=alaw
 aors=trunk-${A}
 outbound_auth=trunk-${A}-auth
 from_user=conta100
-from_domain=203.0.113.10
+from_domain=sip.operadora.example
 send_pai=yes
 send_rpid=no
 trust_id_inbound=no
@@ -63,7 +63,7 @@ rewrite_contact=yes
 
 [trunk-${A}]
 type=aor
-contact=sip:sip.operadora.example:5060;transport=tls
+contact=sip:sip.operadora.example:5061;transport=tls
 qualify_frequency=30
 
 [trunk-${A}-auth]
@@ -76,8 +76,8 @@ password=s3nha\\;com#simbolos[]
 type=registration
 transport=transport-tls
 outbound_auth=trunk-${A}-auth
-server_uri=sip:sip.operadora.example:5060;transport=tls
-client_uri=sip:conta100@sip.operadora.example:5060;transport=tls
+server_uri=sip:sip.operadora.example:5061;transport=tls
+client_uri=sip:conta100@sip.operadora.example:5061;transport=tls
 line=yes
 endpoint=trunk-${A}
 retry_interval=60
@@ -419,7 +419,8 @@ retry_interval=60
   });
 
   it("IP público malformado não entra no arquivo", () => {
-    const { conf } = renderTrunksConf([{ ...register, publicIp: "203.0.113.10\n[x]" }]);
+    // Sem TLS: na linha TLS por nome o domínio é o da operadora e o IP público nem é usado.
+    const { conf } = renderTrunksConf([{ ...register, sipTls: false, publicIp: "203.0.113.10\n[x]" }]);
     expect(conf).not.toContain("from_domain");
     expect(sections(conf)).toHaveLength(4);
   });
