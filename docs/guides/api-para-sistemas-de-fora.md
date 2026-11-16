@@ -57,9 +57,12 @@ POST /api/v1/tenants/provision
 }
 ```
 
-- `201` com a empresa, o dono, o agente, `initialPassword` (só nesta resposta) e `loginUrl`.
-  Entregue a senha inicial ao cliente por um canal seguro e peça que ele a troque em Sua conta.
-- O mesmo `source` + `externalRef` devolve a mesma empresa com `200`, sem senha e sem criar outra.
+- `201` com a empresa, o agente, `ownerInviteUrl`, `ownerInviteExpiresAt` e `loginUrl`. Nenhuma senha
+  sai na resposta: o dono abre o `ownerInviteUrl` (uso único, vale 7 dias) e escolhe a própria senha.
+  Envie o link ao cliente, por e-mail ou WhatsApp. `ownerUserId` fica `null` até ele aceitar.
+- O mesmo `source` + `externalRef` devolve a mesma empresa com `200`, sem criar outra. Se o dono
+  ainda não aceitou, a resposta traz um `ownerInviteUrl` novo e o anterior deixa de valer; depois
+  que ele entra, traz o `ownerUserId` e nenhum link.
 - E-mail de dono já usado na instalação: `409 email_taken`.
 - A empresa nasce com as ligações de saída desligadas. O plano fica gravado como vínculo; quem o
   aplica é o motor de planos.

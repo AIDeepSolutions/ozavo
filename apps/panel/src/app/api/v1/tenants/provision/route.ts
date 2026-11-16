@@ -54,7 +54,8 @@ function defaultInstructions(persona: string, company: string): string {
 /**
  * Provisionamento automático: o n8n chama depois da assinatura do contrato e da confirmação do
  * pagamento no Asaas. Só uma chave `tenants:provision` da organização que administra a instalação
- * serve. Devolve a empresa pronta: o dono (com a senha inicial, só na criação) e o agente.
+ * serve. Devolve a empresa pronta e o agente. O dono não recebe senha: recebe um convite de uso
+ * único (`ownerInviteUrl`), em que ele mesmo escolhe a senha. Nenhuma senha passa pelo n8n.
  */
 export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ key, body, deps }) => {
   if (!key.platform) throw new ApiError(403, "forbidden", "Only the organization that runs this installation can provision companies.");
@@ -90,6 +91,7 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
     deps.clock.now(),
   );
   if ("refused" in result) throw new ApiError(409, "email_taken", "There is already a user with this owner e-mail in this installation.");
-  if (!result.created) return { status: 200, data: { ...result, loginUrl: `${deps.publicUrl}/login` } };
-  return { status: 201, data: { ...result, loginUrl: `${deps.publicUrl}/login` } };
+  const { ownerInvite, ...provisioned } = result;
+  const invite = ownerInvite && { ownerInviteUrl: `${deps.publicUrl}/invite/${ownerInvite.token}`, ownerInviteExpiresAt: ownerInvite.expiresAt.toISOString() };
+  return { status: result.created ? 201 : 200, data: { ...provisioned, ...invite, loginUrl: `${deps.publicUrl}/login` } };
 });
