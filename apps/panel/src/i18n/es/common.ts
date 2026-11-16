@@ -9,6 +9,7 @@ const common: CommonDictionary = {
     line: "Línea telefónica",
     outbound: "Llamadas salientes",
     costs: "Costos",
+    finops: "FinOps",
     team: "Equipo",
     settings: "Configuración",
   },

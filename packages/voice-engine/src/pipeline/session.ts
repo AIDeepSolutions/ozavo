@@ -7,6 +7,7 @@ import type { CartesiaTts, TtsHandlers } from "./cartesia-tts";
 import type { DeepgramStt, SttHandlers } from "./deepgram-stt";
 import { endpointDelayMs } from "./endpointing";
 import type { ChatMessage, ChatToolCall, LlmEvent } from "./openrouter-llm";
+import { TURN_TARGET_MAX_CHARACTERS, createTurnLimiter } from "./turn-guard";
 import { EnergyVad, type VadOptions } from "./vad";
 
 /**
@@ -64,11 +65,11 @@ const LANGUAGE_RULE: Record<string, string> = {
   es: "Responde siempre en español.",
 };
 
-export const MAX_TURN_CHARACTERS = 160;
+export const MAX_TURN_CHARACTERS = TURN_TARGET_MAX_CHARACTERS;
 
 const PHONE_STYLE =
   "This is a phone call: answer in short sentences, one idea at a time, with no lists, markdown or emojis. " +
-  "Aim for 120 to 160 characters per turn; shorter answers are allowed. Never exceed 160 characters. " +
+  "Aim for 120 to 160 characters per turn; shorter answers are allowed. Never exceed 160 characters: anything longer is cut off before it is spoken. " +
   "When a tool is needed, call it instead of describing it.";
 
 /** Bytes por milissegundo do PCM16 mono 8 kHz. */
@@ -233,6 +234,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     turn = current;
     let text = "";
     let pending = "";
+    // O limitador suave do turno: o que passa do alvo de caracteres não chega à síntese.
+    const limiter = createTurnLimiter();
     const calls: ChatToolCall[] = [];
     const send = (piece: string, final: boolean): void => {
       if (piece.trim() === "" && !final) return;
@@ -252,8 +255,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         if (turn !== current) continue;
         if (event.type === "text") {
           current.firstTokenAt ??= now();
-          const remaining = MAX_TURN_CHARACTERS - text.length;
-          const delta = event.delta.slice(0, Math.max(0, remaining));
+          const delta = limiter.push(event.delta);
           text += delta;
           pending += delta;
           for (let cut = splitPoint(pending, current.spoken === ""); cut !== -1; cut = splitPoint(pending, current.spoken === "")) {
@@ -275,6 +277,9 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       return;
     }
     if (turn !== current) return;
+    const tail = limiter.flush();
+    text += tail;
+    pending += tail;
     current.written = true;
     if (current.spoken !== "" || pending.trim() !== "") send(pending, true);
     history.push({ role: "assistant", content: text.trim() === "" ? null : text.trim(), ...(calls.length > 0 && { tool_calls: calls }) });

@@ -256,3 +256,55 @@ export interface Setting<T> {
   key: string;
   value: T | null;
 }
+
+export type PlanId = "starter" | "pro" | "growth" | "scale" | "custom";
+export type OverageRule = "pause_outbound" | "bill_overage";
+
+export interface PlanSubscription {
+  plan: PlanId;
+  monthlyPriceCents: number;
+  includedMinutes: number;
+  overageRule: OverageRule;
+  overagePriceCentsPerMinute: number;
+  maxConcurrentCalls: number;
+  cycleStartedOn: string;
+}
+
+export interface PlanState {
+  subscription: PlanSubscription | null;
+  catalog: Record<Exclude<PlanId, "custom">, { monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number }>;
+}
+
+export interface OperationSettings {
+  ttsConcurrencyLimit: number | null;
+  reducedCallsPerHour: number;
+  telephonyBrlPerMinute: number | null;
+  usdBrlRate: number | null;
+}
+
+export interface Finops {
+  subscription: PlanSubscription | null;
+  period: { start: string; end: string };
+  consumedSeconds: number;
+  includedSeconds: number | null;
+  overageSeconds: number;
+  answeredCalls: number;
+  ttsCharacters: number;
+  providerCostUsdCents: number;
+  margin: {
+    revenueCents: number;
+    overageRevenueCents: number;
+    providerCostCents: number | null;
+    telephonyCostCents: number | null;
+    variableCostCents: number | null;
+    grossMarginCents: number | null;
+    grossMarginPercent: number | null;
+    costPerMinuteCents: number | null;
+    withinTarget: boolean | null;
+  };
+  costTargetCentsPerMinute: number;
+  settings: OperationSettings;
+  alerts: Array<{ threshold: number; at: string }>;
+  cadenceBreakers: Array<{ lineE164: string; totalCalls: number; shortCalls: number; trippedAt: string }>;
+  byDay: Array<{ day: string; seconds: number; calls: number; ttsCharacters: number; providerCostUsdCents: number }>;
+}

@@ -177,14 +177,15 @@ describe("sessão do pipeline", () => {
     expect(sttClosed).toBe(true);
   });
 
-  it("limita respostas geradas a 160 caracteres sem impedir chamadas de ferramenta", async () => {
+  it("limita o turno ao alvo de 160 caracteres, deixando a frase em curso terminar, sem impedir chamadas de ferramenta", async () => {
     const t = await setup();
     callerSays(t, "Explique os serviços.");
     t.timers.runAll();
     t.streams[0]?.push({ type: "text", delta: "Podemos ajudar com sua consulta. ".repeat(30) }, { type: "tool_call", call: { id: "c1", type: "function", function: { name: "call_webhook", arguments: "{}" } } });
     t.streams[0]?.end();
     await until(() => t.toolCalls.length === 1);
-    expect(t.spoken.map((piece) => piece.text).join("")).toHaveLength(160);
+    // Cinco frases de 33 caracteres: a quinta cruza os 160 e termina dentro da tolerância.
+    expect(t.spoken.map((piece) => piece.text).join("")).toBe("Podemos ajudar com sua consulta. ".repeat(5).trimEnd());
   });
 
   it("inbound não roda detecção de caixa postal", async () => {

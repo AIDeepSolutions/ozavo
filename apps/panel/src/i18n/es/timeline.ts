@@ -252,6 +252,9 @@ const timeline: TimelineDictionary = {
     outside_window: "Fuera del horario permitido para llamadas salientes.",
     do_not_call: "El número está en la lista de no llamar.",
     daily_cap_reached: "Se había alcanzado el tope diario de llamadas de esta línea.",
+    plan_quota_exhausted: "La franquicia de minutos del plan se agotó, y las llamadas salientes están en pausa hasta el próximo ciclo. La regla se ajusta en FinOps.",
+    concurrency_limit: "Se alcanzó el límite de llamadas al mismo tiempo (el del plan, o el de la cuenta del proveedor de síntesis de voz). Los límites están en FinOps.",
+    cadence_reduced: "La cadencia de salida de esta línea está reducida hoy por exceso de llamadas cortas, y se alcanzó el límite por hora.",
     attempts_exhausted: "Se había alcanzado el límite de intentos para esta persona.",
   },
 };

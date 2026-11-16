@@ -156,7 +156,7 @@ describe("POST /api/v1/tenants/provision", () => {
       agent: await q.one<{ name: string; instructions: string }>("select name, instructions from agents where id = $1", [data.agentId]),
       policy: await q.one("select enabled from outbound_policy"),
       secret: await q.one<{ value: string; secret: boolean }>("select value, secret from settings where key = 'engine.gemini-live.api_key'"),
-      events: await q.many<{ kind: string }>("select kind from organization_events"),
+      events: await q.many<{ kind: string }>("select kind from organization_events order by id"),
     }));
     expect(state.profile).toEqual({ plan_code: "pro", monthly_minutes: 750, persona_name: "Nico", base_prompt: "Atenda com calma.", default_agent_id: data.agentId, status: "active" });
     expect(state.agent?.name).toBe("Nico");
@@ -165,7 +165,8 @@ describe("POST /api/v1/tenants/provision", () => {
     expect(state.policy).toEqual({ enabled: false });
     expect(state.secret?.secret).toBe(true);
     expect(state.secret?.value).not.toContain("chave-de-teste");
-    expect(state.events.map((event) => event.kind)).toEqual(["tenant_provisioned"]);
+    // O plano "pro" é do catálogo: a empresa já nasce com a franquia contratada (motor de planos).
+    expect(state.events.map((event) => event.kind)).toEqual(["tenant_provisioned", "plan_changed"]);
 
     const repeated = await call(provision, { method: "POST", headers: bearer(key.token), body: request(ref, email) });
     expect(repeated.status).toBe(200);

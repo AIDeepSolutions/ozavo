@@ -252,6 +252,9 @@ const timeline: TimelineDictionary = {
     outside_window: "Outside the hours allowed for outbound calls.",
     do_not_call: "The number is on the do-not-call list.",
     daily_cap_reached: "The daily call limit of this line had been reached.",
+    plan_quota_exhausted: "The plan's minute allowance is used up, and outbound calls are paused until the next cycle. The rule is set under FinOps.",
+    concurrency_limit: "The limit of calls at the same time was reached (the plan's, or the speech synthesis provider account's). The limits are under FinOps.",
+    cadence_reduced: "The outbound cadence of this line is reduced today because of too many short calls, and the hourly limit was reached.",
     attempts_exhausted: "The attempt limit for this person had been reached.",
   },
 };

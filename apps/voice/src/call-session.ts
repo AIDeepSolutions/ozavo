@@ -1,4 +1,4 @@
-import { CALL_RECORDING_SETTING, callRecordingOf, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
 import { EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
@@ -107,6 +107,8 @@ const CONNECT_TIMEOUT_MS = 15_000;
 // Tempo para a despedida ser gerada e chegar à fila de saída; o que estiver na fila ainda toca
 // até o fim antes de a ligação cair (`transport.hangup` espera).
 const FAREWELL_MS = 6000;
+/** De quanto em quanto a chamada confere a franquia do plano. */
+const USAGE_CHECK_INTERVAL_MS = 30_000;
 const FAREWELL = {
   maxDuration: "Esta ligação chegou ao tempo máximo e vou precisar encerrar. Se ainda precisar de algo, é só ligar de novo. Obrigado.",
   costCeiling: "Preciso encerrar esta ligação agora. Se ainda precisar de algo, é só ligar de novo. Obrigado.",
@@ -294,6 +296,9 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     cancelTimers.push(schedule(() => void finish(end), FAREWELL_MS));
   }
 
+  /** Quando a franquia do plano foi conferida pela última vez nesta chamada. */
+  let usageCheckedAt = Number.NEGATIVE_INFINITY;
+
   async function meter(increment: Usage): Promise<void> {
     if (!engine) return;
     usage.seconds += increment.seconds ?? 0;
@@ -320,7 +325,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       );
     }
     await q.exec(
-      "insert into usage_ledger (organization_id, call_id, engine, seconds, input_tokens, output_tokens, cost_cents, cost_microcents, at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      "insert into usage_ledger (organization_id, call_id, engine, seconds, input_tokens, output_tokens, cost_cents, cost_microcents, at, tts_characters) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
       [
         organizationId,
         callId,
@@ -334,9 +339,18 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
         // menor que um centavo).
         delta * MICROCENTS_PER_CENT,
         clock.now(),
+        Math.round(increment.characters ?? 0),
       ],
     );
     await q.exec("update calls set cost_cents = $2 where id = $1", [callId, total]);
+    // A franquia do plano é conferida durante a chamada: o aviso de 80% e de 100% sai na chamada que
+    // cruzou o limiar, e não no fechamento do mês. No máximo uma conferência a cada meio minuto: há
+    // motor que mede a cada segundo de áudio.
+    const measuredAt = clock.now().getTime();
+    if (measuredAt - usageCheckedAt >= USAGE_CHECK_INTERVAL_MS) {
+      usageCheckedAt = measuredAt;
+      await checkUsageAlerts(q, clock.now());
+    }
     if (reached) {
       await event("cost_ceiling_reached", { costCents: total, ceilingCents: ceiling });
       if (transferTo) await event("transfer_started", { to: transferTo, reason: "cost_ceiling" });

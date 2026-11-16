@@ -24,7 +24,8 @@ const body = z.object({
     cnpj: cnpj.optional(),
   }),
   owner: z.object({ name: z.string().trim().min(1).max(120), email: z.email().max(254) }),
-  // O plano é gravado como vínculo; o motor de planos (fase 3) é quem o aplica.
+  // O plano é gravado como vínculo. Quando o código é do catálogo (starter, pro, growth, scale), o
+  // motor de planos já contrata a franquia da empresa no provisionamento.
   plan: z.object({ code: slug, monthlyMinutes: z.number().int().min(0).max(1_000_000).optional() }),
   agent: z
     .object({

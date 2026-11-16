@@ -7,6 +7,7 @@ const common = {
     line: "Linha telefônica",
     outbound: "Ligações de saída",
     costs: "Custos",
+    finops: "FinOps",
     team: "Equipe",
     settings: "Configurações",
   },

@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { recordOrgEvent } from "./events";
+import { localDay } from "./metering";
 import { hashPassword } from "./password";
+import { PLAN_CATALOG, setPlanSubscription, type CatalogPlanId } from "./plans";
 import type { Db, OrgQuery } from "./types";
 import { withSystem } from "./with-org";
 
@@ -232,6 +234,15 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date):
         { source: input.source, externalRef: input.externalRef, planCode: input.plan.code, requestedBy: input.requestedBy },
         now,
       );
+      // O plano do catálogo vira a franquia da empresa na mesma transação: ela já nasce medida e com
+      // os alertas de 80% e 100%. A franquia esgotada pausa as ligações de saída, que é o padrão; quem
+      // prefere tarifar o excedente troca na tela de FinOps. Um código fora do catálogo fica só como
+      // vínculo: sem preço conhecido não há o que contratar, e a empresa segue sem limite.
+      if (Object.hasOwn(PLAN_CATALOG, input.plan.code)) {
+        const scoped = { ...q, organizationId };
+        const { day } = await localDay(scoped, now);
+        await setPlanSubscription(scoped, { plan: input.plan.code as CatalogPlanId, overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 }, now, day);
+      }
       return { created: true as const, organizationId, ownerUserId, agentId, initialPassword };
     });
   } catch (error) {

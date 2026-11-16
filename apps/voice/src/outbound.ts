@@ -1,4 +1,4 @@
-import { recordEvent, toE164, withOrg, type Clock, type Db } from "@ozavo/core";
+import { checkPacingAllowed, recordEvent, toE164, withOrg, type Clock, type Db } from "@ozavo/core";
 import { dialString, type AriClient } from "./ari";
 import type { AsteriskCalls } from "./asterisk-transport";
 import { messageOf, type Logger } from "./log";
@@ -26,8 +26,9 @@ export interface OutboundRequest {
 
 /**
  * Origina uma ligação do agente para `toE164`. Só depois de `checkOutboundAllowed`: não existe
- * outro caminho que origine chamada. A recusa da política também fica gravada, como chamada
- * `refused` com o evento `call_refused`, para quem audita ver o que foi tentado.
+ * outro caminho que origine chamada. Quem passa pela política ainda passa por `checkPacingAllowed`
+ * (franquia do plano, chamadas ao mesmo tempo, cadência reduzida). A recusa, de uma ou de outra,
+ * fica gravada como chamada `refused` com o evento `call_refused`, para quem audita ver o que foi tentado.
  */
 export async function startOutboundCall(deps: OutboundDeps, input: { organizationId: string; agentId: string; toE164: string } & OutboundRequest): Promise<OutboundResult> {
   const { db, ari, clock, log } = deps;
@@ -55,7 +56,8 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     const trunk = trunks.length === 1 ? trunks[0] : undefined;
     if (!trunk) return { code: "no_line", message: "There is no single phone line for this agent to call from. Give the agent a number in the phone line settings." };
 
-    const decision = await checkOutboundAllowed(q, to, clock, trunk.caller_id_e164);
+    const policy = await checkOutboundAllowed(q, to, clock, trunk.caller_id_e164);
+    const decision = policy.allowed ? await checkPacingAllowed(q, clock.now(), { lineE164: trunk.caller_id_e164, globalActive: deps.calls.inProgress }) : policy;
     const call = await q.one<{ id: string }>(
       `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at, requested_by_key_id, request_context, request_key)
        values ($1, $2, 'outbound', 'phone', $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
