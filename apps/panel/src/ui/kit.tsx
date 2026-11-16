@@ -123,7 +123,7 @@ export function PageHeader({ title, lead, actions }: { title: string; lead?: Rea
   return (
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div className="grid max-w-[64ch] gap-1">
-        <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{title}</h1>
+        <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{title}</h1>
         {lead ? <p className="text-muted">{lead}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

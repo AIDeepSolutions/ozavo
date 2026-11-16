@@ -8,14 +8,18 @@ import "./globals.css";
 
 // As fontes moram no repositório (./fonts, subconjunto latino, do Fontsource 5.3.0, licença OFL ao
 // lado): a construção não baixa nada de fora, e sem acesso ao serviço de fontes a imagem ainda sai.
-const atkinson = localFont({
+// Inter é a tipografia do manual da marca: 800 em títulos e números de destaque, 700 em subtítulos
+// e cabeçalhos de tabela, 400 no corpo. A reserva (Segoe UI, Helvetica Neue, Arial) está em globals.css.
+const inter = localFont({
   src: [
-    { path: "./fonts/atkinson-hyperlegible-latin-400-normal.woff2", weight: "400", style: "normal" },
-    { path: "./fonts/atkinson-hyperlegible-latin-400-italic.woff2", weight: "400", style: "italic" },
-    { path: "./fonts/atkinson-hyperlegible-latin-700-normal.woff2", weight: "700", style: "normal" },
-    { path: "./fonts/atkinson-hyperlegible-latin-700-italic.woff2", weight: "700", style: "italic" },
+    { path: "./fonts/inter-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/inter-latin-400-italic.woff2", weight: "400", style: "italic" },
+    { path: "./fonts/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/inter-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/inter-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/inter-latin-800-normal.woff2", weight: "800", style: "normal" },
   ],
-  variable: "--font-atkinson",
+  variable: "--font-inter",
 });
 const plexMono = localFont({
   src: [
@@ -25,14 +29,23 @@ const plexMono = localFont({
   variable: "--font-plex-mono",
 });
 
-export const metadata: Metadata = { title: "Ozavo" };
+// Ícones oficiais do brand kit (manual v1.0): o favicon usa só o símbolo. `favicon.ico` (16 e 32 px)
+// mora em ./favicon.ico e o Next o serve sozinho; os PNG estão em public/brand.
+const SYMBOL_SIZES = [16, 32, 64, 192, 512, 1024] as const;
+export const metadata: Metadata = {
+  title: "Ozavo",
+  icons: {
+    icon: [{ url: "/brand/ozavo-symbol.svg", type: "image/svg+xml" }, ...SYMBOL_SIZES.map((size) => ({ url: `/brand/ozavo-symbol-${size}.png`, sizes: `${size}x${size}`, type: "image/png" }))],
+    apple: [{ url: "/brand/ozavo-apple-touch-180.png", sizes: "180x180", type: "image/png" }],
+  },
+};
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const jar = await cookies();
   const locale = pickLocale(jar.get(LOCALE_COOKIE)?.value, (await headers()).get("accept-language"));
   const theme = jar.get(THEME_COOKIE)?.value;
   return (
-    <html lang={locale} data-theme={theme === "light" || theme === "dark" ? theme : undefined} className={`${atkinson.variable} ${plexMono.variable}`}>
+    <html lang={locale} data-theme={theme === "light" || theme === "dark" ? theme : undefined} className={`${inter.variable} ${plexMono.variable}`}>
       <body>
         <LocaleProvider locale={locale}>{children}</LocaleProvider>
       </body>

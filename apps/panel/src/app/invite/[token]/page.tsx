@@ -1,6 +1,5 @@
 "use client";
 
-import { Waveform } from "@phosphor-icons/react";
 import Link from "next/link";
 import { use, useEffect, useState, type FormEvent } from "react";
 import en from "../../../i18n/en/invite";
@@ -12,6 +11,7 @@ import ptBR from "../../../i18n/pt-BR/invite";
 import ptBRTeam from "../../../i18n/pt-BR/team";
 import { useDict } from "../../../i18n/provider";
 import { ApiFailure, api } from "../../../ui/api";
+import { BrandLogo, BrandSignature } from "../../../ui/brand";
 import { useErrorText } from "../../../ui/errors";
 import { Button, Field, Notice, Skeleton, TextInput } from "../../../ui/kit";
 import { LocaleSelect } from "../../../ui/shell";
@@ -67,10 +67,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
     <main className="mx-auto grid min-h-dvh max-w-[440px] content-center gap-8 px-5 py-10">
       <div className="rise grid gap-8">
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-[1.2rem] font-bold tracking-[-0.01em]">
-            <Waveform size={28} weight="duotone" className="text-accent" aria-hidden />
-            Ozavo
-          </span>
+          <BrandLogo size="md" />
           <LocaleSelect />
         </div>
 
@@ -79,7 +76,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         {problem ? (
           problem.code === "invite_invalid" ? (
             <div className="grid gap-3">
-              <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{t.invalidTitle}</h1>
+              <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{t.invalidTitle}</h1>
               <p className="text-muted">{t.invalidBody}</p>
             </div>
           ) : (
@@ -90,7 +87,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         {invite && !problem ? (
           <>
             <div className="grid gap-1">
-              <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{t.title}</h1>
+              <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{t.title}</h1>
               <p className="text-muted">{fill(t.lead, { organization: invite.organizationName })}</p>
             </div>
             <dl className="grid gap-3 border-y border-line py-4">
@@ -126,6 +123,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
           {t.signIn}
         </Link>
       </div>
+      <BrandSignature />
     </main>
   );
 }

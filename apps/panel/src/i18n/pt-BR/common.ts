@@ -35,6 +35,7 @@ const common = {
     openCall: "Ver a ligação",
     followUpOpen: "Ver a pendência",
     followUpGone: "Pendência apagada pelo prazo de guarda.",
+    signature: "Ozavo — Uma solução AI Deep Solutions",
   },
   roles: { owner: "Dono", admin: "Administrador", operator: "Operador" },
   health: {

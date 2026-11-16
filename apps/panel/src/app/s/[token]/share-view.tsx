@@ -1,12 +1,13 @@
 "use client";
 
-import { DownloadSimple, Waveform } from "@phosphor-icons/react";
+import { DownloadSimple } from "@phosphor-icons/react";
 import en from "../../../i18n/en/share";
 import es from "../../../i18n/es/share";
 import ptBR from "../../../i18n/pt-BR/share";
 import { useDict, useLocale } from "../../../i18n/provider";
 import { formatDateTime } from "../../../ui/format";
 import { buttonClass } from "../../../ui/kit";
+import { BrandLogo, BrandSignature } from "../../../ui/brand";
 import { LocaleSelect } from "../../../ui/shell";
 
 export interface PublicShare {
@@ -28,17 +29,14 @@ export function ShareView({ share }: { share: PublicShare | null }) {
     <main className="mx-auto grid min-h-dvh max-w-[440px] content-center gap-8 px-5 py-10">
       <div className="rise grid gap-8">
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-[1.2rem] font-bold tracking-[-0.01em]">
-            <Waveform size={28} weight="duotone" className="text-accent" aria-hidden />
-            Ozavo
-          </span>
+          <BrandLogo size="md" />
           <LocaleSelect />
         </div>
 
         {share ? (
           <>
             <div className="grid gap-1">
-              <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{t.title}</h1>
+              <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{t.title}</h1>
               <p className="text-muted">{t.lead}</p>
             </div>
             <dl className="grid gap-3 border-y border-line py-4">
@@ -69,11 +67,12 @@ export function ShareView({ share }: { share: PublicShare | null }) {
           </>
         ) : (
           <div className="grid gap-3">
-            <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{t.goneTitle}</h1>
+            <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{t.goneTitle}</h1>
             <p className="text-muted">{t.goneBody}</p>
           </div>
         )}
       </div>
+      <BrandSignature />
     </main>
   );
 }

@@ -1,12 +1,12 @@
 "use client";
 
-import { Waveform } from "@phosphor-icons/react";
 import { useState, type FormEvent } from "react";
 import en from "../../i18n/en/login";
 import es from "../../i18n/es/login";
 import ptBR from "../../i18n/pt-BR/login";
 import { useDict } from "../../i18n/provider";
 import { api } from "../../ui/api";
+import { BrandLogo, BrandSignature } from "../../ui/brand";
 import { useErrorText } from "../../ui/errors";
 import { Button, Field, TextInput } from "../../ui/kit";
 import { LocaleSelect } from "../../ui/shell";
@@ -35,14 +35,11 @@ export default function LoginPage() {
     <main className="mx-auto grid min-h-dvh max-w-[1040px] content-center gap-12 px-5 py-10 md:grid-cols-[minmax(0,380px)_minmax(0,1fr)] md:gap-20">
       <div className="rise grid content-center gap-8">
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-2 text-[1.2rem] font-bold tracking-[-0.01em]">
-            <Waveform size={28} weight="duotone" className="text-accent" aria-hidden />
-            Ozavo
-          </span>
+          <BrandLogo size="md" />
           <LocaleSelect />
         </div>
         <div className="grid gap-1">
-          <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.01em]">{t.title}</h1>
+          <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-[-0.01em]">{t.title}</h1>
           <p className="text-muted">{t.lead}</p>
         </div>
         <form onSubmit={(event) => void submit(event)} className="grid gap-4">
@@ -57,6 +54,7 @@ export default function LoginPage() {
           </Button>
         </form>
         <p className="text-[0.87rem] text-muted">{t.forgot}</p>
+        <BrandSignature />
       </div>
 
       {/* O fio da linha do tempo, que é a assinatura do produto, contando o que ele faz. */}

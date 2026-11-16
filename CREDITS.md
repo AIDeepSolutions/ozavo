@@ -92,8 +92,8 @@ segue sob a licença dos seus autores.
 
 ## Fontes do painel
 
-O painel usa [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/), do Braille
-Institute, e [IBM Plex Mono](https://github.com/IBM/plex), da IBM, as duas sob a SIL Open Font
+O painel usa [Inter](https://github.com/rsms/inter), de The Inter Project Authors, e
+[IBM Plex Mono](https://github.com/IBM/plex), da IBM, as duas sob a SIL Open Font
 License 1.1. Os arquivos ficam em `apps/panel/src/app/fonts/`, com a licença de cada uma ao lado.
 São o subconjunto latino publicado pelo [Fontsource](https://fontsource.org) 5.3.0, sem alteração.
 
@@ -127,7 +127,11 @@ A HostGator é a parceira de infraestrutura do projeto.
 
 O nome na marca é composto em [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/),
 do Braille Institute, sob a SIL Open Font License 1.1, e está convertido em curvas nos arquivos de
-[`brand/`](brand/README.md). É a mesma fonte do painel.
+[`brand/`](brand/README.md).
+
+O painel usa a identidade visual oficial v1.0 (brand kit da AI Deep Solutions): os logos, o símbolo
+e os ícones em `apps/panel/public/brand/` e o `favicon.ico` em `apps/panel/src/app/` são os arquivos
+do kit; os dois logos horizontais foram só recortados na borda do desenho e reduzidos.
 
 ## Pessoas
 

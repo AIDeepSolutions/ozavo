@@ -9,39 +9,46 @@ Este trata das telas.
 
 ## A direção em uma frase
 
-Calma, da mesma família do DeskcommCRM, com um acento próprio: o cobre, que marca o que está vivo.
-A família foi decidida na fundação, como decisão do construtor
+Calma e precisa, na identidade visual oficial do Ozavo (manual da marca v1.0, aplicado em
+16/11/2026 por pedido do dono): Deep Navy no texto e nos fundos escuros, Cyber Blue no que está
+ativo, Digital Teal nos indicadores de áudio, branco e Ice Slate nas superfícies. Cores sólidas,
+sem degradê e sem roxo. O acento continua marcando o que está vivo. A estrutura das telas (fio da
+linha do tempo, componentes, espaço) vem da família do DeskcommCRM, decidida na fundação
 ([desenho da fundação](../specs/2026-11-10-fundacao-design.md), "Decisões do construtor").
 
 ## Do que ela é feita
 
 | Peça | Onde mora | O que faz |
 |---|---|---|
-| Cores | [`apps/panel/src/design/tokens.css`](../../apps/panel/src/design/tokens.css) | A fonte única. Cada cor é um token `--dv-*` com `light-dark()`: o tema segue o sistema, e `data-theme` no `<html>` força claro ou escuro. Superfícies (`bg`, `surface`, `sunken`, `line`), texto (`text`, `muted`), acento (`accent` e variações) e estados (`ok`, `warn`, `fail`, cada um com a versão `-soft` para fundo) |
+| Cores | [`apps/panel/src/design/tokens.css`](../../apps/panel/src/design/tokens.css) | A fonte única. Cada cor é um token `--dv-*` com `light-dark()`: o tema segue o sistema, e `data-theme` no `<html>` força claro ou escuro. Superfícies (`bg` branco, `sunken` Ice Slate, `surface`, `line`), texto (`text` Deep Navy, `muted`), acento (`accent`: Cyber Blue no claro, Digital Teal no escuro, e variações), sinal de áudio (`signal`, Digital Teal) e estados (`ok`, `warn`, `fail`, cada um com a versão `-soft` para fundo) |
 | Ponte para o Tailwind | [`apps/panel/src/app/globals.css`](../../apps/panel/src/app/globals.css) | `--color-*: initial` apaga a paleta padrão do Tailwind, e cada token vira uma classe: `bg-surface`, `text-ink`, `text-muted`, `border-line`, `bg-accent` |
-| Texto | [`apps/panel/src/app/fonts/`](../../apps/panel/src/app/fonts/) | Atkinson Hyperlegible (400 e 700, com itálico) em tudo |
+| Texto | [`apps/panel/src/app/fonts/`](../../apps/panel/src/app/fonts/) | Inter (400, 500, 600, 700 e 800, com itálico 400) em tudo, com a reserva do manual: Segoe UI, Helvetica Neue, Arial. 800 nos títulos de página, 700 em subtítulos e cabeçalhos de tabela, 400 no corpo |
+| Marca | [`apps/panel/src/ui/brand.tsx`](../../apps/panel/src/ui/brand.tsx) e [`apps/panel/public/brand/`](../../apps/panel/public/brand/) | O logo horizontal oficial (positivo no claro, negativo no escuro), com a área de proteção do manual em volta, no cabeçalho e nas telas de entrada, convite e link público. A assinatura "Ozavo — Uma solução AI Deep Solutions" no rodapé dessas telas. Favicon e ícones só com o símbolo, de 16 a 1024 px |
 | Dado | A mesma pasta, e a classe `.data` em `globals.css` | IBM Plex Mono com dígitos de largura igual, para duração, custo, telefone e horário: números em coluna se alinham |
 | Espaço, raio, sombra, movimento | `tokens.css` | Espaço em base de 4 px. Raio sobe com a hierarquia: `xs` em botão e campo, `sm` em aviso, `md` em painel. Sombra só no que flutua: o menu, o botão da chave e o cartão de chamada ao vivo quando o ponteiro passa por cima. Três durações (120, 200, 320 ms) |
 | Ícones | `@phosphor-icons/react` | `duotone` na navegação, nos avisos e nos estados; `bold` dentro de botão e em seta |
 | Componentes | [`apps/panel/src/ui/kit.tsx`](../../apps/panel/src/ui/kit.tsx) | `Button` (principal, secundário, discreto, perigo), `Field`, `TextInput`, `TextArea`, `Select`, `Switch`, `Badge`, `Panel`, `PageHeader`, `Notice`, `EmptyState`, `Skeleton` |
 | Linha do tempo | [`apps/panel/src/ui/timeline.tsx`](../../apps/panel/src/ui/timeline.tsx) e `.thread` em `globals.css` | Um fio com os eventos presos nele. Em tela larga quem ligou fala de um lado e o agente do outro; no celular o fio encosta na margem |
 
-### Onde o cobre aparece
+### Onde o acento aparece
 
 - **O que está vivo:** a chamada em andamento (a borda do cartão, a duração correndo, o ponto que
-  pulsa, a ponta do fio na linha do tempo, as barras de voz enquanto o agente fala).
+  pulsa, a ponta do fio na linha do tempo). As barras de voz enquanto o agente fala usam o sinal
+  de áudio (Digital Teal), como pede o manual.
 - **O que espera alguém:** o pedido de aprovação (o cartão, a faixa no topo, o contador no menu),
   as notificações não lidas e o link de convite recém-criado, que ainda precisa ser entregue.
 - **A ação principal:** o botão principal, a chave ligada, o campo em foco e o contorno de foco.
-- **A marca:** o ícone ao lado do nome do produto, no cabeçalho e nas telas de entrada e de convite.
+- **A marca:** o logo oficial, que traz as próprias cores (Cyber Blue e Teal no símbolo).
 
 Fora disso, a tela é neutra.
 
 ### Contraste
 
-Conferido nesta escrita, em 12/11/2026, pela fórmula de contraste da WCAG sobre os valores de
-`tokens.css`: texto e texto secundário sobre as três superfícies, texto sobre o acento, e cada
-estado sobre o próprio fundo ficam entre 4,6:1 e 16,9:1 nos dois temas, todos acima de 4,5:1.
+Conferido em 16/11/2026, pela fórmula de contraste da WCAG sobre os valores de `tokens.css`:
+texto, texto secundário e acento sobre as três superfícies, texto sobre o acento, e cada estado
+sobre o próprio fundo e sobre a superfície ficam entre 5,1:1 e 17,2:1 nos dois temas, todos acima
+de 4,5:1. O Digital Teal sobre o branco dá 2,5:1 e o Cyber Blue sobre o Deep Navy também: por
+isso o acento troca de cor com o tema, e o `signal` (Teal) nunca é usado em texto.
 Nenhuma cerca refaz essa conta: um token novo precisa ser conferido por quem o cria.
 
 ## O que é proibido, e por quê
@@ -52,7 +59,9 @@ Nenhuma cerca refaz essa conta: um token novo precisa ser conferido por quem o c
 | Usar a paleta padrão do Tailwind (`bg-white`, `text-gray-500`) | Ela não acompanha o tema nem a família. Não é preciso lembrar: a classe não gera estilo nenhum | Configuração: `--color-*: initial` em `globals.css` |
 | Baixar fonte de fora (`next/font/google`, o serviço de fontes num CSS ou numa tela) | Sem acesso ao serviço, a imagem do painel não constrói; e o download passaria para o navegador de quem usa | Cerca [`fonts-are-vendored`](../../fences/fonts-are-vendored.test.ts) |
 | Trazer outra família de fonte | Duas famílias, uma para texto e uma para dado, já cobrem o painel; uma terceira quebra a voz da família do Deskcomm | Revisão |
-| Usar o cobre fora do que está vivo ou da ação principal | Se tudo é cobre, nada está vivo: quem opera perde o sinal de que há uma chamada ou um pedido esperando | Revisão |
+| Usar degradê, ou roxo, violeta e magenta | O manual da marca proíbe. A ponta viva do fio é um trecho sólido, não um degradê | Revisão |
+| Pôr sombra, contorno ou efeito no logo, redesenhá-lo ou escrevê-lo em maiúsculas | O manual da marca proíbe. Use `BrandLogo`, que leva o arquivo oficial | Revisão |
+| Usar o acento fora do que está vivo ou da ação principal | Se tudo é acento, nada está vivo: quem opera perde o sinal de que há uma chamada ou um pedido esperando | Revisão |
 | Pôr sombra no que não flutua, ou sombra em preto puro | A sombra diz "isto está por cima". As sombras do painel usam a cor do texto neutro | Revisão |
 | Criar animação sem o caminho de movimento reduzido, ou estado que só existe em movimento | Com `prefers-reduced-motion`, as animações param, e o que estava vivo continua visível parado (barras em cobre, anel aberto). Estado novo precisa do mesmo | Revisão |
 | Escrever texto de tela fora do dicionário | Toda frase existe em pt-BR, inglês e espanhol | Cerca [`ui-text-lives-in-dictionaries`](../../fences/ui-text-lives-in-dictionaries.test.ts) |
@@ -64,12 +73,20 @@ Ela é um token como os outros, e só serve para isso.
 
 ## O que ainda não segue a direção
 
-- O cabeçalho do painel desenha um ícone de biblioteca (`Waveform`) em vez do símbolo da marca, e o
-  painel não tem ícone de navegador (medição de 12/11, item 4.9).
+- O wordmark "ozavo" dentro dos PNG oficiais foi rasterizado em DejaVu Sans Bold, e os SVG do kit
+  trazem o nome como texto (`<text>`), não em curvas: em `<img>` o SVG não usa a Inter do painel.
+  O painel usa os PNG. Falta a versão do logo com o nome em Inter convertido em curvas.
 - Os tamanhos de texto não são tokens: as telas escrevem o valor (`text-[0.87rem]`,
   `text-[1.07rem]`, `text-[1.75rem]`). A escala existe na prática, mas não tem nome.
 
-## Validação do dono
+## Mudança de direção: identidade oficial (16/11/2026)
+
+**[dono] Pedido em 16/11/2026:** aplicar a identidade visual oficial do Ozavo (brand kit e manual
+da marca v1.0) no painel: paleta Deep Navy, Cyber Blue, Digital Teal, branco e Ice Slate; Inter;
+logos, ícones e favicons oficiais; assinatura no rodapé. Isso substitui o cobre e a Atkinson
+Hyperlegible da direção validada em 12/11, que segue abaixo como registro.
+
+## Validação do dono (12/11/2026, direção anterior)
 
 A direção acima foi escrita pelo construtor e validada pelo dono do projeto em 12/11/2026 (a
 resposta está no fim desta seção). Pedido de decisão, no formato do [`GOVERNANCE.md`](../../GOVERNANCE.md):

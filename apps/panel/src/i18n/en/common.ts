@@ -37,6 +37,7 @@ const common: CommonDictionary = {
     openCall: "See the call",
     followUpOpen: "See the follow-up",
     followUpGone: "Follow-up deleted by the retention period.",
+    signature: "Ozavo — An AI Deep Solutions solution",
   },
   roles: { owner: "Owner", admin: "Administrator", operator: "Operator" },
   health: {

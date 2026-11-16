@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChartBar, CircleHalf, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree, Waveform } from "@phosphor-icons/react";
+import { Bell, ChartBar, CircleHalf, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -14,6 +14,7 @@ import ptBR from "../i18n/pt-BR/common";
 import { useDict, useLocale } from "../i18n/provider";
 import { api, useApi } from "./api";
 import { APPROVALS_CHANGED, ApprovalCard, isWaiting } from "./approval";
+import { BrandLogo, BrandSignature } from "./brand";
 import { formatDateTime } from "./format";
 import { useLive, useNow } from "./live";
 import { MeContext } from "./me";
@@ -183,9 +184,8 @@ function ThemeToggle({ initial }: { initial: Theme }) {
 
 function Brand() {
   return (
-    <Link href="/calls" className="flex items-center gap-2 rounded-xs text-[1.13rem] font-bold tracking-[-0.01em]">
-      <Waveform size={24} weight="duotone" className="text-accent" aria-hidden />
-      Ozavo
+    <Link href="/calls" className="flex items-center rounded-xs">
+      <BrandLogo />
     </Link>
   );
 }
@@ -262,6 +262,7 @@ export function Shell({ me, theme, children }: { me: Me; theme: Theme; children:
           <UpdateIndicator />
           <HealthIndicator />
           <div className="border-t border-line pt-3 pl-2">{account}</div>
+          <BrandSignature className="pl-2" />
         </div>
         </div>
       </aside>
@@ -295,7 +296,10 @@ export function Shell({ me, theme, children }: { me: Me; theme: Theme; children:
           </div>
         ) : null}
         <main className="rise mx-auto grid max-w-[1160px] gap-8 px-4 py-6 lg:px-10 lg:py-10">{children}</main>
-        <div className="border-t border-line px-4 py-3 lg:hidden">{account}</div>
+        <footer className="grid gap-3 border-t border-line px-4 py-3 lg:hidden">
+          {account}
+          <BrandSignature />
+        </footer>
       </div>
     </div>
     </MeContext.Provider>

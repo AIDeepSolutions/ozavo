@@ -4,6 +4,19 @@ Esta pasta é a fonte única da marca. O README, o site ([ozavo.com.br](https://
 e qualquer material sobre o projeto usam os arquivos daqui. Se você precisa do logo, não peça a
 ninguém: baixe desta pasta.
 
+## Identidade visual oficial v1.0
+
+Desde 16/11/2026 o painel usa a identidade visual oficial (brand kit e manual da marca v1.0 da AI
+Deep Solutions): símbolo infinito-acústico em Cyber Blue `#0052CC` e Digital Teal `#00B4D8`, nome
+"ozavo" em caixa baixa em Deep Navy `#071D3A` (branco em fundo escuro), Inter, cores sólidas, sem
+degradê e sem roxo. Os arquivos que o painel usa estão em
+[`apps/panel/public/brand/`](../apps/panel/public/brand/), e os tokens em
+[`apps/panel/src/design/tokens.css`](../apps/panel/src/design/tokens.css). Assinatura obrigatória em
+rodapé, proposta e contrato: "Ozavo — Uma solução AI Deep Solutions".
+
+O que segue abaixo descreve os arquivos anteriores desta pasta, ainda usados pelo README e pelo
+site. Trocá-los pelos do kit fica para uma mudança à parte, junto com o repositório do site.
+
 ## O nome
 
 Escreve-se **Ozavo**: uma palavra, só o O maiúsculo. Não "OZAVO", não "ozavo" em texto corrido.
