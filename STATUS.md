@@ -170,7 +170,9 @@ Sem push, sem deploy, sem conexão nem migration no Supabase de produção.
 - Shell do instalador: checagem de saúde passou (104 verificações) ao remover PYTHONHOME herdado
   do ambiente do app. A suíte completa expôs uma expectativa de ordenação já existente no main
   em `install/test/02-env-and-templates.sh`; não foi alterada nesta tarefa.
-- Revisão independente/adversária e prova por sabotagem: pendentes na preparação deste registro.
+- Prova por sabotagem: desativada a cifra somente em worktree descartável do commit e35863b;
+  o único teste executado reprovou no cabeçalho em claro, como previsto. Cópia descartável removida.
+- Revisão independente/adversária: pendente.
 
 ### Migration e integração
 
@@ -194,3 +196,8 @@ Sem push, sem deploy, sem conexão nem migration no Supabase de produção.
 - Bucket sem versionamento/retenção imutável, política de backups externos compatível com expurgo,
   cofre da chave, destinatário real dos alertas e ensaio de DR com contagens/hash e duração medidos.
 - Adequação da composição à rede/portas do Coolify existente antes de qualquer deploy autorizado.
+
+
+Commit de implementação da Fase 4: `e35863b` (local). Em 16/11 às 15h15 UTC o `main` já estava
+em `d371971`, atualizado por outro trabalho durante esta etapa. Este ramo conserva sua base
+`c077dfd`; a Fase 4 não alterou nem integrou o main. Comparar o diff com essa base ao revisar.
