@@ -16,7 +16,7 @@ const cnpj = z.string().transform((value, ctx) => {
 
 const body = z.object({
   // Quem pediu e a referência lá (a assinatura no Asaas). O mesmo par devolve a mesma empresa.
-  source: slug.default("external"),
+  source: slug.default("asaas"),
   externalRef: z.string().trim().min(1).max(200),
   company: z.object({
     legalName: z.string().trim().min(1).max(200),

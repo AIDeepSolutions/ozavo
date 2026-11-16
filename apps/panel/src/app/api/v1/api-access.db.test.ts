@@ -146,7 +146,7 @@ describe("POST /api/v1/tenants/provision", () => {
     const key = await newKey(platformOwner.cookie, ["tenants:provision"]);
     const email = `dona-${crypto.randomUUID()}@example.test`;
     const ref = `sub_${crypto.randomUUID()}`;
-    const created = await call(provision, { method: "POST", headers: bearer(key.token), body: request(ref, email) });
+    const created = await call(provision, { method: "POST", headers: bearer(key.token), body: { ...request(ref, email), source: undefined } });
     expect(created.status).toBe(201);
     const data = created.data as { organizationId: string; ownerUserId: string | null; agentId: string; ownerInviteUrl: string; ownerInviteExpiresAt: string; created: boolean; loginUrl: string };
     expect(data).toMatchObject({ created: true, ownerUserId: null, loginUrl: "https://panel.test/login" });
