@@ -1,4 +1,4 @@
-import { recordEvent, toE164, withOrg, type Clock, type Db } from "@ozavo/core";
+import { recordEvent, takeProviderSlots, toE164, withOrg, type Clock, type Db } from "@ozavo/core";
 import type { PeerConfig } from "werift";
 import { startCallSession, type CallSession, type CallSessionDeps } from "./call-session";
 import { inboundLimitReached, limitNoticedLately } from "./inbound";
@@ -177,7 +177,7 @@ export function createWhatsAppCalls(options: WacallsOptions, deps: { schedule: S
   };
 }
 
-type Refusal = "no_agent" | "agent_disabled" | "inbound_limit_reached";
+type Refusal = "no_agent" | "agent_disabled" | "inbound_limit_reached" | "provider_limit_reached";
 
 const NOTICE: Record<Refusal, (from: string, to: string, limit: number) => string> = {
   no_agent: (from, to) =>
@@ -186,6 +186,8 @@ const NOTICE: Record<Refusal, (from: string, to: string, limit: number) => strin
     `Uma ligação pelo WhatsApp de ${from} para ${to} não foi atendida pelo agente porque o agente desse número está desligado. Ela continuou tocando no celular. Ligue o agente ou escolha outro em Configurações → WhatsApp, no bloco Ligação pelo WhatsApp.`,
   inbound_limit_reached: (from, to, limit) =>
     `Uma ligação pelo WhatsApp de ${from} para ${to} não foi atendida pelo agente porque já havia ${limit} ligações recebidas em andamento, pela operadora e pelo WhatsApp, o limite definido em Configurações. Ela continuou tocando no celular. Outras pelo mesmo motivo nos próximos 10 minutos aparecem só em Chamadas.`,
+  provider_limit_reached: (from, to, limit) =>
+    `Uma ligação pelo WhatsApp de ${from} para ${to} não foi atendida pelo agente porque a conta do provedor de síntese de voz já tinha ${limit} chamadas ao mesmo tempo na instalação, o teto informado em FinOps → Limites de operação. Ela continuou tocando no celular. Outras pelo mesmo motivo nos próximos 10 minutos aparecem só em Chamadas.`,
 };
 
 /** O dono que este processo dá a cada ligação que atende: é por ele que reconhece as suas no `call-list`. */
@@ -269,6 +271,13 @@ function createAnswering(options: WacallsOptions, deps: WhatsAppAnswerDeps, sche
         limit = checked.limit;
         if (checked.reached) refusal = "inbound_limit_reached";
       }
+      if (!refusal) {
+        const slots = await takeProviderSlots(q, db, clock.now());
+        if (slots.full) {
+          refusal = "provider_limit_reached";
+          limit = slots.limit ?? 0;
+        }
+      }
       const call = await q.one<{ id: string }>(
         `insert into calls (organization_id, agent_id, direction, channel, from_e164, to_e164, status, end_reason, started_at, ended_at)
          values ($1, $2, 'inbound', 'whatsapp', $3, $4, $5, $6, $7, $8) returning id`,
@@ -276,7 +285,7 @@ function createAnswering(options: WacallsOptions, deps: WhatsAppAnswerDeps, sche
       );
       if (!call) throw new Error("WhatsApp call was not created");
       if (refusal) {
-        const overLimit = refusal === "inbound_limit_reached";
+        const overLimit = refusal === "inbound_limit_reached" || refusal === "provider_limit_reached";
         await recordEvent(q, call.id, "call_refused", { reason: refusal, from, to, channel: "whatsapp", ...(overLimit && { limit }) }, clock.now());
         if (!(overLimit && (await limitNoticedLately(q, clock)))) await panelNotice(q, clock, call.id, NOTICE[refusal](from ?? "um número que o WhatsApp não informou", to, limit));
       }

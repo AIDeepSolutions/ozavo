@@ -1,6 +1,6 @@
 // A ligação de saída passa pela franquia do plano e pelo teto de chamadas simultâneas, depois da
 // política de saída. A recusa fica auditável como qualquer outra.
-import { saveOperationSettings, setPlanSubscription, withOrg, withSystem } from "@ozavo/core";
+import { setPlanSubscription, withOrg, withSystem } from "@ozavo/core";
 import { afterAll, describe, expect, it } from "vitest";
 import { openTestDbs } from "../../../packages/core/test/helpers";
 import { AsteriskCalls } from "./asterisk-transport";
@@ -75,15 +75,4 @@ describe("ligação de saída com plano", { timeout: 120_000 }, () => {
     expect((await callsOf(app, organizationId)).map((call) => call.status).sort()).toEqual(["refused", "ringing", "ringing"]);
   });
 
-  it("o teto da conta do provedor de síntese conta as chamadas em curso de todas as organizações do processo", async () => {
-    const { organizationId, ari, clock, calls, dial } = await scene("pacing-provider");
-    await withOrg(app, organizationId, (q) => saveOperationSettings(q, { ttsConcurrencyLimit: 2, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null }, clock.now()));
-    const elsewhere = await createOrganization(app, "pacing-provider-other");
-    for (const callId of ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"]) {
-      calls.expect({ callId, channelId: callId, organizationId: elsewhere, agentId: "00000000-0000-4000-8000-0000000000aa", trunkId: "00000000-0000-4000-8000-0000000000bb" });
-    }
-    expect(calls.inProgress).toBe(2);
-    expect(await dial()).toMatchObject({ code: "concurrency_limit", message: expect.stringContaining("speech provider") });
-    expect(ari.originated).toEqual([]);
-  });
 });

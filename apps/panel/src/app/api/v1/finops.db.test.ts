@@ -22,7 +22,11 @@ beforeAll(async () => {
   tenantOwner = (await createUser(panel.app, tenant, "owner")).cookie;
   tenantAdmin = (await createUser(panel.app, tenant, "admin")).cookie;
 });
-afterAll(() => panel.close());
+// O teto do provedor da plataforma vale para a instalação inteira: o banco é de todos os testes.
+afterAll(async () => {
+  await withOrg(panel.app, org, (q) => q.exec("update organizations set platform = false where id = $1", [org]));
+  await panel.close();
+});
 
 const limits = { ttsConcurrencyLimit: 4, reducedCallsPerHour: 30, telephonyBrlPerMinute: 0.06, usdBrlRate: 5.4 };
 

@@ -66,7 +66,7 @@ const finops = {
   limitsTitle: "Limites de operação",
   limitsLead: "O teto de chamadas simultâneas da conta do provedor de síntese de voz e os custos que o painel não tem como medir sozinho.",
   ttsLimit: "Chamadas simultâneas do provedor de síntese",
-  ttsLimitHint: "O teto da sua conta na Cartesia. Vazio: sem limite por aqui. Com o teto preenchido, uma ligação de saída a mais é recusada em vez de falhar no provedor.",
+  ttsLimitHint: "O teto da conta na Cartesia. O valor da organização da plataforma vale para a instalação inteira e conta as chamadas de todas as empresas, recebidas e de saída. Vazio: sem limite por aqui. Acima do teto, a ligação de saída é recusada e a recebida ouve sinal de ocupado, em vez de falhar no provedor.",
   reducedCallsPerHour: "Ligações de saída por hora com a cadência reduzida",
   reducedCallsPerHourHint: "Vale por linha, no dia em que 75% de mais de 1.000 ligações de saída duram menos de 6 segundos.",
   telephonyCostPerMinute: "Custo de telefonia por minuto (R$)",

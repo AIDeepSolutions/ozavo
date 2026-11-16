@@ -232,6 +232,7 @@ const timeline = {
     voicemail: "A ligação foi atendida pela caixa postal.",
     voicemail_failed: "A ligação foi atendida pela caixa postal, mas o recado não pôde ser gravado.",
     inbound_limit_reached: "O limite de ligações recebidas ao mesmo tempo foi atingido. Quem ligou recebeu sinal de ocupado. O limite se ajusta em Configurações → Ligações.",
+    provider_limit_reached: "A conta do provedor de síntese de voz estava no teto de chamadas ao mesmo tempo da instalação. Quem ligou recebeu sinal de ocupado. O teto se ajusta em FinOps → Limites de operação.",
     hangup: "Quem ligou desligou.",
     caller_hangup: "Quem ligou desligou.",
     agent_ended: "O agente encerrou a conversa.",

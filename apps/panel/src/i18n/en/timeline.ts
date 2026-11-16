@@ -231,6 +231,7 @@ const timeline: TimelineDictionary = {
     voicemail: "The call was answered by voicemail.",
     voicemail_failed: "The call was answered by voicemail, but the message could not be recorded.",
     inbound_limit_reached: "The limit of simultaneous incoming calls was reached. The caller got a busy signal. The limit is adjusted in Settings → Calls.",
+    provider_limit_reached: "The speech provider account was at the installation limit of simultaneous calls. The caller got a busy signal. The limit is adjusted in FinOps → Operation limits.",
     hangup: "The caller hung up.",
     caller_hangup: "The caller hung up.",
     agent_ended: "The agent ended the conversation.",

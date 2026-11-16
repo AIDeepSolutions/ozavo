@@ -62,9 +62,22 @@ de voz em cada linha.
 Dois tetos seguram a ligação de saída a mais, com a recusa `concurrency_limit`:
 
 - **da organização**: o `max_concurrent_calls` do plano;
-- **da conta do provedor de síntese** (Cartesia): o valor informado em FinOps → Limites de operação.
-  Este conta as chamadas em curso de todas as organizações do processo de voz, porque elas dividem
-  a mesma conta no provedor. Vazio é "sem limite por aqui".
+- **da conta do provedor de síntese** (Cartesia): um número só, da instalação, o valor que a
+  organização da plataforma informa em FinOps → Limites de operação (`takeProviderSlots`, em
+  `packages/core/src/provider-slots.ts`). Ele conta as chamadas vivas de todas as organizações,
+  recebidas e de saída, de qualquer processo de voz, porque todas dividem a mesma conta no provedor.
+  O recado da caixa postal e a chamada simulada não usam o provedor e não contam. A conferência
+  roda sob uma trava consultiva global (`pg_advisory_xact_lock`) na mesma transação que grava a
+  chamada, então duas empresas ligando juntas não furam a última vaga. A vaga é a própria linha em
+  `calls`: ela volta quando a chamada termina ou falha antes de conectar, e uma linha presa (o
+  processo caiu) deixa de contar depois do maior tempo máximo de chamada dos agentes, mais 2
+  minutos. Vazio é "sem limite por aqui". O valor da própria organização, se houver, só aperta o
+  teto para ela.
+
+A ligação **recebida** (operadora e WhatsApp) também passa pelas vagas do provedor. No teto, quem
+liga pela operadora ouve sinal de ocupado, e a do WhatsApp continua tocando no celular; nos dois
+casos a chamada fica recusada com o motivo `provider_limit_reached`, o evento `call_refused` e um
+aviso no painel. Nunca uma chamada atendida e muda.
 
 A recusa fica gravada como chamada `refused` com o evento `call_refused`, como qualquer recusa da
 política de saída. Não há fila de espera: quem pediu a ligação recebe o código e tenta de novo.
@@ -167,3 +180,6 @@ responde, vale o padrão indicado.
 
 **Recomendação:** A agora; B junto com o papel de administrador da plataforma.
 **Se ninguém responder em 14 dias, vale:** A.
+**Resolvida em 16/11/2026:** B. O papel de plataforma passou a existir (só a plataforma grava os
+limites), e o valor dela virou o teto da instalação. A auditoria de 16/11 mostrou o custo de A: uma
+empresa sem o número informado ficava sem limite, e a ligação recebida não contava.

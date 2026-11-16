@@ -68,7 +68,7 @@ const finops: FinopsDictionary = {
   limitsTitle: "Límites de operación",
   limitsLead: "El tope de llamadas simultáneas de la cuenta del proveedor de síntesis de voz y los costos que el panel no puede medir solo.",
   ttsLimit: "Llamadas simultáneas del proveedor de síntesis",
-  ttsLimitHint: "El tope de su cuenta en Cartesia. Vacío: sin límite aquí. Con el tope informado, una llamada saliente de más se rechaza en vez de fallar en el proveedor.",
+  ttsLimitHint: "El tope de la cuenta en Cartesia. El valor de la organización de la plataforma vale para toda la instalación y cuenta las llamadas de todas las empresas, recibidas y salientes. Vacío: sin límite aquí. Por encima del tope, la llamada saliente se rechaza y la recibida oye señal de ocupado, en vez de fallar en el proveedor.",
   reducedCallsPerHour: "Llamadas salientes por hora con la cadencia reducida",
   reducedCallsPerHourHint: "Vale por línea, el día en que el 75% de más de 1.000 llamadas salientes duran menos de 6 segundos.",
   telephonyCostPerMinute: "Costo de telefonía por minuto (R$)",

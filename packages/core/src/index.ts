@@ -35,6 +35,7 @@ export * from "./metering";
 export * from "./notices";
 export * from "./operation-settings";
 export * from "./pacing";
+export * from "./provider-slots";
 export * from "./plans";
 export * from "./short-calls";
 export * from "./talk-share";

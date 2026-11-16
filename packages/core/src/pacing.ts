@@ -1,5 +1,7 @@
 import { checkUsageAlerts, getPeriodUsage } from "./metering";
+import type { Db } from "./types";
 import { getOperationSettings } from "./operation-settings";
+import { takeProviderSlots } from "./provider-slots";
 import { SHORT_CALL_WATCH_INTERVAL_MS, activeCadenceBreakers, scheduleShortCallWatch } from "./short-calls";
 import type { OrgQuery } from "./types";
 
@@ -16,8 +18,8 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * O semáforo, sem banco: a ligação nova cabe se as que estão em curso ficam abaixo de cada teto.
- * `tenantActive` são as chamadas da organização; `globalActive`, as de todas as organizações que o
- * processo de voz tem em curso (elas dividem a mesma conta do provedor de síntese). Teto nulo não limita.
+ * `tenantActive` são as chamadas da organização; `globalActive`, as de todas as organizações da
+ * instalação (elas dividem a mesma conta do provedor de síntese, `provider-slots.ts`). Teto nulo não limita.
  */
 export function concurrencyAllows(input: { tenantActive: number; globalActive: number; tenantLimit: number | null; providerLimit: number | null }): "ok" | "tenant" | "provider" {
   if (input.tenantLimit !== null && input.tenantActive >= input.tenantLimit) return "tenant";
@@ -30,10 +32,10 @@ export function concurrencyAllows(input: { tenantActive: number; globalActive: n
  * `checkOutboundAllowed`, na MESMA transação que cria a linha em `calls`: a política de saída já
  * trancou a linha da organização, então duas ligações conferem e gravam uma de cada vez.
  *
- * `globalActive` é quantas chamadas o processo de voz tem em curso, de todas as organizações.
- * `lineE164` é o número de origem da linha por onde a ligação vai sair.
+ * `db` (com o papel de sistema) conta as vagas do provedor de síntese na instalação inteira, sob a
+ * trava global de `takeProviderSlots`. `lineE164` é o número de origem da linha por onde a ligação vai sair.
  */
-export async function checkPacingAllowed(q: OrgQuery, now: Date, input: { lineE164?: string | null; globalActive?: number } = {}): Promise<PacingDecision> {
+export async function checkPacingAllowed(q: OrgQuery, now: Date, input: { db: Db; lineE164?: string | null }): Promise<PacingDecision> {
   if (q.organizationId === "") throw new Error("checkPacingAllowed runs inside withOrg: the limits belong to one organization");
   const usage = await getPeriodUsage(q, now);
   if (usage) {
@@ -51,15 +53,16 @@ export async function checkPacingAllowed(q: OrgQuery, now: Date, input: { lineE1
     [q.organizationId],
   );
   const tenantActive = active?.count ?? 0;
+  const slots = await takeProviderSlots(q, input.db, now);
   const verdict = concurrencyAllows({
     tenantActive,
-    globalActive: input.globalActive ?? 0,
+    globalActive: slots.active,
     tenantLimit: usage?.subscription.maxConcurrentCalls ?? null,
-    providerLimit: settings.ttsConcurrencyLimit,
+    providerLimit: slots.limit,
   });
   if (verdict === "tenant") return refuse("concurrency_limit", `There are already ${tenantActive} calls in progress; the plan allows ${usage?.subscription.maxConcurrentCalls} at the same time.`);
   if (verdict === "provider") {
-    return refuse("concurrency_limit", `The speech provider account accepts ${settings.ttsConcurrencyLimit} calls at the same time, and all of them are in use.`);
+    return refuse("concurrency_limit", `The speech provider account accepts ${slots.limit} calls at the same time, and all of them are in use.`);
   }
 
   const line = input.lineE164 ?? "";

@@ -231,6 +231,7 @@ const timeline: TimelineDictionary = {
     voicemail: "La llamada fue atendida por el buzón de voz.",
     voicemail_failed: "El buzón de voz atendió la llamada, pero el mensaje no se pudo grabar.",
     inbound_limit_reached: "Se alcanzó el límite de llamadas recibidas al mismo tiempo. Quien llamó recibió señal de ocupado. El límite se ajusta en Configuración → Llamadas.",
+    provider_limit_reached: "La cuenta del proveedor de síntesis de voz estaba en el tope de llamadas simultáneas de la instalación. Quien llamó recibió señal de ocupado. El tope se ajusta en FinOps → Límites de operación.",
     hangup: "Quien llamó colgó.",
     caller_hangup: "Quien llamó colgó.",
     agent_ended: "El agente terminó la conversación.",

@@ -41,7 +41,7 @@ describe("plano e franquia", () => {
       expect(await getPlanSubscription(q)).toBeNull();
       expect(await getPeriodUsage(q, at(11))).toBeNull();
       expect(await checkUsageAlerts(q, at(11))).toEqual([]);
-      expect(await checkPacingAllowed(q, at(11), { lineE164: LINE })).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, at(11), { db: app, lineE164: LINE })).toEqual({ allowed: true });
     });
   });
 
@@ -100,9 +100,9 @@ describe("ligação de saída: franquia, concorrência e cadência", () => {
     await withOrg(app, org, (q) => setPlanSubscription(q, starter, at(5), "2030-05-05"));
     await answeredCall(org, at(10), 301 * 60);
     await withOrg(app, org, async (q) => {
-      expect(await checkPacingAllowed(q, at(11), { lineE164: LINE })).toMatchObject({ allowed: false, code: "plan_quota_exhausted" });
+      expect(await checkPacingAllowed(q, at(11), { db: app, lineE164: LINE })).toMatchObject({ allowed: false, code: "plan_quota_exhausted" });
       await setPlanSubscription(q, { ...starter, overageRule: "bill_overage", overagePriceCentsPerMinute: 150 }, at(11), "2030-05-11");
-      expect(await checkPacingAllowed(q, at(11), { lineE164: LINE })).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, at(11), { db: app, lineE164: LINE })).toEqual({ allowed: true });
       // A tentativa de ligar também confere a franquia: os dois avisos saíram.
       expect((await getFinopsSummary(q, at(11))).alerts.map((alert) => alert.threshold)).toEqual([80, 100]);
     });
@@ -113,23 +113,23 @@ describe("ligação de saída: franquia, concorrência e cadência", () => {
     await withOrg(app, org, (q) => setPlanSubscription(q, starter, at(5), "2030-05-05"));
     await answeredCall(org, at(11), 0, { ended: false, status: "in_progress" });
     await withOrg(app, org, async (q) => {
-      expect(await checkPacingAllowed(q, at(11, 15, 1), { lineE164: LINE })).toEqual({ allowed: true });
-      // O teto do provedor conta as chamadas de todas as organizações que o processo de voz tem em curso.
-      await saveOperationSettings(q, { ttsConcurrencyLimit: 4, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null }, at(11));
-      expect(await checkPacingAllowed(q, at(11, 15, 1), { lineE164: LINE, globalActive: 4 })).toMatchObject({ allowed: false, code: "concurrency_limit" });
-      expect(await checkPacingAllowed(q, at(11, 15, 1), { lineE164: LINE, globalActive: 3 })).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, at(11, 15, 1), { db: app, lineE164: LINE })).toEqual({ allowed: true });
+      // Com o teto do provedor em 1, a chamada em curso já ocupa a única vaga.
+      await saveOperationSettings(q, { ttsConcurrencyLimit: 1, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null }, at(11));
+      expect(await checkPacingAllowed(q, at(11, 15, 1), { db: app, lineE164: LINE })).toMatchObject({ allowed: false, code: "concurrency_limit", message: expect.stringContaining("speech provider") });
+      await saveOperationSettings(q, { ttsConcurrencyLimit: null, reducedCallsPerHour: 60, telephonyBrlPerMinute: null, usdBrlRate: null }, at(11));
     });
     await answeredCall(org, at(11), 0, { ended: false, status: "in_progress" });
     await withOrg(app, org, async (q) => {
-      expect(await checkPacingAllowed(q, at(11, 15, 1), { lineE164: LINE })).toMatchObject({ allowed: false, code: "concurrency_limit" });
+      expect(await checkPacingAllowed(q, at(11, 15, 1), { db: app, lineE164: LINE })).toMatchObject({ allowed: false, code: "concurrency_limit" });
     });
   });
 
   it("a ligação liberada põe a rotina das chamadas curtas na fila, uma só", async () => {
     const org = await createOrganization(app, "finops corrente");
     await withOrg(app, org, async (q) => {
-      await checkPacingAllowed(q, at(11), { lineE164: LINE });
-      await checkPacingAllowed(q, at(11, 15, 5), { lineE164: LINE });
+      await checkPacingAllowed(q, at(11), { db: app, lineE164: LINE });
+      await checkPacingAllowed(q, at(11, 15, 5), { db: app, lineE164: LINE });
     });
     const tasks = await owner.pool.query("select run_at from tasks where organization_id = $1 and kind = $2", [org, WATCH_SHORT_CALLS_TASK]);
     expect(tasks.rows).toHaveLength(1);
@@ -158,10 +158,10 @@ describe("ligação de saída: franquia, concorrência e cadência", () => {
       expect(await watchShortCalls(q, now)).toEqual([]);
       expect(await activeCadenceBreakers(q, now)).toMatchObject([{ lineE164: LINE, totalCalls: 1200, shortCalls: 950 }]);
       // Na última hora a linha fez bem mais que as 60 ligações da cadência reduzida.
-      expect(await checkPacingAllowed(q, now, { lineE164: LINE })).toMatchObject({ allowed: false, code: "cadence_reduced" });
-      expect(await checkPacingAllowed(q, now, { lineE164: other })).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, now, { db: app, lineE164: LINE })).toMatchObject({ allowed: false, code: "cadence_reduced" });
+      expect(await checkPacingAllowed(q, now, { db: app, lineE164: other })).toEqual({ allowed: true });
       // Uma hora depois sem ligar, a linha volta a caber na cadência reduzida.
-      expect(await checkPacingAllowed(q, at(11, 17, 30), { lineE164: LINE })).toEqual({ allowed: true });
+      expect(await checkPacingAllowed(q, at(11, 17, 30), { db: app, lineE164: LINE })).toEqual({ allowed: true });
       // No dia seguinte a redução não vale mais.
       expect(await activeCadenceBreakers(q, at(12))).toEqual([]);
     });

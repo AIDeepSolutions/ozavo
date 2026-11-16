@@ -68,7 +68,7 @@ const finops: FinopsDictionary = {
   limitsTitle: "Operation limits",
   limitsLead: "The simultaneous call ceiling of the speech synthesis provider account and the costs the panel cannot measure by itself.",
   ttsLimit: "Simultaneous calls of the synthesis provider",
-  ttsLimitHint: "The ceiling of your Cartesia account. Empty: no limit here. With the ceiling set, one outbound call too many is refused instead of failing at the provider.",
+  ttsLimitHint: "The ceiling of the Cartesia account. The value of the platform organization applies to the whole installation and counts the calls of every company, incoming and outgoing. Empty: no limit here. Above the ceiling, an outbound call is refused and an incoming call gets a busy signal, instead of failing at the provider.",
   reducedCallsPerHour: "Outbound calls per hour under reduced cadence",
   reducedCallsPerHourHint: "Applies per line, on a day when 75% of more than 1,000 outbound calls last less than 6 seconds.",
   telephonyCostPerMinute: "Telephony cost per minute (R$)",
