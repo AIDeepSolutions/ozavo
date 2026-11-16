@@ -134,8 +134,12 @@ describe("there is always an active owner", () => {
     const results = await Promise.all([patch(owner.cookie, second.id, { disabled: true }), patch(second.cookie, owner.id, { disabled: true })]);
     const active = await withOrg(panel.app, org, (q) => q.many("select id from users where role = 'owner' and disabled_at is null"));
     expect(active).toHaveLength(1);
-    // O que perde recebe a recusa da regra, não um erro de servidor por espera cruzada no banco.
-    expect(results.map((result) => [result.status, result.code ?? "ok"]).sort()).toEqual([[200, "ok"], [409, "last_owner"]]);
+    // Se ambas as sessões foram lidas antes da primeira desativação, a trava devolve last_owner.
+    // Se a desativação confirmou antes de a outra autenticar, a sessão já foi revogada: 401 é correto.
+    // As duas ordens preservam o dono; erro de servidor ou dois sucessos continuam reprovando.
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    const refused = results.find((result) => result.status !== 200);
+    expect([[409, "last_owner"], [401, "unauthenticated"]]).toContainEqual([refused?.status, refused?.code]);
   });
 });
 
