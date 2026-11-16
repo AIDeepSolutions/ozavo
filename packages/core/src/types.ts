@@ -66,7 +66,12 @@ export type CallEventKind = (typeof CALL_EVENT_KINDS)[number];
  * O que acontece na organização fora de uma chamada e precisa ficar registrado
  * (`organization_events`). Fechado como o da chamada: acontecimento novo entra aqui.
  */
-export const ORG_EVENT_KINDS = ["transcript_retention_changed", "transcripts_purged", "caller_data_exported", "call_recording_changed", "caller_data_erased", "caller_recordings_erased", "share_created", "share_downloaded", "share_revoked", "caller_notes_purged", "caller_notes_retention_changed"] as const;
+export const PRIVACY_EVENT_KINDS = ["transcript_retention_changed", "transcripts_purged", "caller_data_exported", "call_recording_changed", "caller_data_erased", "caller_recordings_erased", "share_created", "share_downloaded", "share_revoked", "caller_notes_purged", "caller_notes_retention_changed"] as const;
+
+/** O que a empresa faz com o acesso de sistemas de fora: chaves de API, provisionamento e perfil. */
+export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed"] as const;
+
+export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS] as const;
 
 export type OrgEventKind = (typeof ORG_EVENT_KINDS)[number];
 

@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./waha": "./src/connectors/waha.ts",
-    "./whatsapp": "./src/connectors/whatsapp.ts"
+    "./whatsapp": "./src/connectors/whatsapp.ts",
+    "./agenda": "./src/connectors/agenda-index.ts"
   },
   "dependencies": {
     "@ozavo/core": "workspace:^",

@@ -20,8 +20,10 @@
  * esse id nas instruções do agente, porque o CRM não publica uma rota de tipos de atendimento para
  * integração.
  *
- * Nada disso é chamado daqui. Sem a tela de configuração do conector, um cliente HTTP seria código
- * morto; esta fatia entrega o contrato e as ferramentas, e a fatia do conector vem depois.
+ * Esse cliente do DeskcommCRM continua não existindo. Existem os conectores plugáveis por empresa,
+ * escolhidos em Configurações > Integrações (configuração `agenda.connector`): o Cal.com, por chave
+ * de API (`agenda-calcom.ts`), e o Google Agenda, por OAuth (`agenda-google.ts`). Quem escolhe qual
+ * usar numa ligação é `agenda-settings.ts`.
  */
 
 /** Um horário que a agenda oferece. Instantes em ISO 8601, com fuso. */
@@ -56,6 +58,15 @@ export interface BookRequest {
   serviceType: string;
   startsAt: string;
   callId: string;
+  /** O nome que a pessoa disse, quando disse. A agenda que exige nome recebe um genérico sem ele. */
+  attendeeName?: string;
+  /** O telefone da ligação, em E.164. Nunca vem do modelo. */
+  attendeePhone?: string;
+}
+
+/** Um tipo de atendimento que a agenda conhece, para o agente usar o nome certo. */
+export interface AgendaService {
+  name: string;
 }
 
 export interface RescheduleRequest {
@@ -72,4 +83,6 @@ export interface AgendaClient {
   freeSlots(request: FreeSlotsRequest): Promise<AgendaFreeSlots>;
   book(request: BookRequest): Promise<AgendaAppointment>;
   reschedule(request: RescheduleRequest): Promise<AgendaAppointment>;
+  /** Os tipos de atendimento cadastrados, quando o conector os conhece. */
+  services?(): AgendaService[];
 }

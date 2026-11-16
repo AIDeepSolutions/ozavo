@@ -66,5 +66,10 @@ export interface Tool<Input = unknown> {
    * Para a ferramenta que guarda dado novo sobre quem liga (a nota), que pede uma escolha (registro 0020, 1A).
    */
   offByDefault?: boolean;
+  /**
+   * A peça existe, mas depende da configuração da empresa da ligação (a agenda que ela conectou).
+   * `false`: nesta ligação a sessão não a oferece ao motor. Omitido vale pronta.
+   */
+  ready?(q: OrgQuery): Promise<boolean>;
   run(input: Input, ctx: ToolContext): Promise<ToolResult>;
 }

@@ -59,6 +59,8 @@ const common = {
   readOnly: "Seu papel é de operador: você acompanha chamadas e responde aprovações. Para alterar esta tela, fale com um dono ou administrador.",
   errors: {
     fallback: "Não conseguimos concluir essa ação. Tente de novo em instantes.",
+    platform_scope: "Só a organização que administra esta instalação cria chave que provisiona empresas.",
+    agenda_not_google: "Salve a agenda do Google antes de autorizar.",
     network: "O painel não respondeu. Confira sua conexão e tente de novo.",
     internal_error: "Tivemos um problema no servidor. Nada foi alterado. Tente de novo em instantes.",
     unauthenticated: "Sua sessão expirou. Entre de novo para continuar.",

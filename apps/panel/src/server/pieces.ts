@@ -20,12 +20,18 @@ export function listEngines(): Promise<VoiceEngine[]> {
 }
 
 /**
- * As ferramentas que o operador pode marcar no agente. A que declara `available: false` (a agenda,
- * que nenhum app liga ainda) fica de fora: a sessão não a ofereceria ao motor, e a marca sumiria
- * em silêncio.
+ * As ferramentas que o operador pode marcar no agente. A que declara `available: false` (sem caminho
+ * até a peça de que depende) fica de fora: a sessão não a ofereceria ao motor, e a marca sumiria em
+ * silêncio. As de agenda entram: a agenda é a que a empresa conectar em Integrações, e sem ela a
+ * sessão só deixa de oferecê-las naquela ligação (`ready`).
  */
 export async function listTools(): Promise<Array<{ name: string; description: string }>> {
   return (await (tools ??= loadAll(toolModules))).filter((tool) => tool.available !== false).map((tool) => ({ name: tool.name, description: tool.description }));
+}
+
+/** As ferramentas com que um agente novo nasce: as que funcionam, menos as que pedem escolha (`offByDefault`). */
+export async function defaultToolNames(): Promise<string[]> {
+  return (await (tools ??= loadAll(toolModules))).filter((tool) => tool.available !== false && tool.offByDefault !== true).map((tool) => tool.name);
 }
 
 export const engineKeySetting = (engineId: string): string => `engine.${engineId}.api_key`;
