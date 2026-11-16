@@ -32,6 +32,10 @@ const factories: Record<string, Factory> = {
   outbound_policy: (organization_id) => ({ organization_id }),
   do_not_call: (organization_id) => ({ organization_id, e164: `+55${Math.floor(1e10 + Math.random() * 9e10)}` }),
   usage_ledger: (organization_id, p) => ({ organization_id, call_id: p.calls?.id, engine: "simulated", at }),
+  plan_subscriptions: (organization_id) => ({ organization_id, plan: "starter", monthly_price_cents: 49700, included_minutes: 300, max_concurrent_calls: 2, cycle_started_on: "2026-01-15", updated_at: at }),
+  usage_alerts: (organization_id) => ({ organization_id, period_start: "2026-01-15", threshold: 80, consumed_seconds: 14400, included_seconds: 18000, at }),
+  operation_settings: (organization_id) => ({ organization_id, updated_at: at }),
+  cadence_breakers: (organization_id) => ({ organization_id, line_e164: "+553133330000", day: "2026-01-15", total_calls: 1200, short_calls: 950, tripped_at: at }),
   // Encerrado de propósito: só cabe um pedido ABERTO na instalação inteira, e aqui há duas organizações.
   update_requests: (organization_id, p) => ({ organization_id, requested_by: p.users?.id, status: "succeeded", from_version: "0.1.0", target_version: "0.2.0" }),
   update_agent_status: (organization_id) => ({ organization_id, last_seen_at: at, announced_version: "0.1.0" }),

@@ -62,6 +62,11 @@ export class AsteriskCalls {
 
   constructor(private readonly deps: AsteriskCallsDeps) {}
 
+  /** Quantas chamadas este processo tem em curso, de todas as organizações. */
+  get inProgress(): number {
+    return this.byCall.size;
+  }
+
   /** Uma chamada foi criada e o AudioSocket dela vai conectar. */
   expect(call: ExpectedCall): void {
     const tracked: TrackedCall = { ...call, attached: false };
