@@ -1,8 +1,9 @@
-import { DEFAULT_PERSONA_NAME, defaultProvisionInstructions, encryptSecret, normalizeCnpj, provisionTenant } from "@ozavo/core";
+import { encryptSecret, normalizeCnpj, provisionTenant } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError } from "../../../../../server/context";
 import { handleApiKey } from "../../../../../server/api-auth";
-import { defaultToolNames, engineKeySetting, listEngines } from "../../../../../server/pieces";
+import { engineKeySetting, listEngines } from "../../../../../server/pieces";
+import { provisionAgent } from "../../../../../server/tenant-agent";
 
 const slug = z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_-]{0,39}$/, "use lowercase letters, digits, _ and -");
 const cnpj = z.string().transform((value, ctx) => {
@@ -50,13 +51,10 @@ const body = z.object({
 export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ key, body, deps }) => {
   if (!key.platform) throw new ApiError(403, "forbidden", "Only the organization that runs this installation can provision companies.");
   const engines = await listEngines();
-  const engineId = body.agent.engine ?? (engines.some((engine) => engine.id === "deepgram-openrouter-cartesia") ? "deepgram-openrouter-cartesia" : "simulated");
-  if (!engines.some((engine) => engine.id === engineId)) throw new ApiError(400, "validation_error", `agent.engine: unknown voice engine ${JSON.stringify(engineId)}`);
+  const agent = await provisionAgent(engines, body.agent, body.company.tradeName ?? body.company.legalName);
   const unknown = Object.keys(body.credentials).filter((id) => !engines.some((engine) => engine.id === id && !engine.keyless));
   if (unknown.length > 0) throw new ApiError(400, "validation_error", `credentials: no voice engine takes a key named ${unknown.join(", ")}`);
 
-  const persona = body.agent.personaName ?? DEFAULT_PERSONA_NAME;
-  const company = body.company.tradeName ?? body.company.legalName;
   const result = await provisionTenant(
     deps.db,
     {
@@ -65,16 +63,7 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
       company: { legalName: body.company.legalName, tradeName: body.company.tradeName ?? null, cnpj: body.company.cnpj ?? null },
       owner: body.owner,
       plan: { code: body.plan.code, monthlyMinutes: body.plan.monthlyMinutes ?? null },
-      agent: {
-        name: persona,
-        personaName: persona,
-        voiceId: body.agent.voiceId ?? null,
-        basePrompt: body.agent.basePrompt ?? "",
-        instructions: body.agent.instructions ?? defaultProvisionInstructions(persona, company),
-        greeting: body.agent.greeting ?? null,
-        engine: engineId,
-        tools: await defaultToolNames(),
-      },
+      agent,
       secrets: Object.entries(body.credentials).map(([engine, value]) => ({ key: engineKeySetting(engine), valueEnc: encryptSecret(value, deps.secretKey) })),
       requestedBy: key.organizationId,
     },
