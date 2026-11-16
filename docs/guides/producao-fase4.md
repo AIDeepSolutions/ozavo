@@ -67,6 +67,24 @@ de iniciar as aplicações. Não use as imagens de uma versão anterior para tes
 - [ ] Nenhum voiceprint, embedding biométrico ou reconhecimento de voz do interlocutor. TTS com
   voz escolhida pelo cliente não autoriza coletar biometria de quem ligou.
 
+## Variáveis do painel: o mínimo, e nada no build
+
+O build das imagens não lê segredo nenhum: o CI constrói `panel`, `voice` e `routines` só com
+`APP_VERSION` (`.github/workflows/ci.yml`). Numa plataforma que injeta variáveis no build (o Coolify
+marca "build time" por variável), desmarque o build de **todas**: segredo no build fica na camada
+da imagem e no log do build.
+
+No runtime, o painel lê só o que `loadConfig` (`packages/core/src/config.ts`) pede:
+
+| Variável | Painel em runtime |
+|---|---|
+| `DATABASE_URL` (papel `ozavo_app`, sem BYPASSRLS) | sim |
+| `SYSTEM_DATABASE_URL` (papel `ozavo_system`) | sim |
+| `OZAVO_SECRET_KEY`, `PUBLIC_URL`, `ARI_PASSWORD` | sim |
+| `MIGRATION_DATABASE_URL` (dono do schema) | **não**: só o comando de migrations. Guarde-a fora do painel |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | **não**: o produto fala com o Postgres pelas URLs acima |
+| `CARTESIA_API_KEY`, `DEEPGRAM_API_KEY`, `OPENROUTER_API_KEY` | **não**: a chave do motor fica cifrada em `settings`, cadastrada pela tela |
+
 ## Saúde, métricas e alertas
 
 ```sh
