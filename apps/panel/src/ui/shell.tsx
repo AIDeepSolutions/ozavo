@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Buildings, ChartBar, CircleHalf, Gauge, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree } from "@phosphor-icons/react";
+import { Bell, Buildings, ChartBar, ChartLineUp, CircleHalf, Gauge, GearSix, Headset, ListChecks, Moon, PhoneCall, PhoneOutgoing, PlugsConnected, SealQuestion, SignOut, Sun, UsersThree } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -39,8 +39,12 @@ const NAV = [
   { href: "/finops", key: "finops", icon: Gauge },
   { href: "/team", key: "team", icon: UsersThree },
   { href: "/platform/tenants", key: "tenants", icon: Buildings },
+  { href: "/platform/finops", key: "platformFinops", icon: ChartLineUp },
   { href: "/settings", key: "settings", icon: GearSix },
 ] as const;
+
+/** Itens da área de plataforma: só para dono ou administrador da organização que administra a instalação. */
+const PLATFORM_ONLY: ReadonlySet<string> = new Set(["tenants", "platformFinops"]);
 
 const DOT: Record<HealthStatus, string> = { ok: "bg-ok", warn: "bg-warn", fail: "bg-fail" };
 
@@ -211,7 +215,7 @@ export function Shell({ me, theme, children }: { me: Me; theme: Theme; children:
     <nav aria-label={t.shell.mainNav} className="flex gap-1 overflow-x-auto lg:grid lg:overflow-visible">
       {/* Equipe só aparece para quem pode gerir: operador não vê a porta. Empresas, só para dono ou
           administrador da organização que administra a instalação. */}
-      {NAV.filter((item) => (item.key !== "team" || me.role !== "operator") && (item.key !== "tenants" || (me.platform === true && me.role !== "operator"))).map(({ href, key, icon: Icon }) => {
+      {NAV.filter((item) => (item.key !== "team" || me.role !== "operator") && (!PLATFORM_ONLY.has(item.key) || (me.platform === true && me.role !== "operator"))).map(({ href, key, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
