@@ -1,4 +1,5 @@
 import { computeMargin, getFinopsSummary, type Margin } from "./finops";
+import { DEFAULT_TIMEZONE } from "./metering";
 import { getOperationSettings } from "./operation-settings";
 import { assertPlatform, displayStatus, type PlatformTenantStatus } from "./platform-tenants";
 import type { TenantStatus } from "./tenants";
@@ -17,6 +18,8 @@ import { withSystem } from "./with-org";
  */
 
 const MICROCENTS_PER_CENT = 1_000_000;
+/** Mais que o mês mais longo: quem não teve nada nesse prazo não tem o que medir no mês corrente. */
+const QUIET_DAYS = 62;
 
 export interface PlatformFinopsTenant {
   organizationId: string;
@@ -80,13 +83,48 @@ export function getPlatformFinops(db: Db, platformId: string, now: Date): Promis
   return withSystem(db, async (q) => {
     await assertPlatform(q, platformId);
     const platformRates = await getOperationSettings({ ...q, organizationId: platformId });
-    const rows = await q.many<{ id: string; name: string; status: TenantStatus | null; cancelled: boolean }>(
-      `select o.id, o.name, p.status, exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled
-         from organizations o left join tenant_profiles p on p.organization_id = o.id
+    // "Parada" é a empresa sem plano e sem nada a medir: nenhuma ligação atendida, nenhum lançamento
+    // no extrato e nenhum disjuntor desde QUIET_DAYS atrás, o que cobre o mês do calendário inteiro.
+    // Ela entra com consumo zero, sem as consultas do resumo; as outras passam pelo resumo completo.
+    const rows = await q.many<{ id: string; name: string; status: TenantStatus | null; cancelled: boolean; quiet: boolean; monthStart: string; monthEnd: string }>(
+      `select o.id, o.name, p.status, exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled,
+              not exists(select from plan_subscriptions s where s.organization_id = o.id)
+                and not exists(select from calls c where c.organization_id = o.id and c.answered_at >= $1::timestamptz - make_interval(days => $2))
+                and not exists(select from usage_ledger l where l.organization_id = o.id and l.at >= $1::timestamptz - make_interval(days => $2))
+                and not exists(select from cadence_breakers b where b.organization_id = o.id and b.tripped_at >= $1::timestamptz - make_interval(days => $2)) as quiet,
+              to_char(date_trunc('month', ($1::timestamptz at time zone z.zone)), 'YYYY-MM-DD') as "monthStart",
+              to_char(date_trunc('month', ($1::timestamptz at time zone z.zone)) + interval '1 month', 'YYYY-MM-DD') as "monthEnd"
+         from organizations o
+         left join tenant_profiles p on p.organization_id = o.id
+         cross join lateral (select coalesce((select timezone from outbound_policy op where op.organization_id = o.id), '${DEFAULT_TIMEZONE}') as zone) z
         where not o.platform order by o.name, o.id`,
+      [now, QUIET_DAYS],
     );
+    const ratesKnown = platformRates.usdBrlRate !== null && platformRates.telephonyBrlPerMinute !== null;
     const tenants: PlatformFinopsTenant[] = [];
     for (const row of rows) {
+      if (row.quiet) {
+        tenants.push({
+          organizationId: row.id,
+          name: row.name,
+          status: displayStatus(row.status, row.cancelled),
+          plan: null,
+          period: { start: row.monthStart, end: row.monthEnd },
+          consumedSeconds: 0,
+          includedSeconds: null,
+          overageSeconds: 0,
+          answeredCalls: 0,
+          ttsCharacters: 0,
+          providerCostUsdCents: 0,
+          monthlyPriceCents: 0,
+          margin: computeMargin({ monthlyPriceCents: 0, overageRule: "pause_outbound", overagePriceCentsPerMinute: 0, consumedSeconds: 0, overageSeconds: 0, providerCostUsdMicrocents: 0, usdBrlRate: 0, telephonyBrlPerMinute: 0 }),
+          // Sem consumo, a cotação não muda nada: vale a da plataforma, quando há.
+          ratesFrom: ratesKnown ? "platform" : "missing",
+          alerts: [],
+          cadenceBreakers: [],
+        });
+        continue;
+      }
       const summary = await getFinopsSummary({ ...q, organizationId: row.id }, now);
       const own = summary.settings.usdBrlRate !== null && summary.settings.telephonyBrlPerMinute !== null;
       const usdBrlRate = summary.settings.usdBrlRate ?? platformRates.usdBrlRate;

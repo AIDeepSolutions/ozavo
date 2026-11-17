@@ -63,6 +63,13 @@ describe("getPlatformFinops", () => {
     expect(finops.totals.mrrCents).toBeGreaterThanOrEqual(2 * 49_700);
   });
 
+  it("empresa parada (sem plano e sem nada a medir) entra com zero e o mês do calendário dela", async () => {
+    const quiet = await createOrganization(app, "empresa sem plano e sem uso");
+    const row = (await getPlatformFinops(app, platform, now)).tenants.find((tenant) => tenant.organizationId === quiet);
+    expect(row).toMatchObject({ plan: null, period: { start: "2031-03-01", end: "2031-04-01" }, consumedSeconds: 0, includedSeconds: null, answeredCalls: 0, monthlyPriceCents: 0, ratesFrom: "platform" });
+    expect(row?.margin).toMatchObject({ revenueCents: 0, variableCostCents: 0 });
+  });
+
   it("empresa cliente não lê", async () => {
     await expect(getPlatformFinops(app, busy, now)).rejects.toBeInstanceOf(PlatformOnlyError);
   });
