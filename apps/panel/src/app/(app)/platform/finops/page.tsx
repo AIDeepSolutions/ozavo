@@ -75,6 +75,8 @@ export default function PlatformFinopsPage() {
             </ul>
           </Panel>
 
+          {/* min-w-0: no grid da página, a tabela larga rola dentro do painel em vez de alargar a página. */}
+          <div className="min-w-0">
           <Panel title={t.tableTitle} description={t.roundingNote}>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[0.92rem]">
@@ -127,6 +129,7 @@ export default function PlatformFinopsPage() {
               </table>
             </div>
           </Panel>
+          </div>
         </>
       ) : null}
     </>
