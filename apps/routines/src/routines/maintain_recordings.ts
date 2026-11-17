@@ -58,8 +58,9 @@ const routine: Routine = {
         }
       }
     }
+    // Órfãos: cada arquivo é isolado dentro de purgeRecordings, e o que saiu entra na contagem mesmo com erro.
     try {
-      recordings += await purgeRecordings(deps.recordingsDir, task.organizationId, before, new Set(calls.map(call => call.id)));
+      recordings += await purgeRecordings(deps.recordingsDir, task.organizationId, before, new Set(calls.map(call => call.id)), failures);
     } catch (error) { failures.push(error); }
     if (recordings > 0) {
       try {
