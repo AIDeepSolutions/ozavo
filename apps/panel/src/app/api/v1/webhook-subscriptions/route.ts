@@ -1,5 +1,5 @@
 import { WEBHOOK_EVENTS, createWebhookSubscription, listWebhookSubscriptions } from "@ozavo/core";
-import { UnsafeDestinationError, assertPublicDestination } from "@ozavo/tools";
+import { UnsafeDestinationError, assertPublicDestination } from "@ozavo/tools/net";
 import { z } from "zod";
 import { ApiError, handle } from "../../../../server/context";
 
