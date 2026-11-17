@@ -3,6 +3,7 @@ import { withOrg, withSystem } from "@ozavo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET as getInvite } from "./invites/[token]/route";
+import { GET as platformFinops } from "./platform/finops/route";
 import { POST as renewInvite } from "./platform/tenants/[id]/owner-invite/route";
 import { GET as getTenant } from "./platform/tenants/[id]/route";
 import { POST as setStatus } from "./platform/tenants/[id]/status/route";
@@ -123,5 +124,17 @@ describe("acesso cruzado negado", () => {
 
   it("operador da plataforma também não entra", async () => {
     expect(await call(listTenants, { cookie: platformOperator })).toMatchObject({ status: 403, code: "forbidden" });
+  });
+});
+
+describe("FinOps da plataforma", () => {
+  it("a plataforma lê; empresa cliente e operador da plataforma não", async () => {
+    const result = await call(platformFinops, { cookie: platformOwner });
+    expect(result.status).toBe(200);
+    const data = result.data as { tenants: Array<{ organizationId: string }>; totals: { tenants: number }; critical: unknown[] };
+    expect(data.tenants.some((tenant) => tenant.organizationId === neighbour)).toBe(true);
+    expect(data.totals.tenants).toBe(data.tenants.length);
+    expect(await call(platformFinops, { cookie: clientOwner })).toMatchObject({ status: 403, code: "platform_only" });
+    expect(await call(platformFinops, { cookie: platformOperator })).toMatchObject({ status: 403, code: "forbidden" });
   });
 });

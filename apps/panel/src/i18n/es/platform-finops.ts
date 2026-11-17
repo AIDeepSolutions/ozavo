@@ -1,0 +1,30 @@
+import type ptBR from "../pt-BR/platform-finops";
+
+const platformFinops: typeof ptBR = {
+  title: "FinOps de las empresas",
+  lead: "Consumo, costo estimado, ingreso y margen de cada empresa cliente en su ciclo, y el consolidado de la instalación. Solo el dueño o un administrador de la plataforma ve esta pantalla.",
+  activeTenants: "Empresas activas",
+  mrr: "Ingreso recurrente mensual",
+  revenue: "Ingreso de los ciclos",
+  variableCost: "Costo variable estimado",
+  margin: "Margen bruto",
+  minutes: "Minutos consumidos",
+  calls: "Llamadas atendidas",
+  ttsCharacters: "Caracteres de voz sintetizada",
+  unknown: "No se puede estimar",
+  ofTotal: "{active} de {total}",
+  criticalTitle: "Alertas críticas",
+  criticalLead: "Franquicia agotada, disyuntor de llamadas cortas y franquicia al 80%, en este orden.",
+  noCritical: "Ninguna alerta crítica ahora.",
+  usageAlert: "{name}: la franquicia llegó al {threshold}% el {date}.",
+  breakerAlert: "{name}: disyuntor de llamadas cortas en {line} desde el {date}.",
+  wholeOrganization: "todas las líneas",
+  tableTitle: "Por empresa",
+  columns: { company: "Empresa", status: "Situación", plan: "Plan", usage: "Minutos del ciclo", calls: "Llamadas", providerCost: "Proveedores", variableCost: "Costo estimado", revenue: "Ingreso", margin: "Margen", rates: "Cotización" },
+  rates: { tenant: "De la empresa", platform: "De la plataforma", missing: "No informada" },
+  missingRates: "Hay empresas con consumo y sin cotización del dólar o costo de telefonía. Informe los dos en FinOps, en los límites de operación de la plataforma, y la estimación vale para todas.",
+  openFinops: "Abrir FinOps",
+  roundingNote: "Costo de los proveedores en dólares, convertido por la cotización informada. La estimación usa el extracto en centavos enteros, con diferencia menor a un centavo de dólar.",
+  empty: "Todavía no hay empresas clientes.",
+};
+export default platformFinops;

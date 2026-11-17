@@ -26,6 +26,8 @@ export interface PlatformFinopsTenant {
   period: { start: string; end: string };
   consumedSeconds: number;
   includedSeconds: number | null;
+  /** Segundos além da franquia no ciclo. */
+  overageSeconds: number;
   answeredCalls: number;
   ttsCharacters: number;
   providerCostUsdCents: number;
@@ -56,6 +58,9 @@ export interface PlatformFinops {
     /** Soma das mensalidades das empresas ativas, em centavos de real. */
     mrrCents: number;
     revenueCents: number;
+    /** A parte da receita que vem do excedente tarifado. */
+    overageRevenueCents: number;
+    overageSeconds: number;
     consumedSeconds: number;
     answeredCalls: number;
     ttsCharacters: number;
@@ -107,6 +112,7 @@ export function getPlatformFinops(db: Db, platformId: string, now: Date): Promis
         period: summary.period,
         consumedSeconds: summary.consumedSeconds,
         includedSeconds: summary.includedSeconds,
+        overageSeconds: summary.overageSeconds,
         answeredCalls: summary.answeredCalls,
         ttsCharacters: summary.ttsCharacters,
         providerCostUsdCents: summary.providerCostUsdCents,
@@ -133,6 +139,8 @@ export function totalsOf(tenants: PlatformFinopsTenant[]): PlatformFinops["total
     activeTenants: tenants.filter((tenant) => tenant.status === "active").length,
     mrrCents: sum((tenant) => (tenant.status === "active" ? tenant.monthlyPriceCents : 0)),
     revenueCents,
+    overageRevenueCents: sum((tenant) => tenant.margin.overageRevenueCents),
+    overageSeconds: sum((tenant) => tenant.overageSeconds),
     consumedSeconds: sum((tenant) => tenant.consumedSeconds),
     answeredCalls: sum((tenant) => tenant.answeredCalls),
     ttsCharacters: sum((tenant) => tenant.ttsCharacters),

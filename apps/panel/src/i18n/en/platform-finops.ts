@@ -1,0 +1,30 @@
+import type ptBR from "../pt-BR/platform-finops";
+
+const platformFinops: typeof ptBR = {
+  title: "Companies FinOps",
+  lead: "Usage, estimated cost, revenue and margin of each client company in its own cycle, and the installation total. Only platform owners or admins see this screen.",
+  activeTenants: "Active companies",
+  mrr: "Monthly recurring revenue",
+  revenue: "Cycle revenue",
+  variableCost: "Estimated variable cost",
+  margin: "Gross margin",
+  minutes: "Minutes used",
+  calls: "Answered calls",
+  ttsCharacters: "Synthesized voice characters",
+  unknown: "Cannot estimate",
+  ofTotal: "{active} of {total}",
+  criticalTitle: "Critical alerts",
+  criticalLead: "Allowance used up, short-call breaker and allowance at 80%, in this order.",
+  noCritical: "No critical alerts right now.",
+  usageAlert: "{name}: allowance reached {threshold}% on {date}.",
+  breakerAlert: "{name}: short-call breaker on {line} since {date}.",
+  wholeOrganization: "every line",
+  tableTitle: "By company",
+  columns: { company: "Company", status: "Status", plan: "Plan", usage: "Cycle minutes", calls: "Calls", providerCost: "Providers", variableCost: "Estimated cost", revenue: "Revenue", margin: "Margin", rates: "Rates" },
+  rates: { tenant: "Company's", platform: "Platform's", missing: "Not informed" },
+  missingRates: "Some companies have usage but no dollar rate or telephony cost. Inform both in FinOps, in the platform's operation limits, and the estimate applies to all of them.",
+  openFinops: "Open FinOps",
+  roundingNote: "Provider cost in dollars, converted by the informed rate. The estimate uses the statement in whole cents, with a difference below one dollar cent.",
+  empty: "No client companies yet.",
+};
+export default platformFinops;

@@ -14,6 +14,7 @@ const tenant = (extra: Partial<PlatformFinopsTenant> & { usdBrlRate?: number | n
     period: { start: "2030-06-01", end: "2030-07-01" },
     consumedSeconds,
     includedSeconds: 18_000,
+    overageSeconds: 0,
     answeredCalls: 3,
     ttsCharacters: 1_000,
     providerCostUsdCents: 200,
@@ -39,6 +40,19 @@ describe("totalsOf", () => {
     expect(totalsOf([tenant({}), tenant({ usdBrlRate: null })]).variableCostCents).toBeNull();
     const idle = tenant({ usdBrlRate: null, consumedSeconds: 0, providerCostUsdCents: 0 });
     expect(totalsOf([tenant({}), idle]).variableCostCents).toBe(1_050);
+  });
+});
+
+describe("excedente", () => {
+  it("soma o excedente tarifado na receita e mostra quanto dela veio dele", () => {
+    const overageSeconds = 600;
+    const billed = tenant({
+      overageSeconds,
+      margin: computeMargin({ monthlyPriceCents: 49_700, overageRule: "bill_overage", overagePriceCentsPerMinute: 150, consumedSeconds: 18_600, overageSeconds, providerCostUsdMicrocents: 0, usdBrlRate: 5, telephonyBrlPerMinute: 0 }),
+    });
+    const totals = totalsOf([billed, tenant({})]);
+    // Dez minutos a R$ 1,50.
+    expect(totals).toMatchObject({ overageRevenueCents: 1_500, overageSeconds: 600, revenueCents: 49_700 * 2 + 1_500 });
   });
 });
 
