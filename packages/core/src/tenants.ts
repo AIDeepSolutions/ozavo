@@ -46,7 +46,10 @@ export const EMPTY_TENANT_PROFILE: TenantProfile = {
 
 const PROFILE_COLUMNS = `legal_name as "legalName", cnpj, trade_name as "tradeName", persona_name as "personaName",
   default_voice_id as "defaultVoiceId", base_prompt as "basePrompt", default_agent_id as "defaultAgentId",
-  plan_code as "planCode", monthly_minutes as "monthlyMinutes", status`;
+  status,
+  -- O plano tem uma fonte só, plan_subscriptions: as colunas antigas do perfil não são mais lidas.
+  (select s.plan from plan_subscriptions s where s.organization_id = tenant_profiles.organization_id) as "planCode",
+  (select s.included_minutes from plan_subscriptions s where s.organization_id = tenant_profiles.organization_id) as "monthlyMinutes"`;
 
 /** O perfil da organização da transação. Sem linha, o vazio: nada muda para quem não preencheu. */
 export async function readTenantProfile(q: OrgQuery): Promise<TenantProfile> {
@@ -223,8 +226,8 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, 
       );
       await q.exec(
         `insert into tenant_profiles (organization_id, legal_name, cnpj, trade_name, persona_name, default_voice_id, base_prompt, default_agent_id,
-                                      plan_code, monthly_minutes, status, external_source, external_ref, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13, $13)`,
+                                      status, external_source, external_ref, created_at, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $11)`,
         [
           organizationId,
           input.company.legalName,
@@ -234,8 +237,6 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, 
           input.agent.voiceId,
           input.agent.basePrompt,
           agentId,
-          input.plan.code,
-          input.plan.monthlyMinutes,
           input.source,
           input.externalRef,
           now,
@@ -245,7 +246,8 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, 
       await recordOrgEvent(
         { ...q, organizationId },
         "tenant_provisioned",
-        { source: input.source, externalRef: input.externalRef, planCode: input.plan.code, requestedBy: input.requestedBy },
+        // O código e os minutos pedidos ficam aqui: fora do catálogo, não viram plano contratado.
+        { source: input.source, externalRef: input.externalRef, planCode: input.plan.code, monthlyMinutes: input.plan.monthlyMinutes, requestedBy: input.requestedBy },
         now,
       );
       // O plano do catálogo vira a franquia da empresa na mesma transação: ela já nasce medida e com
