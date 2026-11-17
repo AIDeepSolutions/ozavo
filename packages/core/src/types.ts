@@ -85,7 +85,13 @@ export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant
  */
 export const PLAN_EVENT_KINDS = ["plan_changed", "plan_usage_alert", "cadence_reduced", "tenant_critical_alert"] as const;
 
-export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS, "asaas_subscription_changed", "asaas_config_changed"] as const;
+/**
+ * Webhooks da empresa: o cadastro de um destino, o resultado de cada entrega e o que entrou por
+ * `POST /api/v1/hooks/[slug]`. `webhook_failed` vale por tentativa; o campo `final` diz se foi a última.
+ */
+export const WEBHOOK_EVENT_KINDS = ["webhook_subscription_created", "webhook_subscription_changed", "webhook_subscription_removed", "webhook_secret_rotated", "webhook_delivered", "webhook_failed", "inbound_hook_received"] as const;
+
+export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS, ...WEBHOOK_EVENT_KINDS, "asaas_subscription_changed", "asaas_config_changed"] as const;
 
 export type OrgEventKind = (typeof ORG_EVENT_KINDS)[number];
 

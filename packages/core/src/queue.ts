@@ -8,11 +8,15 @@ export const MAX_TASK_ATTEMPTS = 3;
 const RETRY_BASE_SECONDS = 30;
 const RETRY_FACTOR = 4;
 
-/** Enfileira uma tarefa na organização da transação. Sem `runAt`, fica elegível na hora. */
-export async function enqueueTask(q: OrgQuery, task: { kind: string; payload: object; callId?: string; runAt?: Date }): Promise<string> {
+/**
+ * Enfileira uma tarefa na organização da transação. Sem `runAt`, fica elegível na hora. Quem roda
+ * numa transação de sistema (`q.organizationId` vazio) informa `organizationId`, a da chamada ou da
+ * linha que originou a tarefa; dentro de `withOrg` ele é ignorado.
+ */
+export async function enqueueTask(q: OrgQuery, task: { kind: string; payload: object; callId?: string; runAt?: Date; organizationId?: string }): Promise<string> {
   const row = await q.one<{ id: string }>(
     "insert into tasks (organization_id, call_id, kind, payload, run_at) values ($1, $2, $3, $4, coalesce($5::timestamptz, now())) returning id",
-    [q.organizationId, task.callId ?? null, task.kind, JSON.stringify(task.payload), task.runAt ?? null],
+    [q.organizationId === "" ? (task.organizationId ?? "") : q.organizationId, task.callId ?? null, task.kind, JSON.stringify(task.payload), task.runAt ?? null],
   );
   if (!row) throw new Error(`Task ${task.kind} was not enqueued`);
   return row.id;

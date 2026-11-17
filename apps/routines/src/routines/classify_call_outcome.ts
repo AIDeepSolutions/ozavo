@@ -1,4 +1,4 @@
-import { RUBRIC_VERSION, callAnalysisSchema, decryptSecret, recordEvent, scoreOf, verifyAgainstTranscript, withOrg, type OrgQuery, type TranscriptTurn } from "@ozavo/core";
+import { RUBRIC_VERSION, callAnalysisSchema, queueWebhookEvent, decryptSecret, recordEvent, scoreOf, verifyAgainstTranscript, withOrg, type OrgQuery, type TranscriptTurn } from "@ozavo/core";
 import {
   ANALYSIS_SETTING,
   MICROCENTS_PER_CENT,
@@ -270,10 +270,12 @@ const routine: Routine = {
       const decidido = settleOutcome(result.guess);
       // Se o titular pediu o apagamento enquanto o provedor respondia, o desfecho (que não é fala)
       // fica e a citação não. O `update` trava a linha e relê `erased_at` depois de o apagamento confirmar.
-      await q.exec(
+      const classified = await q.exec(
         "update calls set outcome = $2, outcome_confidence = $3, outcome_evidence = case when erased_at is null then $4 end, outcome_classified_at = $5 where id = $1 and outcome is null",
         [callId, decidido.outcome, decidido.confidence, decidido.evidence, now],
       );
+      // O destino recebe o desfecho e a confiança; a citação da fala fica de fora, é dado de quem ligou.
+      if (classified === 1) await queueWebhookEvent(q, task.organizationId, "call.outcome", { callId, outcome: decidido.outcome, confidence: decidido.confidence }, now, callId);
       if (!analysis) return;
 
       // A nota sai só da régua, nunca de um número do modelo. Numa chamada apagada a pedido do

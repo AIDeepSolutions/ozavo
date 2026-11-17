@@ -30,6 +30,7 @@ const company: CompanyDictionary = {
   scopes: {
     "calls:outbound": "Request outbound calls (POST /api/v1/calls/outbound). The call goes through the same outbound call rules.",
     "tenants:provision": "Create new companies (POST /api/v1/tenants/provision). Only the organization that runs this installation has this scope.",
+    "hooks:inbound": "Receive inbound webhooks (POST /api/v1/hooks/call). Each request asks for one call, under the same outbound call rules.",
   },
   createKey: "Create key",
   createdTitle: "Key created",
