@@ -22,6 +22,7 @@ export interface TenantRow {
 
 export interface TenantDetail extends TenantRow {
   billedByAsaas: boolean;
+  heldByPlatform: boolean;
   finops: {
     subscription: { plan: string; monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number; overageRule: "pause_outbound" | "bill_overage"; overagePriceCentsPerMinute: number } | null;
     period: { start: string; end: string };

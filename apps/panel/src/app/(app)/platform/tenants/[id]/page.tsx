@@ -103,6 +103,7 @@ function StatusPanel({ tenant, reload }: { tenant: TenantDetail; reload(): void 
       <div className="grid gap-3">
         <p>{fill(t.statusNow, { status: t.status[tenant.status].toLocaleLowerCase() })}</p>
         {tenant.status === "cancelled" ? <Notice tone="warn">{t.cancelledNotice}</Notice> : null}
+        {tenant.heldByPlatform ? <Notice tone="warn">{t.heldNotice}</Notice> : null}
         {tenant.billedByAsaas ? <Notice>{t.asaasNotice}</Notice> : null}
         {!confirming ? (
           <div>
