@@ -50,6 +50,13 @@ export function UsageMeter({ usage }: { usage: TenantRow["usage"] }) {
   );
 }
 
+/** "Pronta", "Faltam N" ou o estado da empresa quando suspensa/cancelada: a lista mostra o resumo, o detalhe cada item. */
+export function ReadinessBadge({ readiness }: { readiness: TenantRow["readiness"] }) {
+  const t = useTenantsDict();
+  if (readiness.blockedBy) return <Badge tone={readiness.blockedBy === "cancelled" ? "fail" : "warn"}>{t.status[readiness.blockedBy]}</Badge>;
+  return readiness.ready ? <Badge tone="ok">{t.readiness.ready}</Badge> : <Badge tone="warn">{fill(t.readiness.missing, { n: readiness.missingRequired })}</Badge>;
+}
+
 export function inviteText(t: ReturnType<typeof useTenantsDict>, invite: TenantRow["ownerInvite"], locale: ReturnType<typeof useLocale>): { text: string; tone: Tone } {
   if (invite.ownerActive) return { text: t.invite.ownerActive, tone: "ok" };
   if (!invite.pending) return { text: t.invite.none, tone: "neutral" };

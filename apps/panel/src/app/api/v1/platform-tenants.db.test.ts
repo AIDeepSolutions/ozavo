@@ -167,3 +167,25 @@ describe("FinOps da plataforma", () => {
     expect(await call(platformFinops, { cookie: platformOperator })).toMatchObject({ status: 403, code: "forbidden" });
   });
 });
+
+describe("prontidão da empresa pela API", () => {
+  it("a plataforma lê a prontidão na lista e no detalhe, sem segredo; quem não é plataforma recebe 403", async () => {
+    const secret = "enc:v1:SEGREDO-DA-ROTA";
+    await withSystem(panel.app, (q) => q.exec("insert into agents (organization_id, name, engine) values ($1, 'Nico', 'gemini_live')", [neighbour]));
+    await withSystem(panel.app, (q) => q.exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.gemini_live.api_key', $2::jsonb, true)", [neighbour, JSON.stringify(secret)]));
+    type Readiness = { items: Array<{ key: string; status: string; required: boolean }>; ready: boolean; missingRequired: number };
+    const detail = await call(getTenant, { cookie: platformOwner, params: { id: neighbour } });
+    expect(detail.status).toBe(200);
+    const readiness = (detail.data as { readiness: Readiness }).readiness;
+    expect(readiness.items.find((item) => item.key === "engineKey")).toMatchObject({ status: "configured" });
+    expect(readiness.items.map((item) => item.key)).toEqual(["ownerAccepted", "engineKey", "voiceAgent", "line", "outboundPolicy", "plan"]);
+    expect(JSON.stringify(detail.data)).not.toContain(secret);
+    const list = await call(listTenants, { cookie: platformOwner });
+    expect(JSON.stringify(list.data)).not.toContain(secret);
+    expect((list.data as Array<{ organizationId: string; readiness: Readiness }>).find((row) => row.organizationId === neighbour)?.readiness.items).toHaveLength(6);
+
+    expect(await call(getTenant, { cookie: clientOwner, params: { id: neighbour } })).toMatchObject({ status: 403, code: "platform_only" });
+    expect(await call(listTenants, { cookie: clientOwner })).toMatchObject({ status: 403, code: "platform_only" });
+    expect(await call(getTenant, { cookie: platformOperator, params: { id: neighbour } })).toMatchObject({ status: 403, code: "forbidden" });
+  });
+});

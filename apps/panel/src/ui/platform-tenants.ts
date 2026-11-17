@@ -18,6 +18,12 @@ export interface TenantRow {
   activeBreakers: number;
   lines: number;
   ownerInvite: { ownerActive: boolean; pending: { email: string; expiresAt: string; expired: boolean } | null };
+  readiness: {
+    items: Array<{ key: "ownerAccepted" | "engineKey" | "voiceAgent" | "line" | "outboundPolicy" | "plan"; status: "configured" | "missing"; required: boolean }>;
+    ready: boolean;
+    missingRequired: number;
+    blockedBy: "suspended" | "cancelled" | null;
+  };
 }
 
 export interface TenantDetail extends TenantRow {

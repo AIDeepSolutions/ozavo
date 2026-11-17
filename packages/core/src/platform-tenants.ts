@@ -38,6 +38,38 @@ export interface OwnerInviteState {
   pending: { email: string; expiresAt: Date; expired: boolean } | null;
 }
 
+/** Os itens da lista de prontidão, na ordem em que a tela os mostra. */
+export const READINESS_KEYS = ["ownerAccepted", "engineKey", "voiceAgent", "line", "outboundPolicy", "plan"] as const;
+export type ReadinessKey = (typeof READINESS_KEYS)[number];
+
+/**
+ * O que falta para a empresa operar. Cada item é só `configured` ou `missing`: nenhuma chave, e-mail,
+ * número ou texto da empresa sai daqui. `required: false` é informativo (a política de saída só vale
+ * para quem vai ligar) e não entra em `ready`.
+ */
+export interface TenantReadiness {
+  items: Array<{ key: ReadinessKey; status: "configured" | "missing"; required: boolean }>;
+  /** Todos os itens obrigatórios estão configurados. */
+  ready: boolean;
+  /** Quantos itens obrigatórios faltam. */
+  missingRequired: number;
+  /** Empresa suspensa ou cancelada: não opera, mesmo com tudo configurado. `null` quando está ativa. */
+  blockedBy: "suspended" | "cancelled" | null;
+}
+
+export type ReadinessFlags = Record<ReadinessKey, boolean>;
+
+/**
+ * Monta a lista a partir de fatos já reduzidos a sim/não. Só a política de saída é informativa.
+ * Empresa suspensa ou cancelada nunca fica `ready`: o estado dela vence a configuração.
+ */
+export function tenantReadiness(flags: ReadinessFlags, status: PlatformTenantStatus = "active"): TenantReadiness {
+  const items = READINESS_KEYS.map((key) => ({ key, status: flags[key] ? ("configured" as const) : ("missing" as const), required: key !== "outboundPolicy" }));
+  const missingRequired = items.filter((item) => item.required && item.status === "missing").length;
+  const blockedBy = status === "active" ? null : status;
+  return { items, ready: missingRequired === 0 && blockedBy === null, missingRequired, blockedBy };
+}
+
 export interface PlatformTenantRow {
   organizationId: string;
   name: string;
@@ -59,6 +91,7 @@ export interface PlatformTenantRow {
   /** Quantos números de telefone a empresa tem. */
   lines: number;
   ownerInvite: OwnerInviteState;
+  readiness: TenantReadiness;
 }
 
 export interface PlatformTenantEvent {
@@ -125,6 +158,9 @@ interface RawRow {
   hasPlan: boolean;
   lines: number;
   activeBreakers: number;
+  hasEngineKey: boolean;
+  hasVoiceAgent: boolean;
+  outboundConfigured: boolean;
 }
 
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
@@ -135,6 +171,14 @@ const ROWS_SQL = `
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
          i.email as "inviteEmail", i.expires_at as "inviteExpiresAt",
          s.organization_id is not null as "hasPlan",
+         -- Prontidão: só booleanos saem daqui, nunca o valor da chave (a coluna do valor nem é lida).
+         -- A chave é a do motor de um agente habilitado (a mesma que a chamada lê); motor sem chave ($2) conta como pronto.
+         exists(select from agents ag
+                 where ag.organization_id = o.id and ag.enabled
+                   and (ag.engine = any($2::text[])
+                        or exists(select from settings st where st.organization_id = o.id and st.secret and st.key = 'engine.' || ag.engine || '.api_key'))) as "hasEngineKey",
+         exists(select from agents ag where ag.organization_id = o.id and ag.enabled) as "hasVoiceAgent",
+         coalesce((select op.enabled from outbound_policy op where op.organization_id = o.id), false) as "outboundConfigured",
          (select count(*)::int from phone_numbers n where n.organization_id = o.id) as lines,
          -- O disjuntor vale no dia da organização, no fuso dela (o mesmo critério de activeCadenceBreakers).
          (select count(*)::int from cadence_breakers b
@@ -178,13 +222,17 @@ async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenan
           ? null
           : { email: raw.inviteEmail, expiresAt: raw.inviteExpiresAt, expired: raw.inviteExpiresAt.getTime() <= now.getTime() },
     },
+    readiness: tenantReadiness(
+      { ownerAccepted: raw.ownerActive, engineKey: raw.hasEngineKey, voiceAgent: raw.hasVoiceAgent, line: raw.lines > 0, outboundPolicy: raw.outboundConfigured, plan: raw.hasPlan },
+      displayStatus(raw.profileStatus, raw.cancelled),
+    ),
   };
 }
 
 /** As empresas clientes da instalação, da mais nova para a mais antiga. */
-export function listPlatformTenants(db: Db, platformId: string, now: Date): Promise<PlatformTenantRow[]> {
+export function listPlatformTenants(db: Db, platformId: string, now: Date, keylessEngines: readonly string[] = []): Promise<PlatformTenantRow[]> {
   return asPlatform(db, platformId, async (q) => {
-    const rows = await q.many<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} order by o.created_at desc, o.id`, [now]);
+    const rows = await q.many<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} order by o.created_at desc, o.id`, [now, keylessEngines]);
     const result: PlatformTenantRow[] = [];
     for (const raw of rows) result.push(await toRow(q, raw, now));
     return result;
@@ -192,9 +240,9 @@ export function listPlatformTenants(db: Db, platformId: string, now: Date): Prom
 }
 
 /** Uma empresa cliente com o FinOps do ciclo e o registro da organização; `null` se não existe. */
-export function getPlatformTenant(db: Db, platformId: string, tenantId: string, now: Date): Promise<PlatformTenantDetail | null> {
+export function getPlatformTenant(db: Db, platformId: string, tenantId: string, now: Date, keylessEngines: readonly string[] = []): Promise<PlatformTenantDetail | null> {
   return asPlatform(db, platformId, async (q) => {
-    const raw = await q.one<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} and o.id = $2`, [now, tenantId]);
+    const raw = await q.one<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} and o.id = $3`, [now, keylessEngines, tenantId]);
     if (!raw) return null;
     const scoped = { ...q, organizationId: tenantId };
     const events = await q.many<PlatformTenantEvent & { [key: string]: unknown }>(
