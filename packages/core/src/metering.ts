@@ -2,6 +2,7 @@ import { recordOrgEvent } from "./events";
 import { notifyPanel } from "./notices";
 import { enqueueTask } from "./queue";
 import { billingPeriod, getPlanSubscription, type PlanSubscription } from "./plans";
+import { queuePlatformAlert } from "./platform-alerts";
 import type { OrgQuery } from "./types";
 
 /**
@@ -106,6 +107,7 @@ export async function checkUsageAlerts(q: OrgQuery, now: Date): Promise<UsageAle
     await notifyPanel(q, body, now);
     await deliverAlertOutside(q, body, facts, now);
     await recordOrgEvent(q, "plan_usage_alert", facts, now);
+    await queuePlatformAlert(q, { kind: "usage", threshold, periodStart: usage.period.start, consumedSeconds: usage.consumedSeconds, includedSeconds: usage.includedSeconds }, now);
   }
   return fired;
 }
