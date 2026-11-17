@@ -12,6 +12,7 @@ const common: CommonDictionary = {
     finops: "FinOps",
     team: "Equipo",
     tenants: "Empresas",
+    platformFinops: "FinOps de empresas",
     settings: "Configuración",
   },
   actions: {

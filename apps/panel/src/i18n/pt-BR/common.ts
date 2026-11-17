@@ -10,6 +10,7 @@ const common = {
     finops: "FinOps",
     team: "Equipe",
     tenants: "Empresas",
+    platformFinops: "FinOps das empresas",
     settings: "Configurações",
   },
   actions: {

@@ -53,7 +53,11 @@ Tela "FinOps da plataforma" dentro da área de plataforma: por empresa, minutos 
 custo variável estimado, receita e margem, e os alertas críticos (franquia em 80% e 100%, disjuntor
 de chamadas curtas). Reaproveita `getFinopsSummary` por empresa, via papel de sistema no core, com a
 cotação e o custo de telefonia da plataforma quando a empresa não informou os dela (quem paga os
-provedores é a plataforma). Totais consolidados no topo.
+provedores é a plataforma). Totais consolidados no topo: empresas ativas, MRR, receita dos ciclos (com o excedente tarifado),
+custo variável estimado, margem bruta, minutos, ligações atendidas e caracteres de voz (especificação,
+seção 5, "Dashboard Admin FinOps"). Empresa "parada" (sem plano e sem ligação, extrato ou disjuntor
+em 62 dias) entra com zero sem as consultas do resumo, para a tela não crescer uma consulta por
+empresa de teste ou abandonada.
 
 ## Fora do escopo (pendências)
 
