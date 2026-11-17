@@ -47,7 +47,7 @@ export async function startOutboundCall(deps: OutboundDeps, input: { organizatio
     if (!agent.enabled) return { code: "agent_disabled", message: "This agent is turned off." };
     // A linha de saída é a do número do agente; sem número, a única linha da organização.
     const trunks = await q.many<Line>(
-      `select t.id, t.caller_id_e164, t.caller_display_name from trunks t
+      `select t.id, t.caller_id_e164, coalesce(t.caller_display_name, (select p.rcd_display_name from tenant_profiles p where p.organization_id = t.organization_id)) as caller_display_name from trunks t
         where exists (select 1 from phone_numbers p where p.trunk_id = t.id and p.agent_id = $1)
            or not exists (select 1 from phone_numbers p where p.agent_id = $1)
         order by t.id limit 2`,

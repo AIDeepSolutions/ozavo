@@ -143,6 +143,8 @@ export interface ProvisionInput {
   secrets: Array<{ key: string; valueEnc: string }>;
   /** A organização da plataforma que pediu (para o registro). */
   requestedBy: string;
+  /** Identidade RCD da empresa, opcional: o nome já normalizado (`normalizeRcdName`) e o logo já convertido. */
+  rcd?: { displayName: string | null; logo?: { png: Buffer; bmp: Buffer } | null };
 }
 
 /** O convite de dono: o token em claro só existe aqui e no link que a rota monta. */
@@ -226,8 +228,8 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, 
       );
       await q.exec(
         `insert into tenant_profiles (organization_id, legal_name, cnpj, trade_name, persona_name, default_voice_id, base_prompt, default_agent_id,
-                                      status, external_source, external_ref, created_at, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $11)`,
+                                      status, external_source, external_ref, created_at, updated_at, rcd_display_name, rcd_logo_png, rcd_logo_bmp)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $11, $12, $13, $14)`,
         [
           organizationId,
           input.company.legalName,
@@ -240,6 +242,9 @@ export async function provisionTenant(db: Db, input: ProvisionInput, now: Date, 
           input.source,
           input.externalRef,
           now,
+          input.rcd?.displayName ?? null,
+          input.rcd?.logo?.png ?? null,
+          input.rcd?.logo?.bmp ?? null,
         ],
       );
       // O registro fica na empresa nova: é dela a história de como nasceu.

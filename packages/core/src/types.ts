@@ -77,7 +77,7 @@ export const PRIVACY_EVENT_KINDS = ["recording_retention_changed", "recordings_p
  * que a plataforma faz com ela pela área de empresas (suspender, reativar, renovar o convite de dono,
  * trocar o plano).
  */
-export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed", "tenant_status_changed", "tenant_owner_invite_renewed", "tenant_plan_changed"] as const;
+export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed", "tenant_status_changed", "tenant_owner_invite_renewed", "tenant_plan_changed", "tenant_rcd_changed"] as const;
 
 /**
  * O plano da organização: troca de plano, aviso de franquia e redução de cadência por chamadas curtas.

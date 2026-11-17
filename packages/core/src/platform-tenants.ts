@@ -1,4 +1,5 @@
 import { recordOrgEvent } from "./events";
+import { normalizeRcdName, type RcdLogoSet } from "./rcd";
 import { getFinopsSummary, type FinopsSummary } from "./finops";
 import { DEFAULT_TIMEZONE, getPeriodUsage, localDay } from "./metering";
 import { PLAN_IDS, setPlanSubscription, type PlanId, type PlanSubscription, type PlanSubscriptionInput } from "./plans";
@@ -107,6 +108,8 @@ export interface PlatformTenantDetail extends PlatformTenantRow {
   /** Suspensa pela plataforma: o Asaas não reativa até a plataforma reativar. */
   heldByPlatform: boolean;
   finops: FinopsSummary;
+  /** A identidade RCD da empresa; as linhas sem valor próprio herdam estes. Nunca leva os bytes do logo. */
+  rcd: { displayName: string | null; hasLogo: boolean; logoBytes: { png: number; bmp: number } | null };
   events: PlatformTenantEvent[];
 }
 
@@ -249,7 +252,18 @@ export function getPlatformTenant(db: Db, platformId: string, tenantId: string, 
       "select id::text, at, kind, payload from organization_events where organization_id = $1 order by at desc, id desc limit $2",
       [tenantId, EVENT_LIMIT],
     );
-    return { ...(await toRow(q, raw, now)), billedByAsaas: raw.source === "asaas", heldByPlatform: raw.held, finops: await getFinopsSummary(scoped, now), events };
+    const rcd = await q.one<{ name: string | null; png: number | null; bmp: number | null }>(
+      "select rcd_display_name as name, octet_length(rcd_logo_png) as png, octet_length(rcd_logo_bmp) as bmp from tenant_profiles where organization_id = $1",
+      [tenantId],
+    );
+    return {
+      ...(await toRow(q, raw, now)),
+      billedByAsaas: raw.source === "asaas",
+      heldByPlatform: raw.held,
+      finops: await getFinopsSummary(scoped, now),
+      rcd: { displayName: rcd?.name ?? null, hasLogo: rcd?.png != null, logoBytes: rcd?.png != null && rcd.bmp != null ? { png: rcd.png, bmp: rcd.bmp } : null },
+      events,
+    };
   });
 }
 
@@ -269,6 +283,8 @@ export interface PanelTenantInput {
   /** `suspended`: a empresa nasce suspensa até o pagamento. */
   initialStatus: TenantStatus;
   agent: ProvisionInput["agent"];
+  /** Identidade RCD opcional, com o nome já normalizado. */
+  rcd?: ProvisionInput["rcd"];
 }
 
 export type PanelTenantResult =
@@ -295,6 +311,7 @@ export function createPlatformTenant(db: Db, platformId: string, actorUserId: st
         agent: input.agent,
         secrets: [],
         requestedBy: platformId,
+        rcd: input.rcd,
       },
       now,
       q,
@@ -391,5 +408,51 @@ export function setPlatformTenantPlan(db: Db, platformId: string, actorUserId: s
     const saved = await setPlanSubscription(scoped, input, now, day, null, { byOrganizationId: platformId, byUserId: actorUserId });
     await recordOrgEvent({ ...q, organizationId: platformId }, "tenant_plan_changed", { tenantId, plan: saved.plan, includedMinutes: saved.includedMinutes, overageRule: saved.overageRule }, now, actorUserId);
     return saved;
+  });
+}
+
+/**
+ * Grava ou limpa o nome RCD da empresa. `displayName` chega em qualquer grafia e é normalizado aqui
+ * (acento fora, CAIXA ALTA, até 32 ASCII); `null`, vazio ou só espaços limpam. Devolve `invalid` quando não cabe, `false`
+ * quando a empresa não existe. Registra `tenant_rcd_changed` dos dois lados, sem o valor do logo.
+ */
+export function setPlatformTenantRcdName(db: Db, platformId: string, actorUserId: string, tenantId: string, displayName: string | null, now: Date): Promise<{ displayName: string | null } | "invalid" | false> {
+  const clearing = displayName === null || displayName.trim() === "";
+  const name = clearing ? null : normalizeRcdName(displayName);
+  if (!clearing && name === null) return Promise.resolve("invalid");
+  return asPlatform(db, platformId, async (q) => {
+    if (!(await tenantExists(q, tenantId))) return false;
+    await q.exec(
+      `insert into tenant_profiles (organization_id, rcd_display_name, created_at, updated_at) values ($1, $2, $3, $3)
+       on conflict (organization_id) do update set rcd_display_name = excluded.rcd_display_name, updated_at = excluded.updated_at`,
+      [tenantId, name, now],
+    );
+    await logBothSides(q, platformId, actorUserId, tenantId, "tenant_rcd_changed", { field: "name", action: name === null ? "removed" : "set", displayName: name }, now);
+    return { displayName: name };
+  });
+}
+
+/** Troca (`logo`) ou remove (`null`) o logo RCD da empresa. `false` quando a empresa não existe. */
+export function setPlatformTenantRcdLogo(db: Db, platformId: string, actorUserId: string, tenantId: string, logo: RcdLogoSet | null, now: Date): Promise<boolean> {
+  return asPlatform(db, platformId, async (q) => {
+    if (!(await tenantExists(q, tenantId))) return false;
+    await q.exec(
+      `insert into tenant_profiles (organization_id, rcd_logo_png, rcd_logo_bmp, created_at, updated_at) values ($1, $2, $3, $4, $4)
+       on conflict (organization_id) do update set rcd_logo_png = excluded.rcd_logo_png, rcd_logo_bmp = excluded.rcd_logo_bmp, updated_at = excluded.updated_at`,
+      [tenantId, logo?.png ?? null, logo?.bmp ?? null, now],
+    );
+    await logBothSides(q, platformId, actorUserId, tenantId, "tenant_rcd_changed", { field: "logo", action: logo === null ? "removed" : "set", ...(logo && { pngBytes: logo.png.length, bmpBytes: logo.bmp.length }) }, now);
+    return true;
+  });
+}
+
+/** Os dois arquivos do logo RCD, para download; `null` sem empresa ou sem logo. */
+export function getPlatformTenantRcdLogo(db: Db, platformId: string, tenantId: string): Promise<RcdLogoSet | null> {
+  return asPlatform(db, platformId, async (q) => {
+    const row = await q.one<{ png: Buffer | null; bmp: Buffer | null }>(
+      "select p.rcd_logo_png as png, p.rcd_logo_bmp as bmp from tenant_profiles p join organizations o on o.id = p.organization_id where p.organization_id = $1 and not o.platform",
+      [tenantId],
+    );
+    return row?.png && row.bmp ? { png: row.png, bmp: row.bmp } : null;
   });
 }

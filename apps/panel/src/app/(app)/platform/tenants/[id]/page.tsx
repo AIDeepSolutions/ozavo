@@ -15,6 +15,7 @@ import { Badge, Button, Notice, PageHeader, Panel, Skeleton } from "../../../../
 import { formatCnpj, minutesOf, type TenantDetail } from "../../../../../ui/platform-tenants";
 import { InviteLinkCard, LoadFailure, ReadinessBadge, StatusBadge, UsageMeter, originText, planText, useTenantsDict, useTenantsError } from "../shared";
 import { PlanChangePanel } from "./plan-change";
+import { RcdPanel } from "./rcd-panel";
 
 type Dict = ReturnType<typeof useTenantsDict>;
 
@@ -274,6 +275,7 @@ export default function TenantDetailPage() {
       <ReadinessPanel tenant={tenant} />
       <PlanPanel tenant={tenant} />
       <PlanChangePanel key={tenant.finops.subscription?.plan ?? "none"} tenant={tenant} reload={state.reload} />
+      <RcdPanel key={`${tenant.rcd.displayName ?? ""}-${tenant.rcd.logoBytes?.png ?? 0}`} tenant={tenant} reload={state.reload} />
       <div className="grid gap-8 lg:grid-cols-2">
         <StatusPanel tenant={tenant} reload={state.reload} />
         <InvitePanel tenant={tenant} reload={state.reload} />

@@ -1,4 +1,4 @@
-import { PLAN_IDS, TENANT_STATUSES, createPlatformTenant, listPlatformTenants, normalizeCnpj } from "@ozavo/core";
+import { PLAN_IDS, TENANT_STATUSES, createPlatformTenant, listPlatformTenants, normalizeCnpj, normalizeRcdName } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError, handle } from "../../../../../server/context";
 import { keylessEngineIds, listEngines } from "../../../../../server/pieces";
@@ -34,6 +34,8 @@ const body = z
       })
       .optional(),
     initialStatus: z.enum(TENANT_STATUSES),
+    // Nome RCD opcional, em qualquer grafia; o logo vem depois, no detalhe da empresa.
+    rcdName: z.string().max(200).optional(),
   })
   .superRefine((input, ctx) => {
     if (input.plan === "custom" && !input.custom) ctx.addIssue({ code: "custom", path: ["custom"], message: "required for the custom plan" });
@@ -44,12 +46,14 @@ const body = z
  * nesta resposta: a tela mostra uma vez, e quem perder pede um novo no detalhe da empresa.
  */
 export const POST = handle({ body, platform: true }, async ({ body, deps, session }) => {
+  const rcdName = body.rcdName === undefined || body.rcdName.trim() === "" ? null : normalizeRcdName(body.rcdName);
+  if (body.rcdName !== undefined && body.rcdName.trim() !== "" && rcdName === null) throw new ApiError(400, "invalid_rcd_name", "The RCD name must have 1 to 32 characters of letters, digits and . & ( ) + _ / -.");
   const agent = await provisionAgent(await listEngines(), {}, body.tradeName ?? body.companyName);
   const result = await createPlatformTenant(
     deps.db,
     session.organizationId,
     session.userId,
-    { requestId: body.requestId, companyName: body.companyName, tradeName: body.tradeName ?? null, cnpj: body.cnpj ?? null, owner: body.owner, plan: body.plan, custom: body.plan === "custom" ? body.custom : undefined, initialStatus: body.initialStatus, agent },
+    { requestId: body.requestId, companyName: body.companyName, tradeName: body.tradeName ?? null, cnpj: body.cnpj ?? null, owner: body.owner, plan: body.plan, custom: body.plan === "custom" ? body.custom : undefined, initialStatus: body.initialStatus, agent, rcd: rcdName === null ? undefined : { displayName: rcdName } },
     deps.clock.now(),
   );
   if ("refused" in result) throw new ApiError(409, "email_taken", "There is already a user with this owner e-mail in this installation.");
