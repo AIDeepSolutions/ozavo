@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET as getInvite } from "./invites/[token]/route";
 import { POST as renewInvite } from "./platform/tenants/[id]/owner-invite/route";
+import { PUT as setPlan } from "./platform/tenants/[id]/plan/route";
 import { GET as getTenant } from "./platform/tenants/[id]/route";
 import { POST as setStatus } from "./platform/tenants/[id]/status/route";
 import { GET as listTenants, POST as createTenant } from "./platform/tenants/route";
@@ -98,6 +99,34 @@ describe("detalhe, status e convite", () => {
     expect(await call(getTenant, { cookie: platformOwner, params: { id } })).toMatchObject({ status: 404 });
     expect(await call(setStatus, { method: "POST", cookie: platformOwner, params: { id }, body: { status: "suspended" } })).toMatchObject({ status: 404 });
     expect(await call(setStatus, { method: "POST", cookie: platformOwner, params: { id: neighbour }, body: { status: "cancelled" } })).toMatchObject({ status: 400 });
+  });
+});
+
+describe("plano por empresa", () => {
+  it("a plataforma troca para o Personalizado com excedente tarifado; o detalhe e a lista leem de plan_subscriptions", async () => {
+    const created = await call(createTenant, { method: "POST", cookie: platformOwner, body: newCompany() });
+    const id = (created.data as { organizationId: string }).organizationId;
+    const custom = { plan: "custom", overageRule: "bill_overage", overagePriceCentsPerMinute: 120, monthlyPriceCents: 350_000, includedMinutes: 5_000, maxConcurrentCalls: 12 };
+    const changed = await call(setPlan, { method: "PUT", cookie: platformOwner, params: { id }, body: custom });
+    expect(changed).toMatchObject({ status: 200, data: { subscription: { plan: "custom", includedMinutes: 5_000, overageRule: "bill_overage", overagePriceCentsPerMinute: 120, maxConcurrentCalls: 12 } } });
+    expect((await call(getTenant, { cookie: platformOwner, params: { id } })).data).toMatchObject({ planCode: "custom", finops: { subscription: { plan: "custom", monthlyPriceCents: 350_000 } } });
+    const row = (await call(listTenants, { cookie: platformOwner })).data as Array<{ organizationId: string; planCode: string }>;
+    expect(row.find((tenant) => tenant.organizationId === id)?.planCode).toBe("custom");
+    // O perfil da empresa lê o plano da mesma fonte.
+    expect(await withOrg(panel.app, id, (q) => q.one("select plan_code from tenant_profiles"))).toEqual({ plan_code: null });
+  });
+
+  it("Personalizado sem os três valores é recusado; empresa que não existe é 404", async () => {
+    expect(await call(setPlan, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { plan: "custom", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 400, code: "validation_error" });
+    expect(await call(setPlan, { method: "PUT", cookie: platformOwner, params: { id: randomUUID() }, body: { plan: "pro", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 } })).toMatchObject({ status: 404 });
+  });
+
+  it("empresa cliente e operador da plataforma não trocam o plano de ninguém", async () => {
+    const body = { plan: "scale", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 };
+    expect(await call(setPlan, { method: "PUT", cookie: clientOwner, params: { id: neighbour }, body })).toMatchObject({ status: 403, code: "platform_only" });
+    expect(await call(setPlan, { method: "PUT", cookie: clientOwner, params: { id: client }, body })).toMatchObject({ status: 403, code: "platform_only" });
+    expect(await call(setPlan, { method: "PUT", cookie: platformOperator, params: { id: neighbour }, body })).toMatchObject({ status: 403, code: "forbidden" });
+    expect(await withSystem(panel.app, (q) => q.one("select plan from plan_subscriptions where organization_id = $1", [neighbour]))).toBeNull();
   });
 });
 
