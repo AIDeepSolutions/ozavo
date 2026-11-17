@@ -9,6 +9,7 @@ const common = {
     costs: "Custos",
     finops: "FinOps",
     team: "Equipe",
+    tenants: "Empresas",
     settings: "Configurações",
   },
   actions: {

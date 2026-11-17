@@ -10,6 +10,8 @@ export interface Me {
   role: Role;
   phone?: string | null;
   whatsapp?: string | null;
+  /** A organização desta pessoa administra a instalação: a área de empresas aparece na lateral. */
+  platform?: boolean;
 }
 
 export interface Agent {
