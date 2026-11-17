@@ -62,7 +62,7 @@ export default function TenantsPage() {
                         <Link href={`/platform/tenants/${row.organizationId}`} aria-label={fill(t.open, { name: row.name })} className="underline-offset-4 hover:underline">
                           {row.name}
                         </Link>
-                        {row.cnpj ? <span className="data block text-[0.8rem] font-normal text-muted">{formatCnpj(row.cnpj)}</span> : null}
+                        {row.cnpj ? <span className="data block text-[0.8rem] font-normal whitespace-nowrap text-muted">{formatCnpj(row.cnpj)}</span> : null}
                       </th>
                       <td className="py-3 pr-4">{planText(t, row.planCode)}</td>
                       <td className="py-3 pr-4">
