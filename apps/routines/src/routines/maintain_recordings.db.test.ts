@@ -168,3 +168,43 @@ it("varredura semanal apaga do bucket a cópia vencida, a de chamada apagada e a
     expect(listed).toBe(0);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+it("órfão local com erro não interrompe os demais: apaga todos os outros, audita o que saiu e devolve AggregateError", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-orphan-isolation-"));
+  try {
+    const org = await createOrganization(app, "orphan isolation");
+    const old = new Date(t0.getTime() - 120 * 86400000);
+    // Sem chamada no banco. O primeiro (ordem do readdir) é um diretório chamado .wav: o rm falha.
+    const ids = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000003"];
+    await mkdir(join(dir, org, `${ids[0]}.wav`), { recursive: true });
+    for (const id of ids.slice(1)) { const file = join(dir, org, `${id}.wav`); await writeFile(file, "x"); await utimes(file, old, old); }
+    await utimes(join(dir, org, `${ids[0]}.wav`), old, old);
+    const failure = await maintenance.run(task(org, "maintain_recordings"), depsFor(app, { recordingsDir: dir })).then(() => null, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(await readdir(join(dir, org))).toEqual([`${ids[0]}.wav`]);
+    const events = await withOrg(app, org, q => q.many<{ payload: { recordings: number } }>("select payload from organization_events where kind = 'recordings_purged'"));
+    expect(events.map(event => event.payload.recordings)).toEqual([2]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it("varredura semanal: cópia remota que falha ao sair não impede as demais, e as que saíram são auditadas", async () => {
+  const org = await createOrganization(app, "remote orphans isolation");
+  const day = [0, 1, 2, 3, 4, 5, 6].map(offset => new Date(t0.getTime() + offset * 86400000)).find(at => isOrphanSweepDay(org, at));
+  if (!day) throw new Error("no sweep day in a week");
+  const old = new Date(day.getTime() - 120 * 86400000);
+  const ids = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"];
+  const removed: string[] = [];
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-orphans-isolation-"));
+  try {
+    const deps = depsFor(app, { recordingsDir: dir, clock: { now: () => day }, recordingArchive: {
+      async put() { throw new Error("nothing to copy in this test"); },
+      async remove(_organizationId, callId) { if (callId === ids[0]) throw new Error("remove failed"); removed.push(callId); },
+      async *list() { for (const callId of ids) yield { callId, modifiedAt: old }; },
+    } });
+    const failure = await maintenance.run(task(org, "maintain_recordings"), deps).then(() => null, (error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(removed).toEqual([ids[1], ids[2]]);
+    const events = await withOrg(app, org, q => q.many<{ payload: { copies: number } }>("select payload from organization_events where kind = 'remote_recordings_orphans_purged'"));
+    expect(events.map(event => event.payload.copies)).toEqual([2]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
