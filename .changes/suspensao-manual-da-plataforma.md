@@ -1,5 +1,5 @@
 ---
-impact: behavior_change
+impact: new_capability
 section: changed
 title: Suspensão feita pela plataforma vale até a plataforma reativar
 ---
