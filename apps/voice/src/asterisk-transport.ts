@@ -117,7 +117,7 @@ export class AsteriskCalls {
     }
     try {
       const identity = await withOrg(this.deps.db, call.organizationId, q => q.one<{ caller_id_e164: string | null; caller_display_name: string | null }>(
-        "select caller_id_e164, caller_display_name from trunks where id = $1", [call.trunkId]));
+        "select t.caller_id_e164, coalesce(t.caller_display_name, (select p.rcd_display_name from tenant_profiles p where p.organization_id = t.organization_id)) as caller_display_name from trunks t where t.id = $1", [call.trunkId]));
       if (!identity?.caller_id_e164 || toE164(identity.caller_id_e164) !== identity.caller_id_e164) throw new Error("The transfer needs the owning line E.164 identity");
       await this.deps.ari.setVariable(channelId, "__OZAVO_CALLER_E164", identity.caller_id_e164);
       await this.deps.ari.setVariable(channelId, "__OZAVO_CALLER_NAME", identity.caller_display_name ?? "");

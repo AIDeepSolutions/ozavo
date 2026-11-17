@@ -1,4 +1,4 @@
-import { encryptSecret, normalizeCnpj, provisionTenant } from "@ozavo/core";
+import { convertRcdLogoSet, encryptSecret, normalizeCnpj, normalizeRcdName, provisionTenant } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError } from "../../../../../server/context";
 import { handleApiKey } from "../../../../../server/api-auth";
@@ -40,6 +40,8 @@ const body = z.object({
     .default({}),
   // As chaves dos provedores de voz desta empresa, por motor. Cifradas antes de gravar.
   credentials: z.record(z.string(), z.string().trim().min(1).max(500)).default({}),
+  // Identidade RCD opcional: o nome em qualquer grafia (vira CAIXA ALTA sem acento, até 32 ASCII) e o logo em base64.
+  rcd: z.object({ displayName: z.string().max(200).nullable().optional(), logo: z.string().min(1).max(12 * 1024 * 1024).regex(/^[A-Za-z0-9+/]+={0,2}$/).optional() }).optional(),
 });
 
 /**
@@ -55,6 +57,17 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
   const unknown = Object.keys(body.credentials).filter((id) => !engines.some((engine) => engine.id === id && !engine.keyless));
   if (unknown.length > 0) throw new ApiError(400, "validation_error", `credentials: no voice engine takes a key named ${unknown.join(", ")}`);
 
+  let rcd: { displayName: string | null; logo: { png: Buffer; bmp: Buffer } | null } | undefined;
+  if (body.rcd) {
+    const displayName = body.rcd.displayName == null ? null : normalizeRcdName(body.rcd.displayName);
+    if (body.rcd.displayName != null && displayName === null) throw new ApiError(400, "invalid_rcd_name", "rcd.displayName must have 1 to 32 characters of letters, digits and . & ( ) + _ / - once normalized.");
+    let logo: { png: Buffer; bmp: Buffer } | null = null;
+    if (body.rcd.logo) {
+      try { logo = await convertRcdLogoSet(Buffer.from(body.rcd.logo, "base64")); }
+      catch { throw new ApiError(400, "invalid_rcd_logo", "Invalid RCD image"); }
+    }
+    rcd = { displayName, logo };
+  }
   const result = await provisionTenant(
     deps.db,
     {
@@ -66,6 +79,7 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
       agent,
       secrets: Object.entries(body.credentials).map(([engine, value]) => ({ key: engineKeySetting(engine), valueEnc: encryptSecret(value, deps.secretKey) })),
       requestedBy: key.organizationId,
+      rcd,
     },
     deps.clock.now(),
   );

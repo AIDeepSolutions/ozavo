@@ -40,6 +40,7 @@ export interface TenantDetail extends TenantRow {
     alerts: Array<{ threshold: number; at: string }>;
     cadenceBreakers: Array<{ lineE164: string; trippedAt: string }>;
   };
+  rcd: { displayName: string | null; hasLogo: boolean; logoBytes: { png: number; bmp: number } | null };
   events: Array<{ id: string; at: string; kind: string; payload: Record<string, unknown> }>;
 }
 

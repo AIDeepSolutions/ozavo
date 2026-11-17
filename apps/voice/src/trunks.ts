@@ -385,7 +385,7 @@ export async function applyTrunks(deps: TrunksDeps): Promise<{ applied: boolean;
       sip_tls: boolean;
       caller_display_name: string | null;
     }>(
-      `select t.id, t.organization_id, t.host, t.username, t.secret_enc, t.auth_mode, t.match_extra, t.outbound_host, t.caller_id_e164, t.caller_display_name, t.sip_tls,
+      `select t.id, t.organization_id, t.host, t.username, t.secret_enc, t.auth_mode, t.match_extra, t.outbound_host, t.caller_id_e164, coalesce(t.caller_display_name, (select p.rcd_display_name from tenant_profiles p where p.organization_id = t.organization_id)) as caller_display_name, t.sip_tls,
               (select s.value from settings s where s.organization_id = t.organization_id and s.key = 'network.public_ip') as public_ip
          from trunks t order by t.id`,
     ),

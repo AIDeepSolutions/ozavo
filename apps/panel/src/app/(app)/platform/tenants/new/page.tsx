@@ -24,7 +24,7 @@ interface Created {
 
 type Catalog = Record<Exclude<Plan, "custom">, { monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number }>;
 
-const emptyDraft = { companyName: "", tradeName: "", cnpj: "", ownerName: "", ownerEmail: "", plan: "starter" as Plan, price: "", minutes: "", channels: "", initialStatus: "active" as Status };
+const emptyDraft = { companyName: "", tradeName: "", cnpj: "", ownerName: "", ownerEmail: "", rcdName: "", plan: "starter" as Plan, price: "", minutes: "", channels: "", initialStatus: "active" as Status };
 
 export default function NewTenantPage() {
   const t = useTenantsDict();
@@ -61,6 +61,7 @@ export default function NewTenantPage() {
         plan: draft.plan,
         ...(custom && { custom: { monthlyPriceCents: price, includedMinutes: minutes, maxConcurrentCalls: channels } }),
         initialStatus: draft.initialStatus,
+        ...(draft.rcdName.trim() !== "" && { rcdName: draft.rcdName }),
       },
     })
       .then((data) => {
@@ -104,6 +105,12 @@ export default function NewTenantPage() {
             </Field>
             <Field label={t.cnpj} hint={t.cnpjHint}>
               <TextInput mono inputMode="numeric" value={draft.cnpj} onChange={(event) => setDraft({ ...draft, cnpj: event.target.value })} maxLength={18} autoComplete="off" />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label={t.rcdNameField} hint={t.rcdNameFieldHint}>
+              <TextInput mono value={draft.rcdName} onChange={(event) => setDraft({ ...draft, rcdName: event.target.value })} maxLength={200} autoComplete="off" />
             </Field>
           </div>
 

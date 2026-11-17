@@ -142,6 +142,17 @@ describe("POST /api/v1/tenants/provision", () => {
     credentials: { "gemini-live": "chave-de-teste" },
   });
 
+  it("accepts the optional RCD identity: normalizes the name, rejects 33 characters with 400", async () => {
+    const key = await newKey(platformOwner.cookie, ["tenants:provision"]);
+    const mail = () => `dona-${crypto.randomUUID()}@example.test`;
+    const bad = await call(provision, { method: "POST", headers: bearer(key.token), body: { ...request(`sub_${crypto.randomUUID()}`, mail()), rcd: { displayName: "A".repeat(33) } } });
+    expect([bad.status, bad.code]).toEqual([400, "invalid_rcd_name"]);
+    const created = await call(provision, { method: "POST", headers: bearer(key.token), body: { ...request(`sub_${crypto.randomUUID()}`, mail()), rcd: { displayName: "Clínica São João Ltda" } } });
+    expect(created.status).toBe(201);
+    const id = (created.data as { organizationId: string }).organizationId;
+    expect(await withOrg(panel.app, id, (q) => q.one("select rcd_display_name, rcd_logo_png is null as no_logo from tenant_profiles"))).toEqual({ rcd_display_name: "CLINICA SAO JOAO LTDA", no_logo: true });
+  });
+
   it("creates the company ready to work, once, and answers the repeat with the same company", async () => {
     const key = await newKey(platformOwner.cookie, ["tenants:provision"]);
     const email = `dona-${crypto.randomUUID()}@example.test`;
