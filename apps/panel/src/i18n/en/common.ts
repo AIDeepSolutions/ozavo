@@ -64,6 +64,11 @@ const common: CommonDictionary = {
   readOnly: "Your role is operator: you follow calls and answer approvals. To change this screen, talk to an owner or administrator.",
   errors: {
     invalid_rcd_logo: "Could not convert the image. Upload PNG, JPEG or BMP up to 8 MB.",
+    https_required: "The webhook address must start with https://.",
+    destination_refused: "That address points to an internal or non-public network, and Ozavo does not deliver there.",
+    url_credentials: "The webhook address cannot carry a user name or password. Use the signing secret to authenticate.",
+    port_not_allowed: "The address port must be 443 or between 1024 and 65535.",
+    webhook_limit: "The company already has 10 webhooks. Remove one before adding another.",
     fallback: "We could not complete this action. Try again in a moment.",
     platform_scope: "Only the organization that runs this installation can create a key that provisions companies.",
     platform_only: "Only the organization that runs this installation can change plans and operation limits.",

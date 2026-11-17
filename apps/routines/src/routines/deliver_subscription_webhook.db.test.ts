@@ -1,8 +1,8 @@
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
-import { MAX_TASK_ATTEMPTS, createWebhookSubscription, decryptSecret, failTask, queueWebhookEvent, verifyWebhookSignature, withOrg, withSystem, type WebhookEnvelope } from "@ozavo/core";
+import { MAX_TASK_ATTEMPTS, createWebhookSubscription, decryptSecret, failTask, listWebhookDeliveries, listWebhookSubscriptions, queueWebhookEvent, recordEvent, verifyWebhookSignature, withOrg, withSystem, type WebhookEnvelope } from "@ozavo/core";
 import { afterAll, describe, expect, it } from "vitest";
-import { createOrganization, depsFor, fakeFetch, fakeLookup, openTestDbs, secretKey, t0, task } from "../../test/helpers";
+import { createCall, createOrganization, depsFor, fakeFetch, fakeLookup, openTestDbs, secretKey, t0, task } from "../../test/helpers";
 import deliver from "./deliver_subscription_webhook";
 
 const { app, owner } = openTestDbs();
@@ -110,6 +110,8 @@ describe("deliver_subscription_webhook", () => {
       const net = fakeFetch();
       await expect(deliver.run(task(org, "deliver_subscription_webhook", payloadOf(sub.id)), depsFor(app, { fetch: net.fetch, lookup: fakeLookup() })), url).rejects.toThrow(/destination_refused/);
       expect(net.requests, url).toEqual([]);
+      // O teto é de 10 destinos por empresa: o caso já foi provado, abre espaço para o próximo.
+      await withOrg(owner, org, (q) => q.exec("delete from webhook_subscriptions where id = $1", [sub.id]));
     }
     // DNS que resolve para IP interno no momento da entrega (o cadastro tinha passado com um IP público).
     const dnsCases: Record<string, string[]> = {
@@ -124,6 +126,7 @@ describe("deliver_subscription_webhook", () => {
       const net = fakeFetch();
       await expect(deliver.run(task(org, "deliver_subscription_webhook", payloadOf(sub.id)), depsFor(app, { fetch: net.fetch, lookup: fakeLookup(dnsCases) })), host).rejects.toThrow(/destination_refused/);
       expect(net.requests, host).toEqual([]);
+      await withOrg(owner, org, (q) => q.exec("delete from webhook_subscriptions where id = $1", [sub.id]));
     }
     const failures = await eventsOf(org);
     expect(failures.length).toBe(literals.length + Object.keys(dnsCases).length);
@@ -180,5 +183,60 @@ describe("deliver_subscription_webhook", () => {
     expect(net.requests).toEqual([]);
     expect(await eventsOf(b)).toEqual([]);
     await expect(deliver.run(task(a, "deliver_subscription_webhook", { subscriptionId: "nao-uuid" }), deps)).rejects.toThrow();
+  });
+
+  it("URL com ?token=: o token não aparece em evento, em erro nem na lista, com sucesso ou com falha", async () => {
+    const org = await createOrganization(app, "deliver token");
+    const sub = await subscribe(org, "https://hooks.example.com/in?token=XYZSECRET");
+    const ok = fakeFetch();
+    await deliver.run(task(org, "deliver_subscription_webhook", payloadOf(sub.id)), depsFor(app, { fetch: ok.fetch, lookup: fakeLookup() }));
+    expect(ok.requests[0]?.url).toBe("https://hooks.example.com/in?token=XYZSECRET");
+    const broken = fakeFetch(() => {
+      throw new Error("connect ECONNRESET https://hooks.example.com/in?token=XYZSECRET");
+    });
+    let thrown = "";
+    try {
+      await deliver.run(task(org, "deliver_subscription_webhook", payloadOf(sub.id)), depsFor(app, { fetch: broken.fetch, lookup: fakeLookup() }));
+    } catch (error) {
+      thrown = String(error);
+    }
+    expect(thrown).toContain("ECONNRESET");
+    expect(thrown).not.toContain("XYZSECRET");
+    const all = JSON.stringify(await withOrg(owner, org, (q) => q.many("select kind, payload from organization_events where organization_id = $1", [org])));
+    expect(all).not.toContain("XYZSECRET");
+    expect(JSON.stringify(await withOrg(app, org, (q) => listWebhookSubscriptions(q)))).not.toContain("XYZSECRET");
+    expect(JSON.stringify(await withOrg(app, org, (q) => listWebhookDeliveries(q, sub.id)))).not.toContain("XYZSECRET");
+  });
+
+  it("na entrega, recusa de novo porta fora de 443 e 1024 a 65535 e URL com usuário e senha, sem conexão", async () => {
+    const org = await createOrganization(app, "deliver port");
+    const net = fakeFetch();
+    const deps = depsFor(app, { fetch: net.fetch, lookup: fakeLookup() });
+    for (const [url, problem] of [["https://hooks.example.com:80/x", "port_not_allowed"], ["https://hooks.example.com:22/x", "port_not_allowed"], ["https://admin:s3cr3tpass@hooks.example.com/x", "url_credentials"]] as const) {
+      const sub = await subscribe(org, url);
+      await expect(deliver.run(task(org, "deliver_subscription_webhook", payloadOf(sub.id)), deps), url).rejects.toThrow(problem);
+    }
+    expect(net.requests).toEqual([]);
+    expect(JSON.stringify(await eventsOf(org))).not.toContain("s3cr3tpass");
+    // Porta alta e 443 passam.
+    const high = await subscribe(org, "https://hooks.example.com:8443/x");
+    const explicit = await subscribe(org, "https://hooks.example.com:443/x");
+    await deliver.run(task(org, "deliver_subscription_webhook", payloadOf(high.id)), deps);
+    await deliver.run(task(org, "deliver_subscription_webhook", payloadOf(explicit.id)), deps);
+    expect(net.requests).toHaveLength(2);
+  });
+
+  it("o fim de chamada gravado duas vezes resulta em UMA tarefa e UMA entrega, com o mesmo id", async () => {
+    const org = await createOrganization(app, "deliver dedupe");
+    const sub = await subscribe(org);
+    const callId = await createCall(app, org, t0);
+    for (const reason of ["agent_ended", "caller_hangup"]) await withOrg(app, org, (q) => recordEvent(q, callId, "call_ended", { status: "completed", reason, seconds: 9 }, t0));
+    const rows = await withOrg(owner, org, (q) => q.many<{ payload: Record<string, unknown> }>("select payload from tasks where organization_id = $1 and kind = 'deliver_subscription_webhook'", [org]));
+    expect(rows).toHaveLength(1);
+    const net = fakeFetch();
+    for (const row of rows) await deliver.run(task(org, "deliver_subscription_webhook", row.payload, callId), depsFor(app, { fetch: net.fetch, lookup: fakeLookup() }));
+    expect(net.requests).toHaveLength(1);
+    expect(rows[0]?.payload.subscriptionId).toBe(sub.id);
+    expect((await eventsOf(org)).map((event) => event.kind)).toEqual(["webhook_delivered"]);
   });
 });

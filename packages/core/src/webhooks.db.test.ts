@@ -2,8 +2,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createCall, createOrganization, openTestDbs } from "../test/helpers";
 import { recordEvent } from "./events";
 import { decryptSecret } from "./secrets";
-import { DELIVER_SUBSCRIPTION_TASK, queueWebhookEvent } from "./webhook-events";
-import { createWebhookSubscription, listWebhookDeliveries, listWebhookSubscriptions, removeWebhookSubscription, rotateWebhookSecret, setWebhookEnabled } from "./webhooks";
+import { DELIVER_SUBSCRIPTION_TASK, deterministicEventId, queueWebhookEvent } from "./webhook-events";
+import { MAX_WEBHOOK_SUBSCRIPTIONS, WebhookLimitError, createWebhookSubscription, listWebhookDeliveries, listWebhookSubscriptions, removeWebhookSubscription, rotateWebhookSecret, setWebhookEnabled } from "./webhooks";
 import { withOrg } from "./with-org";
 
 const { app, owner } = openTestDbs();
@@ -94,5 +94,49 @@ describe("assinaturas de webhook por empresa", () => {
     expect(tasks[0]).toMatchObject({ call_id: callId, payload: { subscriptionId: sub.id, envelope: { event: "call.ended", data: { callId, status: "completed", reason: "caller_hangup", seconds: 42, costCents: 3 } } } });
     // Só os campos conhecidos vão ao destino.
     expect(tasks[0]?.payload.envelope.data).not.toHaveProperty("transcriptNeverSent");
+  });
+
+  it("o mesmo fim de chamada gravado duas vezes dá UM id e UMA tarefa por assinatura", async () => {
+    const org = await createOrganization(app, "webhook dedupe");
+    const sub = await withOrg(app, org, (q) => createWebhookSubscription(q, { url: "https://d.example.com/hook", events: ["call.ended", "call.outcome"], createdBy: null }, key, now));
+    const callId = await createCall(app, org, now);
+    for (const reason of ["agent_ended", "caller_hangup"]) await withOrg(app, org, (q) => recordEvent(q, callId, "call_ended", { status: "completed", reason, seconds: 5 }, now));
+    const tasks = await tasksOf(org);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.payload.subscriptionId).toBe(sub.id);
+    const id = deterministicEventId(`${org}|${callId}|call.ended`);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect((tasks[0]?.payload.envelope as unknown as { id: string }).id).toBe(id);
+    // Outro evento da mesma chamada tem outro id; outra chamada também.
+    expect(deterministicEventId(`${org}|${callId}|call.outcome`)).not.toBe(id);
+    expect(deterministicEventId(`${org}|${await createCall(app, org, now)}|call.ended`)).not.toBe(id);
+    expect(await withOrg(app, org, (q) => queueWebhookEvent(q, org, "call.outcome", { outcome: "x" }, now, callId))).toBe(1);
+    expect(await withOrg(app, org, (q) => queueWebhookEvent(q, org, "call.outcome", { outcome: "x" }, now, callId))).toBe(0);
+  });
+
+  it("falha ao enfileirar o webhook (inclusive erro de SQL) não derruba o fim da chamada: vira evento e a transação segue de pé", async () => {
+    const org = await createOrganization(app, "webhook isolation of failure");
+    await withOrg(app, org, (q) => createWebhookSubscription(q, { url: "https://f.example.com/hook", events: ["call.ended"], createdBy: null }, key, now));
+    const callId = await createCall(app, org, now);
+    const result = await withOrg(app, org, async (q) => {
+      // Faz a consulta das assinaturas abortar a transação (divisão por zero), como um erro de SQL real faria.
+      const broken: typeof q = { ...q, many: (sql: string, params?: unknown[]) => (sql.includes("from webhook_subscriptions where organization_id") ? q.many("select 1 / 0") : q.many(sql, params)) } as typeof q;
+      await recordEvent(broken, callId, "call_ended", { status: "completed", reason: "agent_ended", seconds: 1 }, now);
+      // Depois do erro, a mesma transação ainda grava: é o que o resumo da chamada precisa.
+      await q.exec("insert into tasks (organization_id, call_id, kind, payload) values ($1, $2, 'summarize_call', '{}')", [org, callId]);
+      return q.many<{ kind: string; payload: Record<string, unknown> }>("select kind, payload from call_events where call_id = $1 order by id", [callId]);
+    });
+    expect(result.map((event) => event.kind)).toEqual(["call_ended", "webhook_queue_failed"]);
+    expect(result[1]?.payload).toMatchObject({ event: "call.ended", error: expect.stringContaining("division by zero") });
+    expect((await tasksOf(org))).toEqual([]);
+    expect((await owner.pool.query("select kind from tasks where call_id = $1", [callId])).rows).toEqual([{ kind: "summarize_call" }]);
+  });
+
+  it("não aceita mais que 10 assinaturas por empresa, e a de outra empresa não conta", async () => {
+    const org = await createOrganization(app, "webhook cap");
+    const other = await createOrganization(app, "webhook cap other");
+    for (let i = 0; i < MAX_WEBHOOK_SUBSCRIPTIONS; i++) await withOrg(app, org, (q) => createWebhookSubscription(q, { url: `https://cap.example.com/${i}`, events: ["call.ended"], createdBy: null }, key, now));
+    await expect(withOrg(app, org, (q) => createWebhookSubscription(q, { url: "https://cap.example.com/11", events: ["call.ended"], createdBy: null }, key, now))).rejects.toThrow(WebhookLimitError);
+    await expect(withOrg(app, other, (q) => createWebhookSubscription(q, { url: "https://cap.example.com/x", events: ["call.ended"], createdBy: null }, key, now))).resolves.toMatchObject({ id: expect.any(String) });
   });
 });

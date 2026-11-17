@@ -129,6 +129,53 @@ describe("webhooks de saída: cadastro, segredo e isolamento", () => {
   });
 });
 
+describe("webhooks de saída: endereço, porta, teto e id", () => {
+  it("recusa URL com usuário ou senha (400), e porta baixa (422); aceita 443 e 1024 a 65535", async () => {
+    const attempt = async (url: string): Promise<[number, string | undefined]> => {
+      const result = await call(createHook, { method: "POST", cookie: ownerB.cookie, body: { url, events: ["call.ended"] } });
+      return [result.status, result.code];
+    };
+    expect(await attempt("https://user:pass@hooks.example.com/x")).toEqual([400, "url_credentials"]);
+    expect(await attempt("https://user@hooks.example.com/x")).toEqual([400, "url_credentials"]);
+    for (const port of [22, 80, 1023]) expect(await attempt(`https://hooks.example.com:${port}/x`), String(port)).toEqual([422, "port_not_allowed"]);
+    expect((await attempt("https://hooks.example.com:443/ok-443"))[0]).toBe(200);
+    expect((await attempt("https://hooks.example.com:1024/ok-1024"))[0]).toBe(200);
+    expect((await attempt("https://hooks.example.com:65535/ok-65535"))[0]).toBe(200);
+  });
+
+  it("URL com ?token=: o token não aparece na lista nem nos eventos, só um aviso de que há query", async () => {
+    const created = await addHook(ownerA.cookie, "https://hooks.example.com/with-token?token=XYZSECRET&x=1");
+    const listed = await call(listHooks, { cookie: ownerA.cookie });
+    expect(listed.text).not.toContain("XYZSECRET");
+    expect(listed.data).toMatchObject({ subscriptions: expect.arrayContaining([expect.objectContaining({ id: created.id, url: "https://hooks.example.com/with-token", hasQuery: true })]) });
+    await call(patchHook, { method: "PATCH", cookie: ownerA.cookie, params: { id: created.id }, body: { enabled: false } });
+    await call(rotate, { method: "POST", cookie: ownerA.cookie, params: { id: created.id } });
+    await call(removeHook, { method: "DELETE", cookie: ownerA.cookie, params: { id: created.id } });
+    const events = JSON.stringify(await withOrg(panel.app, orgA, (q) => q.many("select kind, payload from organization_events where payload->>'subscriptionId' = $1 order by id", [created.id])));
+    expect(events).not.toContain("XYZSECRET");
+    expect(events).toContain("https://hooks.example.com/with-token");
+    expect((await call(deliveries, { cookie: ownerA.cookie, params: { id: created.id } })).text).not.toContain("XYZSECRET");
+  });
+
+  it("teto de 10 por empresa: a 11ª devolve 409 webhook_limit", async () => {
+    const org = await createOrganization(panel.app, "webhook cap screen");
+    const boss = await createUser(panel.app, org, "owner");
+    for (let i = 0; i < 10; i++) await addHook(boss.cookie, `https://cap.example.com/${i}`);
+    const over = await call(createHook, { method: "POST", cookie: boss.cookie, body: { url: "https://cap.example.com/11", events: ["call.ended"] } });
+    expect([over.status, over.code]).toEqual([409, "webhook_limit"]);
+    expect(((await call(listHooks, { cookie: boss.cookie })).data as { subscriptions: unknown[] }).subscriptions).toHaveLength(10);
+  });
+
+  it("id que não é UUID devolve 404, não 500, em PATCH, DELETE, rotate e entregas", async () => {
+    for (const id of ["nao-e-uuid", "123", "' or 1=1 --", "00000000-0000-0000-0000-00000000000z"]) {
+      for (const [handler, method, body] of [[patchHook, "PATCH", { enabled: true }], [removeHook, "DELETE", undefined], [rotate, "POST", undefined], [deliveries, "GET", undefined]] as const) {
+        const result = await call(handler, { method, cookie: ownerA.cookie, params: { id }, ...(body && { body }) });
+        expect([result.status, result.code], `${method} ${id}`).toEqual([404, "not_found"]);
+      }
+    }
+  });
+});
+
 describe("POST /api/v1/hooks/call: entrada por chave com o escopo hooks:inbound", () => {
   const post = (token: string, body: unknown, slug = "call", headers: Record<string, string> = {}) => call(inbound, { method: "POST", headers: { ...bearer(token), ...headers }, body, params: { slug } });
 

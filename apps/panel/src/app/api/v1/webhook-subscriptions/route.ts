@@ -1,4 +1,4 @@
-import { WEBHOOK_EVENTS, createWebhookSubscription, listWebhookSubscriptions } from "@ozavo/core";
+import { MAX_WEBHOOK_SUBSCRIPTIONS, WEBHOOK_EVENTS, WebhookLimitError, checkWebhookUrl, createWebhookSubscription, listWebhookSubscriptions } from "@ozavo/core";
 import { UnsafeDestinationError, assertPublicDestination } from "@ozavo/tools/net";
 import { z } from "zod";
 import { ApiError, handle } from "../../../../server/context";
@@ -20,7 +20,11 @@ export const POST = handle(
     body,
     configure: true,
     before: async ({ body, deps }) => {
-      if (!body.url.startsWith("https://")) throw new ApiError(422, "https_required", "The webhook URL must start with https://.");
+      const problem = checkWebhookUrl(body.url);
+      if (problem === "https_required") throw new ApiError(422, "https_required", "The webhook URL must start with https://.");
+      if (problem === "url_credentials") throw new ApiError(400, "url_credentials", "The webhook URL must not carry a user name or password.");
+      if (problem === "port_not_allowed") throw new ApiError(422, "port_not_allowed", "The webhook URL port must be 443 or between 1024 and 65535.");
+      if (problem === "invalid") throw new ApiError(400, "validation_error", "url: not a valid URL");
       try {
         await assertPublicDestination(body.url, deps.lookup);
       } catch (error) {
@@ -29,5 +33,12 @@ export const POST = handle(
       }
     },
   },
-  ({ q, body, session, deps }) => createWebhookSubscription(q, { url: body.url, events: body.events, createdBy: session.userId }, deps.secretKey, deps.clock.now()),
+  async ({ q, body, session, deps }) => {
+    try {
+      return await createWebhookSubscription(q, { url: body.url, events: body.events, createdBy: session.userId }, deps.secretKey, deps.clock.now());
+    } catch (error) {
+      if (error instanceof WebhookLimitError) throw new ApiError(409, "webhook_limit", `A company can have at most ${MAX_WEBHOOK_SUBSCRIPTIONS} webhooks. Remove one first.`);
+      throw error;
+    }
+  },
 );

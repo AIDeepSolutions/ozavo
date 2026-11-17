@@ -123,6 +123,7 @@ const platformTenants: typeof ptBR = {
     webhook_secret_rotated: "Secreto de webhook cambiado",
     webhook_delivered: "Webhook entregado",
     webhook_failed: "Falló el envío del webhook",
+    webhook_queue_failed: "Aviso a webhook no encolado",
     inbound_hook_received: "Solicitud recibida por webhook de entrada",
     other: "Registro {kind}",
   },

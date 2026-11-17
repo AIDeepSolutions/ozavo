@@ -1,12 +1,27 @@
 import { randomBytes } from "node:crypto";
 import { recordOrgEvent } from "./events";
 import { encryptSecret } from "./secrets";
-import { WEBHOOK_EVENTS, type WebhookEvent } from "./webhook-events";
+import { WEBHOOK_EVENTS, tryQueueWebhookEvent, type WebhookEvent } from "./webhook-events";
+import { redactWebhookUrl } from "./webhook-url";
 import type { OrgQuery } from "./types";
+
+/** No máximo este número de destinos por empresa. */
+export const MAX_WEBHOOK_SUBSCRIPTIONS = 10;
+
+/** A empresa já tem `MAX_WEBHOOK_SUBSCRIPTIONS` destinos. */
+export class WebhookLimitError extends Error {
+  override name = "WebhookLimitError";
+  constructor() {
+    super(`A company can have at most ${MAX_WEBHOOK_SUBSCRIPTIONS} webhook subscriptions`);
+  }
+}
 
 export interface WebhookSubscriptionView {
   id: string;
+  /** Esquema, host e caminho: sem usuário, senha nem query string. */
   url: string;
+  /** O endereço guardado tem query string (não mostrada). */
+  hasQuery: boolean;
   events: WebhookEvent[];
   enabled: boolean;
   createdAt: Date;
@@ -47,25 +62,29 @@ export async function createWebhookSubscription(
   now: Date,
 ): Promise<{ id: string; secret: string }> {
   const events = [...new Set(input.events)];
+  const count = await q.one<{ n: number }>("select count(*)::int as n from webhook_subscriptions where organization_id = $1", [q.organizationId]);
+  if ((count?.n ?? 0) >= MAX_WEBHOOK_SUBSCRIPTIONS) throw new WebhookLimitError();
   const secret = generateWebhookSecret();
   const row = await q.one<{ id: string }>(
     "insert into webhook_subscriptions (organization_id, url, events, secret_enc, created_by, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $6) returning id",
     [q.organizationId, input.url, events, encryptSecret(secret, secretKey), input.createdBy, now],
   );
   if (!row) throw new Error("Webhook subscription was not created");
-  await recordOrgEvent(q, "webhook_subscription_created", { subscriptionId: row.id, url: input.url, events }, now, input.createdBy);
+  await recordOrgEvent(q, "webhook_subscription_created", { subscriptionId: row.id, url: redactWebhookUrl(input.url), events }, now, input.createdBy);
   return { id: row.id, secret };
 }
 
-export function listWebhookSubscriptions(q: OrgQuery): Promise<WebhookSubscriptionView[]> {
-  return q.many<WebhookSubscriptionView & { [key: string]: unknown }>(`select ${VIEW_COLUMNS} from webhook_subscriptions where organization_id = $1 order by created_at desc`, [q.organizationId]);
+export async function listWebhookSubscriptions(q: OrgQuery): Promise<WebhookSubscriptionView[]> {
+  const rows = await q.many<Omit<WebhookSubscriptionView, "hasQuery"> & { [key: string]: unknown }>(`select ${VIEW_COLUMNS} from webhook_subscriptions where organization_id = $1 order by created_at desc`, [q.organizationId]);
+  // A query string pode carregar um token: quem lê a lista vê só o que a URL tem de público.
+  return rows.map((row) => ({ ...row, url: redactWebhookUrl(row.url), hasQuery: row.url.includes("?") }));
 }
 
 /** Liga ou desliga. Devolve `false` se a assinatura não existe nesta empresa. */
 export async function setWebhookEnabled(q: OrgQuery, id: string, enabled: boolean, actorUserId: string | null, now: Date): Promise<boolean> {
   const row = await q.one<{ url: string }>("update webhook_subscriptions set enabled = $2, updated_at = $3 where organization_id = $4 and id = $1 returning url", [id, enabled, now, q.organizationId]);
   if (!row) return false;
-  await recordOrgEvent(q, "webhook_subscription_changed", { subscriptionId: id, url: row.url, enabled }, now, actorUserId);
+  await recordOrgEvent(q, "webhook_subscription_changed", { subscriptionId: id, url: redactWebhookUrl(row.url), enabled }, now, actorUserId);
   return true;
 }
 
@@ -77,14 +96,14 @@ export async function rotateWebhookSecret(q: OrgQuery, id: string, secretKey: Bu
     [id, encryptSecret(secret, secretKey), now, q.organizationId],
   );
   if (!row) return null;
-  await recordOrgEvent(q, "webhook_secret_rotated", { subscriptionId: id, url: row.url }, now, actorUserId);
+  await recordOrgEvent(q, "webhook_secret_rotated", { subscriptionId: id, url: redactWebhookUrl(row.url) }, now, actorUserId);
   return secret;
 }
 
 export async function removeWebhookSubscription(q: OrgQuery, id: string, actorUserId: string | null, now: Date): Promise<boolean> {
   const row = await q.one<{ url: string }>("delete from webhook_subscriptions where organization_id = $2 and id = $1 returning url", [id, q.organizationId]);
   if (!row) return false;
-  await recordOrgEvent(q, "webhook_subscription_removed", { subscriptionId: id, url: row.url }, now, actorUserId);
+  await recordOrgEvent(q, "webhook_subscription_removed", { subscriptionId: id, url: redactWebhookUrl(row.url) }, now, actorUserId);
   return true;
 }
 
@@ -110,3 +129,12 @@ export async function listWebhookDeliveries(q: OrgQuery, subscriptionId: string,
 }
 
 export const isWebhookEvent = (value: string): value is WebhookEvent => (WEBHOOK_EVENTS as readonly string[]).includes(value);
+
+/**
+ * `queueWebhookEvent` para um fato da empresa (alerta, cadência, desfecho): não derruba o fato e, se
+ * falhar, deixa o rastro como evento `webhook_queue_failed` da empresa.
+ */
+export async function queueWebhookEventOrReport(q: OrgQuery, event: WebhookEvent, data: Record<string, unknown>, now: Date, callId?: string): Promise<void> {
+  const failure = await tryQueueWebhookEvent(q, q.organizationId, event, data, now, callId);
+  if (failure !== null) await recordOrgEvent(q, "webhook_queue_failed", { event, error: failure, ...(callId !== undefined && { callId }) }, now);
+}

@@ -22,6 +22,7 @@ const webhooks = {
   disabled: "Desligado",
   turnOn: "Ligar entregas de {url}",
   turnOff: "Desligar entregas de {url}",
+  queryHidden: "A query string do endereço fica guardada, mas não é exibida.",
   createdAt: "Cadastrado em {when}",
   rotatedAt: "segredo trocado em {when}",
   showDeliveries: "Ver entregas",

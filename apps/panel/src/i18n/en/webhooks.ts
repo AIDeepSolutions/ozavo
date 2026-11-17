@@ -24,6 +24,7 @@ const webhooks: WebhooksDictionary = {
   disabled: "Off",
   turnOn: "Turn on deliveries to {url}",
   turnOff: "Turn off deliveries to {url}",
+  queryHidden: "The address query string is stored but not shown.",
   createdAt: "Added on {when}",
   rotatedAt: "secret replaced on {when}",
   showDeliveries: "Show deliveries",

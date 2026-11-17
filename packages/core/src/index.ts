@@ -47,3 +47,4 @@ export * from "./asaas";
 export * from "./asaas-client";
 export * from "./webhook-events";
 export * from "./webhooks";
+export * from "./webhook-url";

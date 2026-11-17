@@ -121,6 +121,7 @@ const platformTenants = {
     webhook_secret_rotated: "Segredo de webhook trocado",
     webhook_delivered: "Webhook entregue",
     webhook_failed: "Entrega de webhook falhou",
+    webhook_queue_failed: "Aviso a webhook não enfileirado",
     inbound_hook_received: "Pedido recebido por webhook de entrada",
     other: "Registro {kind}",
   },

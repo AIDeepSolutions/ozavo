@@ -24,6 +24,7 @@ const webhooks: WebhooksDictionary = {
   disabled: "Apagado",
   turnOn: "Activar los envíos a {url}",
   turnOff: "Apagar los envíos a {url}",
+  queryHidden: "La query string de la dirección se guarda, pero no se muestra.",
   createdAt: "Registrado el {when}",
   rotatedAt: "secreto cambiado el {when}",
   showDeliveries: "Ver envíos",

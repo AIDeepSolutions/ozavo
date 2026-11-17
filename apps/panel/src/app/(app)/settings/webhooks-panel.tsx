@@ -24,6 +24,7 @@ interface Subscription {
   enabled: boolean;
   createdAt: string;
   secretRotatedAt: string | null;
+  hasQuery: boolean;
 }
 
 interface Delivery {
@@ -144,6 +145,7 @@ export function WebhooksPanel() {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="grid gap-1">
                 <span className="data break-all font-bold">{subscription.url}</span>
+                {subscription.hasQuery ? <span className="text-sm text-muted">{t.queryHidden}</span> : null}
                 <span className="text-sm text-muted">
                   {[fill(t.createdAt, { when: formatDateTime(subscription.createdAt, locale) }), subscription.secretRotatedAt ? fill(t.rotatedAt, { when: formatDateTime(subscription.secretRotatedAt, locale) }) : null]
                     .filter(Boolean)

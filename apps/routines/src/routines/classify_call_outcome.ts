@@ -1,4 +1,4 @@
-import { RUBRIC_VERSION, callAnalysisSchema, queueWebhookEvent, decryptSecret, recordEvent, scoreOf, verifyAgainstTranscript, withOrg, type OrgQuery, type TranscriptTurn } from "@ozavo/core";
+import { RUBRIC_VERSION, callAnalysisSchema, queueWebhookEventOrReport, decryptSecret, recordEvent, scoreOf, verifyAgainstTranscript, withOrg, type OrgQuery, type TranscriptTurn } from "@ozavo/core";
 import {
   ANALYSIS_SETTING,
   MICROCENTS_PER_CENT,
@@ -275,7 +275,7 @@ const routine: Routine = {
         [callId, decidido.outcome, decidido.confidence, decidido.evidence, now],
       );
       // O destino recebe o desfecho e a confiança; a citação da fala fica de fora, é dado de quem ligou.
-      if (classified === 1) await queueWebhookEvent(q, task.organizationId, "call.outcome", { callId, outcome: decidido.outcome, confidence: decidido.confidence }, now, callId);
+      if (classified === 1) await queueWebhookEventOrReport(q, "call.outcome", { callId, outcome: decidido.outcome, confidence: decidido.confidence }, now, callId);
       if (!analysis) return;
 
       // A nota sai só da régua, nunca de um número do modelo. Numa chamada apagada a pedido do

@@ -1,5 +1,5 @@
 import { CALL_EVENT_KINDS, ORG_EVENT_KINDS, type CallEventKind, type OrgEventKind, type OrgQuery } from "./types";
-import { queueWebhookEvent } from "./webhook-events";
+import { tryQueueWebhookEvent } from "./webhook-events";
 
 /**
  * Grava um evento na linha do tempo da chamada. O gatilho do banco avisa o canal `call_events`
@@ -18,7 +18,9 @@ export async function recordEvent(q: OrgQuery, callId: string, kind: CallEventKi
   // é o ponto comum, então a entrega aos webhooks da empresa nasce aqui, na mesma transação.
   if (kind === "call_ended") {
     const owner = await q.one<{ organization_id: string }>("select organization_id from calls where id = $1", [callId]);
-    if (owner) await queueWebhookEvent(q, owner.organization_id, "call.ended", { callId, ...callEndedFacts(payload) }, at, callId);
+    // Falha ao avisar o destino nunca derruba o fim da chamada (o resumo, o custo): vira evento.
+    const failure = owner ? await tryQueueWebhookEvent(q, owner.organization_id, "call.ended", { callId, ...callEndedFacts(payload) }, at, callId) : null;
+    if (failure !== null) await recordEvent(q, callId, "webhook_queue_failed", { event: "call.ended", error: failure }, at);
   }
 }
 

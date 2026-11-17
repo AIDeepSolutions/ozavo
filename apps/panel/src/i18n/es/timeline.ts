@@ -216,6 +216,7 @@ const timeline: TimelineDictionary = {
       endpoint_refused: "el endpoint de la clasificación no es una dirección https pública, o la protección de red lo rechazó",
       endpoint_key_missing: "el endpoint de la clasificación no tiene su clave guardada",
     },
+    webhook_queue_failed: "No se pudo avisar a los webhooks de la empresa de este fin de llamada ({error}). La llamada terminó con normalidad.",
     turn_latency: "El agente empezó a responder {rtt} ms después de que quien llamó dejó de hablar (modelo: {llm} ms; síntesis de voz: {ttfb} ms).",
     caller_unanswered: {
       turn_closed: "Quien llamó estuvo {seconds} s sin respuesta, quizás por ruido en la línea. Se pidió al agente que respondiera a lo que escuchó.",

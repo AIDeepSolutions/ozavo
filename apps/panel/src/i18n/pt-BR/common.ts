@@ -62,6 +62,11 @@ const common = {
   readOnly: "Seu papel é de operador: você acompanha chamadas e responde aprovações. Para alterar esta tela, fale com um dono ou administrador.",
   errors: {
     invalid_rcd_logo: "A imagem não pôde ser convertida. Envie PNG, JPEG ou BMP com até 8 MB.",
+    https_required: "O endereço do webhook precisa começar com https://.",
+    destination_refused: "Esse endereço aponta para uma rede interna ou não pública, e o Ozavo não entrega nele.",
+    url_credentials: "O endereço do webhook não pode ter usuário nem senha. Use o segredo de assinatura para autenticar.",
+    port_not_allowed: "A porta do endereço precisa ser 443 ou estar entre 1024 e 65535.",
+    webhook_limit: "A empresa já tem 10 webhooks. Remova um antes de cadastrar outro.",
     fallback: "Não conseguimos concluir essa ação. Tente de novo em instantes.",
     platform_scope: "Só a organização que administra esta instalação cria chave que provisiona empresas.",
     platform_only: "Só a organização que administra esta instalação altera plano e limites de operação.",

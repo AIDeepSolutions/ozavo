@@ -1,4 +1,4 @@
-import { DELIVER_SUBSCRIPTION_TASK, MAX_TASK_ATTEMPTS, WEBHOOK_SIGNATURE_HEADER, decryptSecret, recordOrgEvent, signWebhook, withOrg } from "@ozavo/core";
+import { DELIVER_SUBSCRIPTION_TASK, MAX_TASK_ATTEMPTS, WEBHOOK_SIGNATURE_HEADER, decryptSecret, checkWebhookUrl, recordOrgEvent, scrubWebhookError, signWebhook, withOrg } from "@ozavo/core";
 import { UnsafeDestinationError, safeFetch } from "@ozavo/tools";
 import { z } from "zod";
 import type { Routine } from "../types";
@@ -13,13 +13,14 @@ const TIMEOUT_MS = 5000;
 // A resposta do destino não é guardada nem mostrada; basta ler o suficiente para fechar a conexão.
 const MAX_RESPONSE_BYTES = 1024;
 
-function describeFailure(error: unknown): string {
-  if (error instanceof UnsafeDestinationError) return `destination_refused: ${error.message}`;
+function describeFailure(error: unknown, url: string): string {
+  if (error instanceof UnsafeDestinationError) return scrubWebhookError(`destination_refused: ${error.message}`, url);
   const message = error instanceof Error ? error.message : String(error);
   // O destino respondeu com redirecionamento: nunca seguimos (poderia apontar para dentro da rede).
   if (message.startsWith("Too many redirects")) return "redirect_not_followed";
   if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return "timeout";
-  return message.slice(0, 200);
+  // O texto do erro do cliente HTTP pode trazer o endereço inteiro, com `?token=`: sai só o público.
+  return scrubWebhookError(message, url);
 }
 
 /**
@@ -46,7 +47,9 @@ const routine: Routine = {
     let status: number | null = null;
     let failure: string | null = null;
     try {
-      if (!subscription.url.startsWith("https://")) throw new UnsafeDestinationError("Only https destinations are allowed");
+      // As mesmas regras do cadastro, de novo: https, sem usuário e senha, porta 443 ou 1024 a 65535.
+      const problem = checkWebhookUrl(subscription.url);
+      if (problem !== null) throw new UnsafeDestinationError(`Webhook URL refused (${problem})`);
       const secret = decryptSecret(subscription.secret_enc, deps.secretKey);
       const response = await safeFetch(
         subscription.url,
@@ -66,7 +69,7 @@ const routine: Routine = {
       status = response.status;
       if (!response.ok) failure = `http_${response.status}`;
     } catch (error) {
-      failure = describeFailure(error);
+      failure = describeFailure(error, subscription.url);
     }
 
     const final = failure === null || task.attempts >= MAX_TASK_ATTEMPTS;

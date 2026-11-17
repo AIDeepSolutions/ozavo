@@ -121,6 +121,14 @@ describe("safeFetch", () => {
   });
 });
 
+describe("safeFetch com maxRedirects: 0 (webhooks)", () => {
+  it("trata qualquer redirecionamento como falha, sem seguir nem para um destino público", async () => {
+    const net = fakeFetch((request) => (request.url.includes("first") ? new Response(null, { status: 302, headers: { location: "https://other.example.com/next" } }) : new Response("ok")));
+    await expect(safeFetch("https://hooks.example.com/first", {}, { fetch: net.fetch, lookup: fakeLookup(), maxRedirects: 0 })).rejects.toThrow("Too many redirects (more than 0)");
+    expect(net.requests.map((request) => request.url)).toEqual(["https://hooks.example.com/first"]);
+  });
+});
+
 describe("isPublicAddress", () => {
   it("separa público de interno", () => {
     expect(["8.8.8.8", "93.184.216.34", "172.32.0.1", "2001:4860:4860::8888"].map(isPublicAddress)).toEqual([true, true, true, true]);
