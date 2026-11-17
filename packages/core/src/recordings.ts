@@ -37,8 +37,14 @@ export async function purgeRecordings(dir: string, organizationId: string, befor
   for (const name of names) {
     if (!name.endsWith(".wav") || knownCallIds.has(name.slice(0, -4))) continue;
     const file = path.join(folder, name);
-    const info = await stat(file).catch(() => null);
-    if (!info || info.mtime >= before) continue;
+    // Só ENOENT (o arquivo saiu entre a listagem e aqui) é ignorado. EACCES, EIO etc. são falha: sobem para a lista.
+    let info;
+    try { info = await stat(file); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") errors.push(error);
+      continue;
+    }
+    if (info.mtime >= before) continue;
     try { await rm(file, { force: true }); removed += 1; }
     catch (error) { errors.push(error); }
   }
