@@ -413,12 +413,13 @@ export function setPlatformTenantPlan(db: Db, platformId: string, actorUserId: s
 
 /**
  * Grava ou limpa o nome RCD da empresa. `displayName` chega em qualquer grafia e é normalizado aqui
- * (acento fora, CAIXA ALTA, até 32 ASCII); `null` limpa. Devolve `invalid` quando não cabe, `false`
+ * (acento fora, CAIXA ALTA, até 32 ASCII); `null`, vazio ou só espaços limpam. Devolve `invalid` quando não cabe, `false`
  * quando a empresa não existe. Registra `tenant_rcd_changed` dos dois lados, sem o valor do logo.
  */
 export function setPlatformTenantRcdName(db: Db, platformId: string, actorUserId: string, tenantId: string, displayName: string | null, now: Date): Promise<{ displayName: string | null } | "invalid" | false> {
-  const name = displayName === null ? null : normalizeRcdName(displayName);
-  if (displayName !== null && name === null) return Promise.resolve("invalid");
+  const clearing = displayName === null || displayName.trim() === "";
+  const name = clearing ? null : normalizeRcdName(displayName);
+  if (!clearing && name === null) return Promise.resolve("invalid");
   return asPlatform(db, platformId, async (q) => {
     if (!(await tenantExists(q, tenantId))) return false;
     await q.exec(

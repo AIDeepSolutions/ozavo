@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, type execFile as ExecFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { withOrg, withSystem } from "@ozavo/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET as getInvite } from "./invites/[token]/route";
 import { GET as platformFinops } from "./platform/finops/route";
@@ -13,6 +13,13 @@ import { GET as getTenant } from "./platform/tenants/[id]/route";
 import { POST as setStatus } from "./platform/tenants/[id]/status/route";
 import { GET as listTenants, POST as createTenant } from "./platform/tenants/route";
 import { GET as tenantProfile } from "./tenant-profile/route";
+
+// Conta as chamadas ao Python do conversor: a recusa por tamanho tem de vir antes de abrir o processo.
+const pythonCalls = vi.hoisted(() => ({ count: 0 }));
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<{ execFile: typeof ExecFile }>();
+  return { ...original, execFile: ((...args: Parameters<typeof ExecFile>) => (pythonCalls.count++, original.execFile(...args))) as typeof ExecFile };
+});
 
 /**
  * A área de plataforma do painel. Só dono ou administrador da organização da plataforma entra; uma
@@ -208,9 +215,34 @@ describe("identidade RCD da empresa", () => {
     expect(await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: randomUUID() }, body: { displayName: "X" } })).toMatchObject({ status: 404 });
   });
 
+  it("nome vazio ou só com espaços limpa o campo; emoji e caracteres fora do ASCII são 400", async () => {
+    await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { displayName: "Antes" } });
+    for (const blank of ["", "   ", "\t \n"]) {
+      expect(await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { displayName: blank } })).toMatchObject({ status: 200, data: { displayName: null } });
+      await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { displayName: "Antes" } });
+    }
+    expect(await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { displayName: "   " } })).toMatchObject({ status: 200 });
+    expect(((await call(getTenant, { cookie: platformOwner, params: { id: neighbour } })).data as { rcd: { displayName: string | null } }).rcd.displayName).toBeNull();
+    for (const bad of ["Clínica 😀", "😀", "日本語"]) {
+      const refused = await call(setRcdName, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { displayName: bad } });
+      expect([refused.status, refused.code]).toEqual([400, "invalid_rcd_name"]);
+    }
+  });
+
+  it("imagem acima de 8 MB é 400 e o Python do conversor nem é chamado", async () => {
+    const before = pythonCalls.count;
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1, 1).toString("base64");
+    const refused = await call(setRcdLogo, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { image: big } });
+    expect([refused.status, refused.code]).toEqual([400, "invalid_rcd_logo"]);
+    expect(pythonCalls.count).toBe(before);
+  });
+
   it("converte o logo para PNG e BMP, baixa os dois e remove", async () => {
+    const before = pythonCalls.count;
     const put = await call(setRcdLogo, { method: "PUT", cookie: platformOwner, params: { id: neighbour }, body: { image: png() } });
     expect(put.status).toBe(200);
+    // O contador enxerga o Python: sem isso o teste de 8 MB não provaria nada.
+    expect(pythonCalls.count).toBeGreaterThan(before);
     expect((put.data as { bytes: { png: number; bmp: number } }).bytes.bmp).toBeLessThanOrEqual(300 * 1024);
     const got = await call(getRcdLogo, { cookie: platformOwner, params: { id: neighbour } });
     expect(Buffer.from((got.data as { bmp: string }).bmp, "base64").subarray(0, 2).toString("latin1")).toBe("BM");

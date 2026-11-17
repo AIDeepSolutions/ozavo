@@ -59,8 +59,9 @@ export const POST = handleApiKey({ scope: "tenants:provision", body }, async ({ 
 
   let rcd: { displayName: string | null; logo: { png: Buffer; bmp: Buffer } | null } | undefined;
   if (body.rcd) {
-    const displayName = body.rcd.displayName == null ? null : normalizeRcdName(body.rcd.displayName);
-    if (body.rcd.displayName != null && displayName === null) throw new ApiError(400, "invalid_rcd_name", "rcd.displayName must have 1 to 32 characters of letters, digits and . & ( ) + _ / - once normalized.");
+    const clearing = body.rcd.displayName == null || body.rcd.displayName.trim() === "";
+    const displayName = clearing ? null : normalizeRcdName(body.rcd.displayName ?? "");
+    if (!clearing && displayName === null) throw new ApiError(400, "invalid_rcd_name", "rcd.displayName must have 1 to 32 characters of letters, digits and . & ( ) + _ / - once normalized.");
     let logo: { png: Buffer; bmp: Buffer } | null = null;
     if (body.rcd.logo) {
       try { logo = await convertRcdLogoSet(Buffer.from(body.rcd.logo, "base64")); }
