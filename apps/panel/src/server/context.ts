@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { DEFAULT_RECORDINGS_DIR, createDb, hashToken, isPlatformOrganization, loadConfig, systemClock, verifyPassword, withOrg, withSystem, type Clock, type Db, type OrgQuery } from "@ozavo/core";
+import { DEFAULT_RECORDINGS_DIR, PlatformOnlyError, createDb, hashToken, isPlatformOrganization, loadConfig, systemClock, verifyPassword, withOrg, withSystem, type Clock, type Db, type OrgQuery } from "@ozavo/core";
 import { wahaFromEnv, type WahaOptions } from "@ozavo/tools/waha";
 import type { z, ZodType } from "zod";
 import { trustedProxyHops } from "./client-ip";
@@ -101,6 +101,8 @@ function success(result: unknown): Response {
 export function failure(error: unknown): Response {
   const send = (status: number, code: string, message: string): Response => Response.json({ ok: false, error: { code, message } }, { status });
   if (error instanceof ApiError) return send(error.status, error.code, error.message);
+  // A segunda conferência do core (área de plataforma): a rota já devia ter barrado antes.
+  if (error instanceof PlatformOnlyError) return send(403, error.code, error.message);
   const pgCode = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
   if (pgCode === "23505") return send(409, "already_exists", "A record with these values already exists.");
   // Chave estrangeira composta com a organização: apontar para linha de outra organização cai aqui.

@@ -11,6 +11,7 @@ const common: CommonDictionary = {
     costs: "Costos",
     finops: "FinOps",
     team: "Equipo",
+    tenants: "Empresas",
     settings: "Configuración",
   },
   actions: {

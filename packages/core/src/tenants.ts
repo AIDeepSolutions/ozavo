@@ -161,7 +161,7 @@ export type ProvisionResult =
 const INVITE_TOKEN_BYTES = 32;
 
 /** Revoga o convite de dono pendente e emite outro. Corre dentro da transação de sistema. */
-async function issueOwnerInvite(q: OrgQuery, organizationId: string, owner: { name: string; email: string }, now: Date): Promise<OwnerInvite> {
+export async function issueOwnerInvite(q: OrgQuery, organizationId: string, owner: { name: string; email: string }, now: Date): Promise<OwnerInvite> {
   const token = randomBytes(INVITE_TOKEN_BYTES).toString("base64url");
   const expiresAt = new Date(now.getTime() + PROVISIONED_INVITE_DAYS * 86_400_000);
   await q.exec("update invites set revoked_at = $2 where organization_id = $1 and accepted_at is null and revoked_at is null", [organizationId, now]);
