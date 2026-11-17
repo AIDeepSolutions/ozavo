@@ -37,6 +37,41 @@ export interface TenantDetail extends TenantRow {
   events: Array<{ id: string; at: string; kind: string; payload: Record<string, unknown> }>;
 }
 
+export interface PlatformFinopsView {
+  tenants: Array<{
+    organizationId: string;
+    name: string;
+    status: PlatformTenantStatus;
+    plan: string | null;
+    period: { start: string; end: string };
+    consumedSeconds: number;
+    includedSeconds: number | null;
+    overageSeconds: number;
+    answeredCalls: number;
+    ttsCharacters: number;
+    providerCostUsdCents: number;
+    monthlyPriceCents: number;
+    margin: { revenueCents: number; overageRevenueCents: number; variableCostCents: number | null; grossMarginCents: number | null; grossMarginPercent: number | null };
+    ratesFrom: "tenant" | "platform" | "missing";
+  }>;
+  totals: {
+    tenants: number;
+    activeTenants: number;
+    mrrCents: number;
+    revenueCents: number;
+    overageRevenueCents: number;
+    overageSeconds: number;
+    consumedSeconds: number;
+    answeredCalls: number;
+    ttsCharacters: number;
+    providerCostUsdCents: number;
+    variableCostCents: number | null;
+    grossMarginCents: number | null;
+    grossMarginPercent: number | null;
+  };
+  critical: Array<{ organizationId: string; name: string; kind: "usage" | "breaker"; threshold: number | null; lineE164: string | null; at: string }>;
+}
+
 /** "12345678000195" -> "12.345.678/0001-95"; outro formato volta como veio. */
 export function formatCnpj(digits: string): string {
   return /^\d{14}$/.test(digits) ? digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : digits;

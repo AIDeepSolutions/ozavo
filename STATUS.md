@@ -1,7 +1,7 @@
 # OZAVO — STATUS DE EXECUÇÃO
 
 > Atualizado sempre que algo muda. Quem lê: o agente (sempre) e o Macgyver (quando quiser).
-> Última atualização: 16/11/2026 ~23h50 UTC (16/11 20h50 BRT), depois dos PRs #7 a #10 e do ramo
+> Última atualização: 17/11/2026 ~02h30 UTC (16/11 23h30 BRT), área de plataforma (PRs #12 a #16).
 > `feat/auditoria-restante`.
 
 ## Estado atual (vale sobre as seções abaixo, que ficam como histórico)
@@ -11,6 +11,16 @@
   número e sem Asaas: chave do motor pipeline em três campos na tela (onboarding), saúde acusa banco
   remoto sem TLS verificado, Google Agenda por conta de serviço, varredura semanal de cópias órfãs no
   bucket, ensaio de restauração registrado e metadados/manifesto da marca.
+- Área de plataforma no painel (17/11, auditoria de aderência ao PDF, bloco multitenant), em PRs
+  abertos e ainda não revisados: #12 Empresas (MT-01/02: lista, nova empresa com razão social, nome
+  fantasia e CNPJ, detalhe, suspender/reativar, convite de dono), e empilhados sobre ele #13 FinOps
+  das empresas (MT-04), #14 alertas críticos das empresas chegam à plataforma (MT-05), #15 plano por
+  empresa e fonte única do plano (MT-03) e #16 suspensão da plataforma vence o Asaas (MT-08).
+  **Migrations novas, não aplicadas**: `20261117T010000_plano_fonte_unica` (#15, só comentários) e
+  `20261117T020000_suspensao_manual_da_plataforma` (#16, coluna com padrão falso). Fora: entrar como
+  suporte (MT-13, decisão do dono), checklist de prontidão (MT-10), lista de ações da plataforma
+  (MT-11), Telegram/e-mail dos alertas para a plataforma. Plano em
+  [docs/plans/2026-11-16-painel-empresas.md](docs/plans/2026-11-16-painel-empresas.md).
 - Banco (Supabase): 29 migrations aplicadas; a conexão usa `ozavo_app` e `ozavo_system` com
   `sslmode=verify-full`. **Seis migrations da `main` ainda não aplicadas**: `20261116T211700`,
   `20261116T212500`, `20261116T213500`, `20261116T220000`, `20261116T221000` e `20261116T230000`.

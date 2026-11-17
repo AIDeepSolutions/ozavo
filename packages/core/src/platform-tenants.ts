@@ -93,7 +93,8 @@ export function tenantOrigin(source: string | null): TenantOrigin {
 export const PANEL_SOURCE = "panel";
 const EVENT_LIMIT = 50;
 
-async function assertPlatform(q: OrgQuery, platformId: string): Promise<void> {
+/** Recusa com `PlatformOnlyError` quem não é a organização da plataforma. Dentro de `withSystem`. */
+export async function assertPlatform(q: OrgQuery, platformId: string): Promise<void> {
   const row = await q.one<{ platform: boolean }>("select platform from organizations where id = $1", [platformId]);
   if (row?.platform !== true) throw new PlatformOnlyError();
 }
