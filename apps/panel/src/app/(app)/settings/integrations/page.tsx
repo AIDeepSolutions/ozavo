@@ -17,6 +17,7 @@ import { useCanConfigure } from "../../../../ui/me";
 import type { Setting } from "../../../../ui/types";
 import { AsaasPanel } from "../asaas-panel";
 import { AgendaPanel } from "../agenda-panel";
+import { WebhooksPanel } from "../webhooks-panel";
 import { URL_PREFIX, put } from "../setting-api";
 
 interface Hook {
@@ -69,6 +70,7 @@ export default function IntegrationsSettings() {
       <Suspense>
         <AgendaPanel />
       </Suspense>
+      <WebhooksPanel />
       <Panel title={t.webhooksTitle} description={t.webhooksLead}>
         <form
           className="grid gap-4"

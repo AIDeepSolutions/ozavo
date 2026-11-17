@@ -12,8 +12,10 @@ import { withSystem } from "./with-org";
  *   pela mesma política de saída de qualquer outra (`checkOutboundAllowed`).
  * - `tenants:provision`: criar uma empresa nova (`POST /api/v1/tenants/provision`). Só a organização
  *   que administra a instalação (`organizations.platform`) emite chave com este escopo.
+ * - `hooks:inbound`: entrada de webhook (`POST /api/v1/hooks/[slug]`): um pedido de ligação por
+ *   requisição, pela mesma política de saída.
  */
-export const API_KEY_SCOPES = ["calls:outbound", "tenants:provision"] as const;
+export const API_KEY_SCOPES = ["calls:outbound", "tenants:provision", "hooks:inbound"] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 /** Os escopos que só a organização da plataforma pode ter. */

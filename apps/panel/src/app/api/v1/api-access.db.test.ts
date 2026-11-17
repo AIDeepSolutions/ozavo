@@ -47,7 +47,7 @@ describe("API keys", () => {
     expect(listed.text).not.toContain(key.token);
     expect(listed.text).not.toContain(stored?.key_hash ?? "-");
     // Esta organização não administra a instalação: o escopo de provisionar nem é oferecido.
-    expect(listed.data).toMatchObject({ scopes: ["calls:outbound"] });
+    expect(listed.data).toMatchObject({ scopes: ["calls:outbound", "hooks:inbound"] });
   });
 
   it("refuses the provisioning scope outside the platform organization, and operators cannot manage keys", async () => {

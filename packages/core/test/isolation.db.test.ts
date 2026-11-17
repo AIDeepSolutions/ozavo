@@ -35,6 +35,7 @@ const factories: Record<string, Factory> = {
   outbound_policy: (organization_id) => ({ organization_id }),
   tenant_profiles: (organization_id) => ({ organization_id, created_at: at, updated_at: at }),
   api_keys: (organization_id) => ({ organization_id, name: "crm", key_prefix: "ozk_teste", key_hash: unique("api-key"), scopes: ["calls:outbound"], created_at: at }),
+  webhook_subscriptions: (organization_id) => ({ organization_id, url: "https://hooks.example.com/isolation", events: ["call.ended"], secret_enc: "isolation-probe", created_at: at, updated_at: at }),
   do_not_call: (organization_id) => ({ organization_id, e164: `+55${Math.floor(1e10 + Math.random() * 9e10)}` }),
   usage_ledger: (organization_id, p) => ({ organization_id, call_id: p.calls?.id, engine: "simulated", at }),
   plan_subscriptions: (organization_id) => ({ organization_id, plan: "starter", monthly_price_cents: 49700, included_minutes: 300, max_concurrent_calls: 2, cycle_started_on: "2026-01-15", updated_at: at }),

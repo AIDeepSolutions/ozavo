@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./net": "./src/net/safe-fetch.ts",
     "./waha": "./src/connectors/waha.ts",
     "./whatsapp": "./src/connectors/whatsapp.ts",
     "./agenda": "./src/connectors/agenda-index.ts"

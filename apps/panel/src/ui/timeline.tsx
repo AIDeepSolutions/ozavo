@@ -419,6 +419,8 @@ export function Timeline({
         const ms = (value: unknown): string => Math.round(Number(value)).toLocaleString(locale);
         return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency, { rtt: ms(p.rttMs), ttfb: ms(p.ttfbMs), llm: ms(p.llmFirstTokenMs) })}</Quiet> };
       }
+      case "webhook_queue_failed":
+        return { ...base, tone: "fail", body: <Quiet>{fill(e.webhook_queue_failed, { error: String(p.error ?? "") })}</Quiet> };
       default:
         return { ...base, tone: "neutral", body: <Quiet>{e.unknown} <span className="data">{event.kind}</span></Quiet> };
     }

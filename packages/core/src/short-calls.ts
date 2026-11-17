@@ -3,6 +3,7 @@ import { DEFAULT_TIMEZONE } from "./metering";
 import { notifyPanel } from "./notices";
 import { getOperationSettings } from "./operation-settings";
 import { queuePlatformAlert } from "./platform-alerts";
+import { queueWebhookEventOrReport } from "./webhooks";
 import { enqueueTask } from "./queue";
 import type { OrgQuery } from "./types";
 
@@ -118,6 +119,7 @@ export async function watchShortCalls(q: OrgQuery, now: Date): Promise<LineShort
       now,
     );
     await recordOrgEvent(q, "cadence_reduced", { lineE164: line.lineE164, totalCalls: line.total, shortCalls: line.short, reducedCallsPerHour }, now);
+    await queueWebhookEventOrReport(q, "cadence.reduced", { lineE164: line.lineE164, totalCalls: line.total, shortCalls: line.short, reducedCallsPerHour }, now);
     const today = await q.one<{ day: string }>(`select to_char(d.day, 'YYYY-MM-DD') as day from ${DAY_SQL} d`, [q.organizationId, now]);
     await queuePlatformAlert(q, { kind: "breaker", lineE164: line.lineE164, totalCalls: line.total, shortCalls: line.short, reducedCallsPerHour, day: today?.day ?? "" }, now);
   }

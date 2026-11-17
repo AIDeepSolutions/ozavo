@@ -30,6 +30,7 @@ const company = {
   scopes: {
     "calls:outbound": "Pedir ligações de saída (POST /api/v1/calls/outbound). A ligação passa pelas mesmas regras de ligação de saída.",
     "tenants:provision": "Criar empresas novas (POST /api/v1/tenants/provision). Só a organização que administra esta instalação tem este escopo.",
+    "hooks:inbound": "Receber webhooks de entrada (POST /api/v1/hooks/call). Cada requisição pede uma ligação, pelas mesmas regras de ligação de saída.",
   },
   createKey: "Criar chave",
   createdTitle: "Chave criada",

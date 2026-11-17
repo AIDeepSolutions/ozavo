@@ -1,4 +1,5 @@
 import { CALL_EVENT_KINDS, ORG_EVENT_KINDS, type CallEventKind, type OrgEventKind, type OrgQuery } from "./types";
+import { tryQueueWebhookEvent } from "./webhook-events";
 
 /**
  * Grava um evento na linha do tempo da chamada. O gatilho do banco avisa o canal `call_events`
@@ -13,6 +14,20 @@ export async function recordEvent(q: OrgQuery, callId: string, kind: CallEventKi
     [callId, at, kind, JSON.stringify(payload)],
   );
   if (inserted !== 1) throw new Error(`Call ${callId} not found in this organization: event ${kind} was not recorded`);
+  // O fim da chamada é gravado em vários lugares (voz, caixa postal, conciliação, WhatsApp, web); este
+  // é o ponto comum, então a entrega aos webhooks da empresa nasce aqui, na mesma transação.
+  if (kind === "call_ended") {
+    const owner = await q.one<{ organization_id: string }>("select organization_id from calls where id = $1", [callId]);
+    // Falha ao avisar o destino nunca derruba o fim da chamada (o resumo, o custo): vira evento.
+    const failure = owner ? await tryQueueWebhookEvent(q, owner.organization_id, "call.ended", { callId, ...callEndedFacts(payload) }, at, callId) : null;
+    if (failure !== null) await recordEvent(q, callId, "webhook_queue_failed", { event: "call.ended", error: failure }, at);
+  }
+}
+
+/** Do que o `call_ended` grava, só o que vai ao destino do webhook: situação, motivo, duração, custo e canal. */
+function callEndedFacts(payload: object): Record<string, unknown> {
+  const source = payload as Record<string, unknown>;
+  return Object.fromEntries(["status", "reason", "seconds", "costCents", "channel"].filter((key) => key in source).map((key) => [key, source[key]]));
 }
 
 /** Grava um evento da organização (fora de uma chamada). `actorUserId` nulo: quem fez foi uma rotina. */

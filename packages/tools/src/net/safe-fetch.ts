@@ -11,6 +11,8 @@ export interface SafeFetchOptions {
   lookup?: HostLookup;
   timeoutMs?: number;
   maxBytes?: number;
+  /** Quantos redirecionamentos seguir. Padrão 3; `0` trata qualquer redirecionamento como falha. */
+  maxRedirects?: number;
 }
 
 export interface SafeRequest {
@@ -42,7 +44,8 @@ export { isPublicAddress };
 
 const systemLookup: HostLookup = async (host) => (await dnsLookup(host, { all: true })).map((entry) => entry.address);
 
-async function assertPublicDestination(target: string, lookup: HostLookup): Promise<void> {
+/** Recusa o que não é http(s) e o que aponta, por IP ou por DNS, para fora da internet pública. */
+export async function assertPublicDestination(target: string, lookup: HostLookup = systemLookup): Promise<void> {
   if (!URL.canParse(target)) throw new UnsafeDestinationError("Destination is not a valid URL");
   const url = new URL(target);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new UnsafeDestinationError(`Protocol ${url.protocol} is not allowed: only http and https`);
@@ -136,7 +139,8 @@ async function follow(target: string, request: SafeRequest, doFetch: Fetch, look
       return { status: response.status, ok: response.ok, ...(await readLimited(response, options.maxBytes ?? MAX_BYTES)) };
     }
     await response.body?.cancel();
-    if (hop === MAX_REDIRECTS) throw new Error(`Too many redirects (more than ${MAX_REDIRECTS})`);
+    const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
+    if (hop === maxRedirects) throw new Error(`Too many redirects (more than ${maxRedirects})`);
     const next = new URL(location, url);
     // Credencial não acompanha o redirecionamento para outra origem.
     if (next.origin !== new URL(url).origin) {
