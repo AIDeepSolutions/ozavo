@@ -107,6 +107,11 @@ describe("criar pela tela", () => {
       await q.exec("insert into phone_numbers (organization_id, trunk_id, e164) values ($1, $2, '+5511999990000')", [id, trunk?.id]);
     });
     expect(await rowOf()).toMatchObject({ usageAlert: 100, activeBreakers: 1, lines: 1 });
+    // O tronco é lido pelos testes da borda de voz, que olham todas as organizações: não fica para trás.
+    await withSystem(app, async (q) => {
+      await q.exec("delete from phone_numbers where organization_id = $1", [id]);
+      await q.exec("delete from trunks where organization_id = $1", [id]);
+    });
   });
 
   it("o mesmo formulário enviado duas vezes devolve a mesma empresa", async () => {
