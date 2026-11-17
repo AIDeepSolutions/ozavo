@@ -12,7 +12,7 @@ import { useDict, useLocale } from "../../../../../i18n/provider";
 import { api, useApi } from "../../../../../ui/api";
 import { formatBrl, formatDateTime, formatDay, formatMoney, formatPhone } from "../../../../../ui/format";
 import { Badge, Button, Notice, PageHeader, Panel, Skeleton } from "../../../../../ui/kit";
-import { minutesOf, type TenantDetail } from "../../../../../ui/platform-tenants";
+import { formatCnpj, minutesOf, type TenantDetail } from "../../../../../ui/platform-tenants";
 import { InviteLinkCard, LoadFailure, StatusBadge, UsageMeter, originText, planText, useTenantsDict, useTenantsError } from "../shared";
 
 type Dict = ReturnType<typeof useTenantsDict>;
@@ -23,6 +23,20 @@ function Stat({ label, value, text = false }: { label: string; value: string; te
       <dt className="text-[0.8rem] font-bold text-muted">{label}</dt>
       <dd className={`text-[1.05rem] ${text ? "font-bold" : "data"}`}>{value}</dd>
     </div>
+  );
+}
+
+function CompanyPanel({ tenant }: { tenant: TenantDetail }) {
+  const t = useTenantsDict();
+  const missing = t.notInformedShort;
+  return (
+    <Panel title={t.companyPanel}>
+      <dl className="grid gap-4 sm:grid-cols-3">
+        <Stat label={t.companyName} value={tenant.legalName ?? missing} text />
+        <Stat label={t.tradeName} value={tenant.tradeName ?? missing} text />
+        <Stat label={t.cnpj} value={tenant.cnpj === null ? missing : formatCnpj(tenant.cnpj)} />
+      </dl>
+    </Panel>
   );
 }
 
@@ -228,6 +242,7 @@ export default function TenantDetailPage() {
           </span>
         }
       />
+      <CompanyPanel tenant={tenant} />
       <PlanPanel tenant={tenant} />
       <div className="grid gap-8 lg:grid-cols-2">
         <StatusPanel tenant={tenant} reload={state.reload} />

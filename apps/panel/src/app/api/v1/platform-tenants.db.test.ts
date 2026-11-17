@@ -58,6 +58,13 @@ describe("nova empresa pela tela", () => {
     expect(again.data).toMatchObject({ created: false, organizationId: data.organizationId });
   });
 
+  it("aceita nome fantasia e CNPJ válido, e recusa CNPJ com dígito errado", async () => {
+    expect(await call(createTenant, { method: "POST", cookie: platformOwner, body: newCompany({ cnpj: "11.222.333/0001-82" }) })).toMatchObject({ status: 400, code: "validation_error" });
+    const ok = await call(createTenant, { method: "POST", cookie: platformOwner, body: newCompany({ tradeName: "Fantasia", cnpj: "11.222.333/0001-81" }) });
+    const id = (ok.data as { organizationId: string }).organizationId;
+    expect((await call(getTenant, { cookie: platformOwner, params: { id } })).data).toMatchObject({ name: "Fantasia", tradeName: "Fantasia", cnpj: "11222333000181" });
+  });
+
   it("o plano Personalizado exige preço, minutos e canais", async () => {
     const refused = await call(createTenant, { method: "POST", cookie: platformOwner, body: newCompany({ plan: "custom" }) });
     expect(refused).toMatchObject({ status: 400, code: "validation_error" });

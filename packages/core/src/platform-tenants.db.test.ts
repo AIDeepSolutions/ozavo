@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createOrganization, openTestDbs } from "../test/helpers";
 import { findInviteByToken } from "./invites";
+import { localDay } from "./metering";
 import { getPlanSubscription } from "./plans";
 import {
   PlatformOnlyError,
@@ -80,6 +81,32 @@ describe("criar pela tela", () => {
     });
     expect(await eventKinds(result.organizationId)).toEqual(["tenant_provisioned", "plan_changed"]);
     expect(await eventKinds(platform)).toContain("tenant_provisioned");
+  });
+
+  it("grava razão social, nome fantasia e CNPJ, e o nome fantasia é o nome da empresa", async () => {
+    const input = form({ companyName: "Exemplo Comércio Ltda", tradeName: "Exemplo", cnpj: "11222333000181" });
+    const result = await createPlatformTenant(app, platform, platformUser, input, at(2));
+    if ("refused" in result) throw new Error("refused");
+    expect(await getPlatformTenant(app, platform, result.organizationId, at(2))).toMatchObject({ name: "Exemplo", legalName: "Exemplo Comércio Ltda", tradeName: "Exemplo", cnpj: "11222333000181" });
+  });
+
+  it("a lista mostra o maior alerta de franquia do ciclo, o disjuntor ativo e as linhas", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form(), at(2));
+    if ("refused" in result) throw new Error("refused");
+    const id = result.organizationId;
+    const rowOf = async () => (await listPlatformTenants(app, platform, at(2))).find((tenant) => tenant.organizationId === id);
+    expect(await rowOf()).toMatchObject({ usageAlert: null, activeBreakers: 0, lines: 0 });
+    const start = (await rowOf())?.usage?.period.start ?? "";
+    await withSystem(app, async (q) => {
+      const { day } = await localDay({ ...q, organizationId: id }, at(2));
+      for (const threshold of [80, 100]) {
+        await q.exec("insert into usage_alerts (organization_id, period_start, threshold, consumed_seconds, included_seconds, at) values ($1, $2::date, $3, 0, 0, $4)", [id, start, threshold, at(2)]);
+      }
+      await q.exec("insert into cadence_breakers (organization_id, line_e164, day, total_calls, short_calls, tripped_at) values ($1, '+5511999990000', $2::date, 1200, 950, $3)", [id, day, at(2)]);
+      const trunk = await q.one<{ id: string }>("insert into trunks (organization_id, name, host, auth_mode) values ($1, 'Tronco', 'sip.example.test', 'ip') returning id", [id]);
+      await q.exec("insert into phone_numbers (organization_id, trunk_id, e164) values ($1, $2, '+5511999990000')", [id, trunk?.id]);
+    });
+    expect(await rowOf()).toMatchObject({ usageAlert: 100, activeBreakers: 1, lines: 1 });
   });
 
   it("o mesmo formulário enviado duas vezes devolve a mesma empresa", async () => {

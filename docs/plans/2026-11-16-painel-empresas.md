@@ -24,7 +24,7 @@ já usado em `finops/plan` e `finops/consolidated`. A coluna `platform` só muda
      (`getPeriodUsage` com a organização da empresa), criação e convite de dono pendente.
    - `getPlatformTenant`: o mesmo, mais o resumo de FinOps do ciclo (`getFinopsSummary`) e os
      últimos eventos da organização.
-   - `createTenantFromPanel`: chama `provisionTenant` e `setPlanSubscription` na mesma transação de
+   - `createTenantFromPanel`: pede razão social, nome fantasia e CNPJ (os dados societários da especificação, seção 4; os dois últimos opcionais, como na API) e chama `provisionTenant` e `setPlanSubscription` na mesma transação de
      sistema. Origem `panel`; a chave de idempotência é um identificador que a tela gera por
      formulário, então clicar duas vezes devolve a mesma empresa. Plano Personalizado contrata preço,
      franquia e canais informados. "Suspensa até o pagamento" grava o status na mesma transação.

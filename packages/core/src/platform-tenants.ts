@@ -1,6 +1,7 @@
 import { recordOrgEvent } from "./events";
 import { getFinopsSummary, type FinopsSummary } from "./finops";
 import { getPeriodUsage, localDay } from "./metering";
+import { activeCadenceBreakers } from "./short-calls";
 import { PLAN_IDS, setPlanSubscription, type PlanId } from "./plans";
 import { issueOwnerInvite, provisionTenant, type OwnerInvite, type ProvisionInput, type TenantStatus } from "./tenants";
 import type { Db, OrgEventKind, OrgQuery } from "./types";
@@ -43,6 +44,8 @@ export interface PlatformTenantRow {
   name: string;
   legalName: string | null;
   tradeName: string | null;
+  /** Só os 14 dígitos. */
+  cnpj: string | null;
   createdAt: Date;
   /** O código do plano vinculado (`starter`, ..., ou um código de fora). */
   planCode: string | null;
@@ -50,6 +53,12 @@ export interface PlatformTenantRow {
   origin: TenantOrigin;
   /** A franquia do ciclo em curso; `null` quando a empresa não tem plano contratado. */
   usage: { consumedSeconds: number; includedSeconds: number; period: { start: string; end: string } } | null;
+  /** O maior limiar de franquia alcançado no ciclo em curso (80 ou 100), ou `null`. */
+  usageAlert: number | null;
+  /** Quantas linhas da empresa estão com a cadência reduzida hoje pelo disjuntor de chamadas curtas. */
+  activeBreakers: number;
+  /** Quantos números de telefone a empresa tem. */
+  lines: number;
   ownerInvite: OwnerInviteState;
 }
 
@@ -101,6 +110,7 @@ interface RawRow {
   name: string;
   legalName: string | null;
   tradeName: string | null;
+  cnpj: string | null;
   createdAt: Date;
   planCode: string | null;
   profileStatus: TenantStatus | null;
@@ -113,7 +123,7 @@ interface RawRow {
 
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
 const ROWS_SQL = `
-  select o.id as "organizationId", o.name, p.legal_name as "legalName", p.trade_name as "tradeName", o.created_at as "createdAt",
+  select o.id as "organizationId", o.name, p.legal_name as "legalName", p.trade_name as "tradeName", p.cnpj, o.created_at as "createdAt",
          p.plan_code as "planCode", p.status as "profileStatus", p.external_source as source,
          exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled,
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
@@ -128,17 +138,26 @@ const ROWS_SQL = `
 async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenantRow> {
   // As funções de medição filtram pela organização informada: dentro do papel de sistema, é esse
   // filtro que segura cada consulta na empresa da linha.
-  const usage = await getPeriodUsage({ ...q, organizationId: raw.organizationId }, now);
+  const scoped = { ...q, organizationId: raw.organizationId };
+  const usage = await getPeriodUsage(scoped, now);
+  const alert = usage
+    ? await q.one<{ threshold: number }>("select max(threshold)::int as threshold from usage_alerts where organization_id = $1 and period_start = $2::date", [raw.organizationId, usage.period.start])
+    : null;
+  const lines = await q.one<{ n: number }>("select count(*)::int as n from phone_numbers where organization_id = $1", [raw.organizationId]);
   return {
     organizationId: raw.organizationId,
     name: raw.name,
     legalName: raw.legalName,
     tradeName: raw.tradeName,
+    cnpj: raw.cnpj,
     createdAt: raw.createdAt,
     planCode: raw.planCode,
     status: displayStatus(raw.profileStatus, raw.cancelled),
     origin: tenantOrigin(raw.source),
     usage: usage && { consumedSeconds: usage.consumedSeconds, includedSeconds: usage.includedSeconds, period: usage.period },
+    usageAlert: alert?.threshold ?? null,
+    activeBreakers: (await activeCadenceBreakers(scoped, now)).length,
+    lines: lines?.n ?? 0,
     ownerInvite: {
       ownerActive: raw.ownerActive,
       pending:
@@ -176,7 +195,12 @@ export function getPlatformTenant(db: Db, platformId: string, tenantId: string, 
 export interface PanelTenantInput {
   /** Gerado pela tela, um por formulário: o mesmo envio repetido devolve a mesma empresa. */
   requestId: string;
+  /** A razão social. */
   companyName: string;
+  /** O nome fantasia: quando informado, é o nome da organização no painel. */
+  tradeName?: string | null;
+  /** Só os 14 dígitos, já conferidos com `normalizeCnpj`. */
+  cnpj?: string | null;
   owner: { name: string; email: string };
   plan: PlanId;
   /** Só no plano Personalizado. */
@@ -204,7 +228,7 @@ export function createPlatformTenant(db: Db, platformId: string, actorUserId: st
       {
         source: PANEL_SOURCE,
         externalRef: input.requestId,
-        company: { legalName: input.companyName, tradeName: null, cnpj: null },
+        company: { legalName: input.companyName, tradeName: input.tradeName ?? null, cnpj: input.cnpj ?? null },
         owner: input.owner,
         plan: { code: input.plan, monthlyMinutes: input.custom?.includedMinutes ?? null },
         agent: input.agent,

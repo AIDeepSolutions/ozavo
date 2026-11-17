@@ -8,11 +8,15 @@ export interface TenantRow {
   name: string;
   legalName: string | null;
   tradeName: string | null;
+  cnpj: string | null;
   createdAt: string;
   planCode: string | null;
   status: PlatformTenantStatus;
   origin: { kind: "asaas" } | { kind: "panel" } | { kind: "api"; source: string } | { kind: "unknown" };
   usage: { consumedSeconds: number; includedSeconds: number; period: { start: string; end: string } } | null;
+  usageAlert: number | null;
+  activeBreakers: number;
+  lines: number;
   ownerInvite: { ownerActive: boolean; pending: { email: string; expiresAt: string; expired: boolean } | null };
 }
 
@@ -30,6 +34,11 @@ export interface TenantDetail extends TenantRow {
     cadenceBreakers: Array<{ lineE164: string; trippedAt: string }>;
   };
   events: Array<{ id: string; at: string; kind: string; payload: Record<string, unknown> }>;
+}
+
+/** "12345678000195" -> "12.345.678/0001-95"; outro formato volta como veio. */
+export function formatCnpj(digits: string): string {
+  return /^\d{14}$/.test(digits) ? digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : digits;
 }
 
 /** Minutos começados, como a franquia conta. */

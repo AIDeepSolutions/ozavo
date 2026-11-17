@@ -24,7 +24,7 @@ interface Created {
 
 type Catalog = Record<Exclude<Plan, "custom">, { monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number }>;
 
-const emptyDraft = { companyName: "", ownerName: "", ownerEmail: "", plan: "starter" as Plan, price: "", minutes: "", channels: "", initialStatus: "active" as Status };
+const emptyDraft = { companyName: "", tradeName: "", cnpj: "", ownerName: "", ownerEmail: "", plan: "starter" as Plan, price: "", minutes: "", channels: "", initialStatus: "active" as Status };
 
 export default function NewTenantPage() {
   const t = useTenantsDict();
@@ -55,6 +55,8 @@ export default function NewTenantPage() {
       body: {
         requestId,
         companyName: draft.companyName,
+        ...(draft.tradeName.trim() !== "" && { tradeName: draft.tradeName }),
+        ...(draft.cnpj.trim() !== "" && { cnpj: draft.cnpj }),
         owner: { name: draft.ownerName, email: draft.ownerEmail },
         plan: draft.plan,
         ...(custom && { custom: { monthlyPriceCents: price, includedMinutes: minutes, maxConcurrentCalls: channels } }),
@@ -62,7 +64,7 @@ export default function NewTenantPage() {
       },
     })
       .then((data) => {
-        setResult({ name: draft.companyName, data });
+        setResult({ name: draft.tradeName.trim() || draft.companyName, data });
         setDraft(emptyDraft);
         setRequestId(crypto.randomUUID());
       }, (failure: unknown) => setError(errorText(failure)))
@@ -97,6 +99,15 @@ export default function NewTenantPage() {
             <Field label={t.companyName}>
               <TextInput value={draft.companyName} onChange={(event) => setDraft({ ...draft, companyName: event.target.value })} required maxLength={200} autoFocus />
             </Field>
+            <Field label={t.tradeName} hint={t.tradeNameHint}>
+              <TextInput value={draft.tradeName} onChange={(event) => setDraft({ ...draft, tradeName: event.target.value })} maxLength={200} />
+            </Field>
+            <Field label={t.cnpj} hint={t.cnpjHint}>
+              <TextInput mono inputMode="numeric" value={draft.cnpj} onChange={(event) => setDraft({ ...draft, cnpj: event.target.value })} maxLength={18} autoComplete="off" />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label={t.ownerName}>
               <TextInput value={draft.ownerName} onChange={(event) => setDraft({ ...draft, ownerName: event.target.value })} required maxLength={120} autoComplete="off" />
             </Field>

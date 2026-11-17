@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { minutesOf, reaisToCents, usagePercent, wholeNumber } from "./platform-tenants";
+import { formatCnpj, minutesOf, reaisToCents, usagePercent, wholeNumber } from "./platform-tenants";
+
+describe("CNPJ na tela", () => {
+  it("pontua os 14 dígitos e devolve o resto como veio", () => {
+    expect(formatCnpj("11222333000181")).toBe("11.222.333/0001-81");
+    expect(formatCnpj("123")).toBe("123");
+  });
+});
 
 describe("conta da franquia", () => {
   it("conta minuto começado e limita a barra em 100%", () => {

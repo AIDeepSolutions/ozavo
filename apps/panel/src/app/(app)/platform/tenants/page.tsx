@@ -7,7 +7,7 @@ import { useLocale } from "../../../../i18n/provider";
 import { useApi } from "../../../../ui/api";
 import { formatDateTime } from "../../../../ui/format";
 import { Badge, EmptyState, PageHeader, Skeleton, buttonClass } from "../../../../ui/kit";
-import type { TenantRow } from "../../../../ui/platform-tenants";
+import { formatCnpj, type TenantRow } from "../../../../ui/platform-tenants";
 import { LoadFailure, StatusBadge, UsageMeter, inviteText, originText, planText, useTenantsDict } from "./shared";
 
 export default function TenantsPage() {
@@ -47,6 +47,8 @@ export default function TenantsPage() {
                   <th scope="col" className="py-2 pr-4">{t.columns.status}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.origin}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.usage}</th>
+                  <th scope="col" className="py-2 pr-4">{t.columns.alerts}</th>
+                  <th scope="col" className="py-2 pr-4">{t.columns.lines}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.createdAt}</th>
                   <th scope="col" className="py-2">{t.columns.ownerInvite}</th>
                 </tr>
@@ -60,6 +62,7 @@ export default function TenantsPage() {
                         <Link href={`/platform/tenants/${row.organizationId}`} aria-label={fill(t.open, { name: row.name })} className="underline-offset-4 hover:underline">
                           {row.name}
                         </Link>
+                        {row.cnpj ? <span className="data block text-[0.8rem] font-normal text-muted">{formatCnpj(row.cnpj)}</span> : null}
                       </th>
                       <td className="py-3 pr-4">{planText(t, row.planCode)}</td>
                       <td className="py-3 pr-4">
@@ -69,6 +72,14 @@ export default function TenantsPage() {
                       <td className="py-3 pr-4">
                         <UsageMeter usage={row.usage} />
                       </td>
+                      <td className="py-3 pr-4">
+                        <span className="flex flex-wrap gap-1">
+                          {row.usageAlert !== null ? <Badge tone={row.usageAlert >= 100 ? "fail" : "warn"}>{fill(t.listAlert.usage, { n: row.usageAlert })}</Badge> : null}
+                          {row.activeBreakers > 0 ? <Badge tone="fail">{fill(t.listAlert.breaker, { n: row.activeBreakers })}</Badge> : null}
+                          {row.usageAlert === null && row.activeBreakers === 0 ? <span className="text-muted">{t.listAlert.none}</span> : null}
+                        </span>
+                      </td>
+                      <td className="data py-3 pr-4">{row.lines.toLocaleString(locale)}</td>
                       <td className="data py-3 pr-4 whitespace-nowrap">{formatDateTime(row.createdAt, locale)}</td>
                       <td className="py-3">
                         <Badge tone={invite.tone}>{invite.text}</Badge>
