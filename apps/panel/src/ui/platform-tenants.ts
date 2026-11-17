@@ -23,7 +23,7 @@ export interface TenantRow {
 export interface TenantDetail extends TenantRow {
   billedByAsaas: boolean;
   finops: {
-    subscription: { plan: string; monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number } | null;
+    subscription: { plan: string; monthlyPriceCents: number; includedMinutes: number; maxConcurrentCalls: number; overageRule: "pause_outbound" | "bill_overage"; overagePriceCentsPerMinute: number } | null;
     period: { start: string; end: string };
     consumedSeconds: number;
     includedSeconds: number | null;
@@ -58,6 +58,13 @@ export function reaisToCents(text: string): number | null {
   const thousands = clean.includes(",") || /^\d{1,3}(\.\d{3})+$/.test(clean);
   const normalized = thousands ? clean.replace(/\./g, "").replace(",", ".") : clean;
   return Math.round(Number(normalized) * 100);
+}
+
+/** Centavos -> "1997,50" (o formato que `reaisToCents` lê de volta). */
+export function centsToReais(cents: number): string {
+  const reais = Math.floor(cents / 100);
+  const rest = cents % 100;
+  return rest === 0 ? String(reais) : `${reais},${String(rest).padStart(2, "0")}`;
 }
 
 /** Inteiro não negativo escrito sem separador; `null` se não for. */

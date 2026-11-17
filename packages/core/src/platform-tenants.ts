@@ -1,7 +1,7 @@
 import { recordOrgEvent } from "./events";
 import { getFinopsSummary, type FinopsSummary } from "./finops";
 import { DEFAULT_TIMEZONE, getPeriodUsage, localDay } from "./metering";
-import { PLAN_IDS, setPlanSubscription, type PlanId } from "./plans";
+import { PLAN_IDS, setPlanSubscription, type PlanId, type PlanSubscription, type PlanSubscriptionInput } from "./plans";
 import { issueOwnerInvite, provisionTenant, type OwnerInvite, type ProvisionInput, type TenantStatus } from "./tenants";
 import type { Db, OrgEventKind, OrgQuery } from "./types";
 import { withSystem } from "./with-org";
@@ -46,7 +46,7 @@ export interface PlatformTenantRow {
   /** Só os 14 dígitos. */
   cnpj: string | null;
   createdAt: Date;
-  /** O código do plano vinculado (`starter`, ..., ou um código de fora). */
+  /** O plano contratado em `plan_subscriptions`, a fonte única do plano; `null` sem plano. */
   planCode: string | null;
   status: PlatformTenantStatus;
   origin: TenantOrigin;
@@ -126,11 +126,11 @@ interface RawRow {
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
 const ROWS_SQL = `
   select o.id as "organizationId", o.name, p.legal_name as "legalName", p.trade_name as "tradeName", p.cnpj, o.created_at as "createdAt",
-         p.plan_code as "planCode", p.status as "profileStatus", p.external_source as source,
-         exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled,
+         s.plan as "planCode", p.status as "profileStatus", p.external_source as source,
+         exists(select from asaas_subscriptions a where a.tenant_id = o.id and a.cancelled) as cancelled,
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
          i.email as "inviteEmail", i.expires_at as "inviteExpiresAt",
-         exists(select from plan_subscriptions s where s.organization_id = o.id) as "hasPlan",
+         s.organization_id is not null as "hasPlan",
          (select count(*)::int from phone_numbers n where n.organization_id = o.id) as lines,
          -- O disjuntor vale no dia da organização, no fuso dela (o mesmo critério de activeCadenceBreakers).
          (select count(*)::int from cadence_breakers b
@@ -138,6 +138,7 @@ const ROWS_SQL = `
              and b.day = ($1::timestamptz at time zone coalesce((select timezone from outbound_policy op where op.organization_id = o.id), '${DEFAULT_TIMEZONE}'))::date) as "activeBreakers"
     from organizations o
     left join tenant_profiles p on p.organization_id = o.id
+    left join plan_subscriptions s on s.organization_id = o.id
     left join lateral (select email, expires_at from invites
                         where organization_id = o.id and role = 'owner' and accepted_at is null and revoked_at is null
                         order by created_at desc limit 1) i on true
@@ -312,5 +313,22 @@ export function renewOwnerInvite(db: Db, platformId: string, actorUserId: string
     const invite = await issueOwnerInvite(q, tenantId, last, now);
     await logBothSides(q, platformId, actorUserId, tenantId, "tenant_owner_invite_renewed", { expiresAt: invite.expiresAt.toISOString() }, now);
     return { ok: true, invite, email: last.email };
+  });
+}
+
+/**
+ * Troca o plano de uma empresa cliente, do catálogo ou Personalizado, pelo único caminho que grava
+ * plano (`setPlanSubscription`). Na empresa, `plan_changed` leva no corpo quem trocou; na plataforma,
+ * `tenant_plan_changed` tem autor. Sem `cycleStartedOn`, o ciclo continua de onde estava.
+ * Devolve `null` quando a empresa não existe.
+ */
+export function setPlatformTenantPlan(db: Db, platformId: string, actorUserId: string, tenantId: string, input: PlanSubscriptionInput, now: Date): Promise<PlanSubscription | null> {
+  return asPlatform(db, platformId, async (q) => {
+    if (!(await tenantExists(q, tenantId))) return null;
+    const scoped = { ...q, organizationId: tenantId };
+    const { day } = await localDay(scoped, now);
+    const saved = await setPlanSubscription(scoped, input, now, day, null, { byOrganizationId: platformId, byUserId: actorUserId });
+    await recordOrgEvent({ ...q, organizationId: platformId }, "tenant_plan_changed", { tenantId, plan: saved.plan, includedMinutes: saved.includedMinutes, overageRule: saved.overageRule }, now, actorUserId);
+    return saved;
   });
 }

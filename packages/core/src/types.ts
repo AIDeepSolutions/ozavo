@@ -74,9 +74,10 @@ export const PRIVACY_EVENT_KINDS = ["recording_retention_changed", "recordings_p
 
 /**
  * O que a empresa faz com o acesso de sistemas de fora (chaves de API, provisionamento e perfil) e o
- * que a plataforma faz com ela pela área de empresas (suspender, reativar, renovar o convite de dono).
+ * que a plataforma faz com ela pela área de empresas (suspender, reativar, renovar o convite de dono,
+ * trocar o plano).
  */
-export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed", "tenant_status_changed", "tenant_owner_invite_renewed"] as const;
+export const ACCESS_EVENT_KINDS = ["api_key_created", "api_key_revoked", "tenant_provisioned", "tenant_profile_changed", "tenant_status_changed", "tenant_owner_invite_renewed", "tenant_plan_changed"] as const;
 
 /** O plano da organização: troca de plano, aviso de franquia e redução de cadência por chamadas curtas. */
 export const PLAN_EVENT_KINDS = ["plan_changed", "plan_usage_alert", "cadence_reduced"] as const;

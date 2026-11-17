@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatCnpj, minutesOf, reaisToCents, usagePercent, wholeNumber } from "./platform-tenants";
+import { centsToReais, formatCnpj, minutesOf, reaisToCents, usagePercent, wholeNumber } from "./platform-tenants";
+
+describe("reais na tela", () => {
+  it("centavos voltam no formato que a tela lê", () => {
+    for (const cents of [0, 150, 49_700, 199_750]) expect(reaisToCents(centsToReais(cents))).toBe(cents);
+    expect(centsToReais(199_750)).toBe("1997,50");
+  });
+});
 
 describe("CNPJ na tela", () => {
   it("pontua os 14 dígitos e devolve o resto como veio", () => {

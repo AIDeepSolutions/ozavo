@@ -10,6 +10,7 @@ import {
   getPlatformTenant,
   listPlatformTenants,
   renewOwnerInvite,
+  setPlatformTenantPlan,
   setPlatformTenantStatus,
   type PanelTenantInput,
 } from "./platform-tenants";
@@ -223,5 +224,25 @@ describe("renovar o convite de dono", () => {
     const bare = await createOrganization(app, "empresa sem convite");
     expect(await renewOwnerInvite(app, platform, platformUser, bare, at(10))).toEqual({ ok: false, reason: "no_invite" });
     expect(await renewOwnerInvite(app, platform, platformUser, randomUUID(), at(10))).toEqual({ ok: false, reason: "not_found" });
+  });
+});
+
+describe("plano pela plataforma", () => {
+  it("troca o plano da empresa, registra nas duas organizações e mantém o ciclo", async () => {
+    const result = await createPlatformTenant(app, platform, platformUser, form(), at(7));
+    if ("refused" in result) throw new Error("refused");
+    const id = result.organizationId;
+    const before = await withOrg(app, id, getPlanSubscription);
+    const saved = await setPlatformTenantPlan(app, platform, platformUser, id, { plan: "growth", overageRule: "bill_overage", overagePriceCentsPerMinute: 90 }, at(9));
+    expect(saved).toMatchObject({ plan: "growth", includedMinutes: 1_500, overageRule: "bill_overage", overagePriceCentsPerMinute: 90, cycleStartedOn: before?.cycleStartedOn });
+    const tenantEvent = await withSystem(app, (q) => q.one<{ payload: Record<string, unknown> }>("select payload from organization_events where organization_id = $1 and kind = 'plan_changed' order by id desc limit 1", [id]));
+    expect(tenantEvent?.payload).toMatchObject({ from: "starter", to: "growth", byOrganizationId: platform, byUserId: platformUser });
+    expect(await eventKinds(platform)).toContain("tenant_plan_changed");
+  });
+
+  it("quem não é a plataforma não troca; empresa que não existe devolve null", async () => {
+    await expect(setPlatformTenantPlan(app, client, platformUser, client, { plan: "scale", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 }, at(9))).rejects.toBeInstanceOf(PlatformOnlyError);
+    expect(await setPlatformTenantPlan(app, platform, platformUser, randomUUID(), { plan: "scale", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 }, at(9))).toBeNull();
+    expect(await setPlatformTenantPlan(app, platform, platformUser, platform, { plan: "scale", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0 }, at(9))).toBeNull();
   });
 });
