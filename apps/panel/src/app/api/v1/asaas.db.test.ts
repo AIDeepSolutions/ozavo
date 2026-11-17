@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { asaasEvent, getPlanSubscription, processAsaasEvent, provisionTenant, readTenantProfile, receiveAsaasEvent, withOrg, withSystem } from "@ozavo/core";
+import { asaasEvent, getPlanSubscription, setPlatformTenantStatus, processAsaasEvent, provisionTenant, readTenantProfile, receiveAsaasEvent, withOrg, withSystem } from "@ozavo/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, createOrganization, createUser, startPanel } from "../../../../test/kit";
 import { GET, PUT, POST as retry } from "./asaas/route";
+import { GET as tenantDetail } from "./platform/tenants/[id]/route";
 import { POST as webhook } from "./webhooks/asaas/route";
 import { GET as genericSetting, PUT as genericPut } from "./settings/[key]/route";
 
@@ -101,6 +102,18 @@ describe("native Asaas webhook", () => {
     await send(event("PAYMENT_CONFIRMED", "pay_next")); await drain();
     expect((await state()).profile.status).toBe("active");
     await send(event("PAYMENT_OVERDUE", "pay_next")); await drain();
+    expect((await state()).profile.status).toBe("active");
+  });
+  it("a suspension made by the platform holds against a later payment until the platform reactivates", async () => {
+    const tenantId = (await state()).binding.tenant_id;
+    expect(await setPlatformTenantStatus(panel.app, platform, owner.id, tenantId, "suspended", at)).toBe(true);
+    await send(event("PAYMENT_CONFIRMED", "pay_held")); await drain();
+    const held = await state();
+    expect(held.profile.status).toBe("suspended");
+    expect(held.events.at(-1)).toMatchObject({ kind: "asaas_subscription_changed", payload: { status: "suspended", heldByPlatform: true } });
+    expect((await call(tenantDetail, { cookie: owner.cookie, params: { id: tenantId } })).data).toMatchObject({ status: "suspended", heldByPlatform: true });
+    expect(await setPlatformTenantStatus(panel.app, platform, owner.id, tenantId, "active", at)).toBe(true);
+    await send(event("PAYMENT_RECEIVED", "pay_held")); await drain();
     expect((await state()).profile.status).toBe("active");
   });
   it("updates catalog allowances and supports explicit custom mapping", async () => {

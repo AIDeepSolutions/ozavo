@@ -69,8 +69,10 @@ export interface PlatformTenantEvent {
 }
 
 export interface PlatformTenantDetail extends PlatformTenantRow {
-  /** O cadastro vem do Asaas: o próximo evento de cobrança recalcula o status. */
+  /** O cadastro vem do Asaas: o próximo evento de cobrança recalcula o status, salvo a trava abaixo. */
   billedByAsaas: boolean;
+  /** Suspensa pela plataforma: o Asaas não reativa até a plataforma reativar. */
+  heldByPlatform: boolean;
   finops: FinopsSummary;
   events: PlatformTenantEvent[];
 }
@@ -118,6 +120,7 @@ interface RawRow {
   ownerActive: boolean;
   inviteEmail: string | null;
   inviteExpiresAt: Date | null;
+  held: boolean;
   hasPlan: boolean;
   lines: number;
   activeBreakers: number;
@@ -126,7 +129,7 @@ interface RawRow {
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
 const ROWS_SQL = `
   select o.id as "organizationId", o.name, p.legal_name as "legalName", p.trade_name as "tradeName", p.cnpj, o.created_at as "createdAt",
-         p.plan_code as "planCode", p.status as "profileStatus", p.external_source as source,
+         p.plan_code as "planCode", p.status as "profileStatus", p.external_source as source, coalesce(p.suspended_by_platform, false) as held,
          exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled,
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
          i.email as "inviteEmail", i.expires_at as "inviteExpiresAt",
@@ -196,7 +199,7 @@ export function getPlatformTenant(db: Db, platformId: string, tenantId: string, 
       "select id::text, at, kind, payload from organization_events where organization_id = $1 order by at desc, id desc limit $2",
       [tenantId, EVENT_LIMIT],
     );
-    return { ...(await toRow(q, raw, now)), billedByAsaas: raw.source === "asaas", finops: await getFinopsSummary(scoped, now), events };
+    return { ...(await toRow(q, raw, now)), billedByAsaas: raw.source === "asaas", heldByPlatform: raw.held, finops: await getFinopsSummary(scoped, now), events };
   });
 }
 
@@ -253,7 +256,7 @@ export function createPlatformTenant(db: Db, platformId: string, actorUserId: st
         const { day } = await localDay(scoped, now);
         await setPlanSubscription(scoped, { plan: "custom", overageRule: "pause_outbound", overagePriceCentsPerMinute: 0, ...input.custom }, now, day);
       }
-      if (input.initialStatus !== "active") await writeStatus(q, platformId, actorUserId, result.organizationId, input.initialStatus, now);
+      if (input.initialStatus !== "active") await writeStatus(q, platformId, actorUserId, result.organizationId, input.initialStatus, false, now);
       await recordOrgEvent({ ...q, organizationId: platformId }, "tenant_provisioned", { tenantId: result.organizationId, source: PANEL_SOURCE, planCode: input.plan }, now, actorUserId);
     }
     return { created: result.created, organizationId: result.organizationId, ownerInvite: result.ownerInvite ?? null };
@@ -263,14 +266,18 @@ export function createPlatformTenant(db: Db, platformId: string, actorUserId: st
 /**
  * Grava o status e registra dos dois lados: na empresa (sem autor, porque quem fez é de outra
  * organização; o id vai no corpo) e na plataforma (com autor).
+ *
+ * `held`: a suspensão foi decidida pela plataforma e vence o Asaas até a plataforma reativar
+ * (`tenant_profiles.suspended_by_platform`). A situação inicial "suspensa até o pagamento" não
+ * segura: o pagamento confirmado no Asaas reativa.
  */
-async function writeStatus(q: OrgQuery, platformId: string, actorUserId: string, tenantId: string, status: TenantStatus, now: Date): Promise<void> {
+async function writeStatus(q: OrgQuery, platformId: string, actorUserId: string, tenantId: string, status: TenantStatus, held: boolean, now: Date): Promise<void> {
   await q.exec(
-    `insert into tenant_profiles (organization_id, status, created_at, updated_at) values ($1, $2, $3, $3)
-     on conflict (organization_id) do update set status = excluded.status, updated_at = excluded.updated_at`,
-    [tenantId, status, now],
+    `insert into tenant_profiles (organization_id, status, suspended_by_platform, created_at, updated_at) values ($1, $2, $3, $4, $4)
+     on conflict (organization_id) do update set status = excluded.status, suspended_by_platform = excluded.suspended_by_platform, updated_at = excluded.updated_at`,
+    [tenantId, status, held, now],
   );
-  await logBothSides(q, platformId, actorUserId, tenantId, "tenant_status_changed", { status }, now);
+  await logBothSides(q, platformId, actorUserId, tenantId, "tenant_status_changed", { status, heldByPlatform: held }, now);
 }
 
 async function logBothSides(q: OrgQuery, platformId: string, actorUserId: string, tenantId: string, kind: OrgEventKind, payload: object, now: Date): Promise<void> {
@@ -282,12 +289,17 @@ async function tenantExists(q: OrgQuery, tenantId: string): Promise<boolean> {
   return (await q.one("select 1 as hit from organizations where id = $1 and not platform", [tenantId])) !== null;
 }
 
-/** Suspende ou reativa. Devolve `false` quando a empresa não existe; mesmo status não registra de novo. */
+/**
+ * Suspende ou reativa. A suspensão daqui segura a empresa suspensa até a plataforma reativar, mesmo
+ * que o Asaas confirme pagamento; reativar solta a trava. Devolve `false` quando a empresa não existe;
+ * o mesmo estado não registra de novo.
+ */
 export function setPlatformTenantStatus(db: Db, platformId: string, actorUserId: string, tenantId: string, status: TenantStatus, now: Date): Promise<boolean> {
   return asPlatform(db, platformId, async (q) => {
     if (!(await tenantExists(q, tenantId))) return false;
-    const current = await q.one<{ status: TenantStatus }>("select status from tenant_profiles where organization_id = $1 for update", [tenantId]);
-    if ((current?.status ?? "active") !== status) await writeStatus(q, platformId, actorUserId, tenantId, status, now);
+    const current = await q.one<{ status: TenantStatus; held: boolean }>("select status, suspended_by_platform as held from tenant_profiles where organization_id = $1 for update", [tenantId]);
+    const held = status === "suspended";
+    if ((current?.status ?? "active") !== status || (current?.held ?? false) !== held) await writeStatus(q, platformId, actorUserId, tenantId, status, held, now);
     return true;
   });
 }

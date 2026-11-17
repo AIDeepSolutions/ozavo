@@ -170,8 +170,14 @@ export async function processAsaasEvent(deps: { db: Db; secretKey: Buffer; fetch
       const status = !binding.cancelled && !binding.inactive && subscription?.status === "ACTIVE" && !subscription.deleted && payments?.paid && !payments.blocked ? "active" : "suspended";
       const allowance = await getPlanSubscription(scoped);
       await q.exec("update asaas_subscriptions set revision = revision + 1 where organization_id = $1 and environment = $2 and subscription_id = $3", [platformId, config.environment, subscriptionId]);
-      await scoped.exec("update tenant_profiles set status = $2, plan_code = coalesce($3, plan_code), monthly_minutes = $4, updated_at = $5 where organization_id = $1", [binding.tenant_id, status, allowance?.plan ?? plan ?? null, allowance?.includedMinutes ?? null, now]);
-      await recordOrgEvent(scoped, "asaas_subscription_changed", { status: binding.cancelled ? "cancelled" : status, event: event.event, plan: plan ?? null }, now);
+      // A suspensão decidida pela plataforma vence a cobrança até a plataforma reativar.
+      const saved = await scoped.one<{ status: string; held: boolean }>(
+        `update tenant_profiles set status = case when suspended_by_platform then 'suspended' else $2 end, plan_code = coalesce($3, plan_code), monthly_minutes = $4, updated_at = $5
+          where organization_id = $1 returning status, suspended_by_platform as held`,
+        [binding.tenant_id, status, allowance?.plan ?? plan ?? null, allowance?.includedMinutes ?? null, now],
+      );
+      const effective = saved?.status ?? status;
+      await recordOrgEvent(scoped, "asaas_subscription_changed", { status: binding.cancelled ? "cancelled" : effective, event: event.event, plan: plan ?? null, ...(saved?.held && { heldByPlatform: true }) }, now);
       await q.exec("update asaas_events set processed_at = $3 where organization_id = $1 and id = $2", [platformId, eventId, now]);
     });
   } catch {
