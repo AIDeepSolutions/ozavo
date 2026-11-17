@@ -1,7 +1,6 @@
 import { recordOrgEvent } from "./events";
 import { getFinopsSummary, type FinopsSummary } from "./finops";
-import { getPeriodUsage, localDay } from "./metering";
-import { activeCadenceBreakers } from "./short-calls";
+import { DEFAULT_TIMEZONE, getPeriodUsage, localDay } from "./metering";
 import { PLAN_IDS, setPlanSubscription, type PlanId } from "./plans";
 import { issueOwnerInvite, provisionTenant, type OwnerInvite, type ProvisionInput, type TenantStatus } from "./tenants";
 import type { Db, OrgEventKind, OrgQuery } from "./types";
@@ -119,6 +118,9 @@ interface RawRow {
   ownerActive: boolean;
   inviteEmail: string | null;
   inviteExpiresAt: Date | null;
+  hasPlan: boolean;
+  lines: number;
+  activeBreakers: number;
 }
 
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
@@ -127,7 +129,13 @@ const ROWS_SQL = `
          p.plan_code as "planCode", p.status as "profileStatus", p.external_source as source,
          exists(select from asaas_subscriptions s where s.tenant_id = o.id and s.cancelled) as cancelled,
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
-         i.email as "inviteEmail", i.expires_at as "inviteExpiresAt"
+         i.email as "inviteEmail", i.expires_at as "inviteExpiresAt",
+         exists(select from plan_subscriptions s where s.organization_id = o.id) as "hasPlan",
+         (select count(*)::int from phone_numbers n where n.organization_id = o.id) as lines,
+         -- O disjuntor vale no dia da organização, no fuso dela (o mesmo critério de activeCadenceBreakers).
+         (select count(*)::int from cadence_breakers b
+           where b.organization_id = o.id
+             and b.day = ($1::timestamptz at time zone coalesce((select timezone from outbound_policy op where op.organization_id = o.id), '${DEFAULT_TIMEZONE}'))::date) as "activeBreakers"
     from organizations o
     left join tenant_profiles p on p.organization_id = o.id
     left join lateral (select email, expires_at from invites
@@ -138,12 +146,12 @@ const ROWS_SQL = `
 async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenantRow> {
   // As funções de medição filtram pela organização informada: dentro do papel de sistema, é esse
   // filtro que segura cada consulta na empresa da linha.
-  const scoped = { ...q, organizationId: raw.organizationId };
-  const usage = await getPeriodUsage(scoped, now);
+  // Sem plano não há ciclo a medir: a consulta por empresa só roda para quem tem plano, e as
+  // contagens de linhas e do disjuntor já vieram na consulta da lista.
+  const usage = raw.hasPlan ? await getPeriodUsage({ ...q, organizationId: raw.organizationId }, now) : null;
   const alert = usage
     ? await q.one<{ threshold: number }>("select max(threshold)::int as threshold from usage_alerts where organization_id = $1 and period_start = $2::date", [raw.organizationId, usage.period.start])
     : null;
-  const lines = await q.one<{ n: number }>("select count(*)::int as n from phone_numbers where organization_id = $1", [raw.organizationId]);
   return {
     organizationId: raw.organizationId,
     name: raw.name,
@@ -156,8 +164,8 @@ async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenan
     origin: tenantOrigin(raw.source),
     usage: usage && { consumedSeconds: usage.consumedSeconds, includedSeconds: usage.includedSeconds, period: usage.period },
     usageAlert: alert?.threshold ?? null,
-    activeBreakers: (await activeCadenceBreakers(scoped, now)).length,
-    lines: lines?.n ?? 0,
+    activeBreakers: raw.activeBreakers,
+    lines: raw.lines,
     ownerInvite: {
       ownerActive: raw.ownerActive,
       pending:
@@ -171,7 +179,7 @@ async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenan
 /** As empresas clientes da instalação, da mais nova para a mais antiga. */
 export function listPlatformTenants(db: Db, platformId: string, now: Date): Promise<PlatformTenantRow[]> {
   return asPlatform(db, platformId, async (q) => {
-    const rows = await q.many<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} order by o.created_at desc, o.id`);
+    const rows = await q.many<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} order by o.created_at desc, o.id`, [now]);
     const result: PlatformTenantRow[] = [];
     for (const raw of rows) result.push(await toRow(q, raw, now));
     return result;
@@ -181,7 +189,7 @@ export function listPlatformTenants(db: Db, platformId: string, now: Date): Prom
 /** Uma empresa cliente com o FinOps do ciclo e o registro da organização; `null` se não existe. */
 export function getPlatformTenant(db: Db, platformId: string, tenantId: string, now: Date): Promise<PlatformTenantDetail | null> {
   return asPlatform(db, platformId, async (q) => {
-    const raw = await q.one<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} and o.id = $1`, [tenantId]);
+    const raw = await q.one<RawRow & { [key: string]: unknown }>(`${ROWS_SQL} and o.id = $2`, [now, tenantId]);
     if (!raw) return null;
     const scoped = { ...q, organizationId: tenantId };
     const events = await q.many<PlatformTenantEvent & { [key: string]: unknown }>(
