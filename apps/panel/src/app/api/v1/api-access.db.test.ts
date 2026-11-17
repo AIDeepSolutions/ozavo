@@ -157,12 +157,15 @@ describe("POST /api/v1/tenants/provision", () => {
 
     const state = await withOrg(panel.app, data.organizationId, async (q) => ({
       profile: await q.one("select plan_code, monthly_minutes, persona_name, base_prompt, default_agent_id, status from tenant_profiles"),
+      subscription: await q.one("select plan, included_minutes from plan_subscriptions"),
       agent: await q.one<{ name: string; instructions: string }>("select name, instructions from agents where id = $1", [data.agentId]),
       policy: await q.one("select enabled from outbound_policy"),
       secret: await q.one<{ value: string; secret: boolean }>("select value, secret from settings where key = 'engine.gemini-live.api_key'"),
       events: await q.many<{ kind: string }>("select kind from organization_events order by id"),
     }));
-    expect(state.profile).toEqual({ plan_code: "pro", monthly_minutes: 750, persona_name: "Nico", base_prompt: "Atenda com calma.", default_agent_id: data.agentId, status: "active" });
+    // O plano tem uma fonte só: plan_subscriptions. As colunas antigas do perfil ficam vazias.
+    expect(state.subscription).toEqual({ plan: "pro", included_minutes: 750 });
+    expect(state.profile).toEqual({ plan_code: null, monthly_minutes: null, persona_name: "Nico", base_prompt: "Atenda com calma.", default_agent_id: data.agentId, status: "active" });
     expect(state.agent?.name).toBe("Nico");
     expect(state.agent?.instructions).toContain("Imobiliária Teste");
     // Ligações de saída nascem desligadas também na empresa provisionada.

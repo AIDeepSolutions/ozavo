@@ -14,6 +14,7 @@ import { formatBrl, formatDateTime, formatDay, formatMoney, formatPhone } from "
 import { Badge, Button, Notice, PageHeader, Panel, Skeleton } from "../../../../../ui/kit";
 import { formatCnpj, minutesOf, type TenantDetail } from "../../../../../ui/platform-tenants";
 import { InviteLinkCard, LoadFailure, StatusBadge, UsageMeter, originText, planText, useTenantsDict, useTenantsError } from "../shared";
+import { PlanChangePanel } from "./plan-change";
 
 type Dict = ReturnType<typeof useTenantsDict>;
 
@@ -245,6 +246,7 @@ export default function TenantDetailPage() {
       />
       <CompanyPanel tenant={tenant} />
       <PlanPanel tenant={tenant} />
+      <PlanChangePanel key={tenant.finops.subscription?.plan ?? "none"} tenant={tenant} reload={state.reload} />
       <div className="grid gap-8 lg:grid-cols-2">
         <StatusPanel tenant={tenant} reload={state.reload} />
         <InvitePanel tenant={tenant} reload={state.reload} />

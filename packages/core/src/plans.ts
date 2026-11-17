@@ -96,7 +96,15 @@ export function getPlanSubscription(q: OrgQuery): Promise<PlanSubscription | nul
  *
  * Sem `cycleStartedOn`, o ciclo continua de onde estava; na primeira contratação, começa em `today`.
  */
-export async function setPlanSubscription(q: OrgQuery, input: PlanSubscriptionInput, at: Date, today: string, actorUserId: string | null = null): Promise<PlanSubscription> {
+export async function setPlanSubscription(
+  q: OrgQuery,
+  input: PlanSubscriptionInput,
+  at: Date,
+  today: string,
+  actorUserId: string | null = null,
+  /** Vai junto no corpo de `plan_changed`: quem trocou, quando é a plataforma que troca o plano de uma empresa. */
+  context: Record<string, string> = {},
+): Promise<PlanSubscription> {
   if (q.organizationId === "") throw new Error("setPlanSubscription runs inside withOrg: the plan belongs to one organization");
   const values = resolvePlan(input);
   const previous = await getPlanSubscription(q);
@@ -112,7 +120,7 @@ export async function setPlanSubscription(q: OrgQuery, input: PlanSubscriptionIn
     [q.organizationId, input.plan, values.monthlyPriceCents, values.includedMinutes, input.overageRule, input.overagePriceCentsPerMinute, values.maxConcurrentCalls, cycleStartedOn, at],
   );
   if (!saved) throw new Error("Plan subscription was not saved");
-  await recordOrgEvent(q, "plan_changed", { from: previous?.plan ?? null, to: saved.plan, includedMinutes: saved.includedMinutes, overageRule: saved.overageRule }, at, actorUserId);
+  await recordOrgEvent(q, "plan_changed", { from: previous?.plan ?? null, to: saved.plan, includedMinutes: saved.includedMinutes, overageRule: saved.overageRule, ...context }, at, actorUserId);
   return saved;
 }
 
