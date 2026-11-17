@@ -38,6 +38,32 @@ export interface OwnerInviteState {
   pending: { email: string; expiresAt: Date; expired: boolean } | null;
 }
 
+/** Os itens da lista de prontidão, na ordem em que a tela os mostra. */
+export const READINESS_KEYS = ["ownerAccepted", "engineKey", "voiceAgent", "line", "outboundPolicy", "plan"] as const;
+export type ReadinessKey = (typeof READINESS_KEYS)[number];
+
+/**
+ * O que falta para a empresa operar. Cada item é só `configured` ou `missing`: nenhuma chave, e-mail,
+ * número ou texto da empresa sai daqui. `required: false` é informativo (a política de saída só vale
+ * para quem vai ligar) e não entra em `ready`.
+ */
+export interface TenantReadiness {
+  items: Array<{ key: ReadinessKey; status: "configured" | "missing"; required: boolean }>;
+  /** Todos os itens obrigatórios estão configurados. */
+  ready: boolean;
+  /** Quantos itens obrigatórios faltam. */
+  missingRequired: number;
+}
+
+export type ReadinessFlags = Record<ReadinessKey, boolean>;
+
+/** Monta a lista a partir de fatos já reduzidos a sim/não. Só a política de saída é informativa. */
+export function tenantReadiness(flags: ReadinessFlags): TenantReadiness {
+  const items = READINESS_KEYS.map((key) => ({ key, status: flags[key] ? ("configured" as const) : ("missing" as const), required: key !== "outboundPolicy" }));
+  const missingRequired = items.filter((item) => item.required && item.status === "missing").length;
+  return { items, ready: missingRequired === 0, missingRequired };
+}
+
 export interface PlatformTenantRow {
   organizationId: string;
   name: string;
@@ -59,6 +85,7 @@ export interface PlatformTenantRow {
   /** Quantos números de telefone a empresa tem. */
   lines: number;
   ownerInvite: OwnerInviteState;
+  readiness: TenantReadiness;
 }
 
 export interface PlatformTenantEvent {
@@ -125,6 +152,9 @@ interface RawRow {
   hasPlan: boolean;
   lines: number;
   activeBreakers: number;
+  hasEngineKey: boolean;
+  hasVoiceAgent: boolean;
+  outboundConfigured: boolean;
 }
 
 /** Só empresas clientes: a organização da plataforma não aparece como empresa. */
@@ -135,6 +165,10 @@ const ROWS_SQL = `
          exists(select from users u where u.organization_id = o.id and u.role = 'owner' and u.disabled_at is null) as "ownerActive",
          i.email as "inviteEmail", i.expires_at as "inviteExpiresAt",
          s.organization_id is not null as "hasPlan",
+         -- Prontidão: só booleanos saem daqui, nunca o valor da chave (a coluna do valor nem é lida).
+         exists(select from settings st where st.organization_id = o.id and st.secret and left(st.key, 7) = 'engine.' and right(st.key, 8) = '.api_key') as "hasEngineKey",
+         exists(select from agents ag where ag.organization_id = o.id and ag.enabled) as "hasVoiceAgent",
+         coalesce((select op.enabled from outbound_policy op where op.organization_id = o.id), false) as "outboundConfigured",
          (select count(*)::int from phone_numbers n where n.organization_id = o.id) as lines,
          -- O disjuntor vale no dia da organização, no fuso dela (o mesmo critério de activeCadenceBreakers).
          (select count(*)::int from cadence_breakers b
@@ -178,6 +212,14 @@ async function toRow(q: OrgQuery, raw: RawRow, now: Date): Promise<PlatformTenan
           ? null
           : { email: raw.inviteEmail, expiresAt: raw.inviteExpiresAt, expired: raw.inviteExpiresAt.getTime() <= now.getTime() },
     },
+    readiness: tenantReadiness({
+      ownerAccepted: raw.ownerActive,
+      engineKey: raw.hasEngineKey,
+      voiceAgent: raw.hasVoiceAgent,
+      line: raw.lines > 0,
+      outboundPolicy: raw.outboundConfigured,
+      plan: raw.hasPlan,
+    }),
   };
 }
 

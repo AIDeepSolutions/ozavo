@@ -8,7 +8,7 @@ import { useApi } from "../../../../ui/api";
 import { formatDateTime } from "../../../../ui/format";
 import { Badge, EmptyState, PageHeader, Skeleton, buttonClass } from "../../../../ui/kit";
 import { formatCnpj, type TenantRow } from "../../../../ui/platform-tenants";
-import { LoadFailure, StatusBadge, UsageMeter, inviteText, originText, planText, useTenantsDict } from "./shared";
+import { LoadFailure, ReadinessBadge, StatusBadge, UsageMeter, inviteText, originText, planText, useTenantsDict } from "./shared";
 
 export default function TenantsPage() {
   const t = useTenantsDict();
@@ -48,6 +48,7 @@ export default function TenantsPage() {
                   <th scope="col" className="py-2 pr-4">{t.columns.origin}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.usage}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.alerts}</th>
+                  <th scope="col" className="py-2 pr-4">{t.columns.readiness}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.lines}</th>
                   <th scope="col" className="py-2 pr-4">{t.columns.createdAt}</th>
                   <th scope="col" className="py-2">{t.columns.ownerInvite}</th>
@@ -78,6 +79,9 @@ export default function TenantsPage() {
                           {row.activeBreakers > 0 ? <Badge tone="fail">{fill(t.listAlert.breaker, { n: row.activeBreakers })}</Badge> : null}
                           {row.usageAlert === null && row.activeBreakers === 0 ? <span className="text-muted">{t.listAlert.none}</span> : null}
                         </span>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <ReadinessBadge readiness={row.readiness} />
                       </td>
                       <td className="data py-3 pr-4">{row.lines.toLocaleString(locale)}</td>
                       <td className="data py-3 pr-4 whitespace-nowrap">{formatDateTime(row.createdAt, locale)}</td>

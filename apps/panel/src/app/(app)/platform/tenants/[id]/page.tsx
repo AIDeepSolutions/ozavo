@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, XCircle } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -13,7 +13,7 @@ import { api, useApi } from "../../../../../ui/api";
 import { formatBrl, formatDateTime, formatDay, formatMoney, formatPhone } from "../../../../../ui/format";
 import { Badge, Button, Notice, PageHeader, Panel, Skeleton } from "../../../../../ui/kit";
 import { formatCnpj, minutesOf, type TenantDetail } from "../../../../../ui/platform-tenants";
-import { InviteLinkCard, LoadFailure, StatusBadge, UsageMeter, originText, planText, useTenantsDict, useTenantsError } from "../shared";
+import { InviteLinkCard, LoadFailure, ReadinessBadge, StatusBadge, UsageMeter, originText, planText, useTenantsDict, useTenantsError } from "../shared";
 import { PlanChangePanel } from "./plan-change";
 
 type Dict = ReturnType<typeof useTenantsDict>;
@@ -37,6 +37,31 @@ function CompanyPanel({ tenant }: { tenant: TenantDetail }) {
         <Stat label={t.tradeName} value={tenant.tradeName ?? missing} text />
         <Stat label={t.cnpj} value={tenant.cnpj === null ? missing : formatCnpj(tenant.cnpj)} />
       </dl>
+    </Panel>
+  );
+}
+
+function ReadinessPanel({ tenant }: { tenant: TenantDetail }) {
+  const t = useTenantsDict();
+  return (
+    <Panel title={t.readiness.title} description={t.readiness.lead} actions={<ReadinessBadge readiness={tenant.readiness} />}>
+      <ul className="grid gap-2">
+        {tenant.readiness.items.map((item) => {
+          const done = item.status === "configured";
+          return (
+            <li key={item.key} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line pb-2 last:border-b-0">
+              <span className="flex items-center gap-2">
+                {done ? <CheckCircle size={20} weight="duotone" className="text-ok" aria-hidden /> : <XCircle size={20} weight="duotone" className={item.required ? "text-warn" : "text-muted"} aria-hidden />}
+                {t.readiness.items[item.key]}
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                {!item.required ? <span className="text-[0.87rem] text-muted">{t.readiness.info}</span> : null}
+                <Badge tone={done ? "ok" : item.required ? "warn" : "neutral"}>{done ? t.readiness.configured : t.readiness.absent}</Badge>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </Panel>
   );
 }
@@ -245,6 +270,7 @@ export default function TenantDetailPage() {
         }
       />
       <CompanyPanel tenant={tenant} />
+      <ReadinessPanel tenant={tenant} />
       <PlanPanel tenant={tenant} />
       <PlanChangePanel key={tenant.finops.subscription?.plan ?? "none"} tenant={tenant} reload={state.reload} />
       <div className="grid gap-8 lg:grid-cols-2">
