@@ -50,9 +50,10 @@ export function UsageMeter({ usage }: { usage: TenantRow["usage"] }) {
   );
 }
 
-/** "Pronta" ou "Faltam N": a lista mostra o resumo, o detalhe mostra cada item. */
+/** "Pronta", "Faltam N" ou o estado da empresa quando suspensa/cancelada: a lista mostra o resumo, o detalhe cada item. */
 export function ReadinessBadge({ readiness }: { readiness: TenantRow["readiness"] }) {
   const t = useTenantsDict();
+  if (readiness.blockedBy) return <Badge tone={readiness.blockedBy === "cancelled" ? "fail" : "warn"}>{t.status[readiness.blockedBy]}</Badge>;
   return readiness.ready ? <Badge tone="ok">{t.readiness.ready}</Badge> : <Badge tone="warn">{fill(t.readiness.missing, { n: readiness.missingRequired })}</Badge>;
 }
 

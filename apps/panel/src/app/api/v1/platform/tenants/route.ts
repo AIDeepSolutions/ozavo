@@ -1,11 +1,11 @@
 import { PLAN_IDS, TENANT_STATUSES, createPlatformTenant, listPlatformTenants, normalizeCnpj } from "@ozavo/core";
 import { z } from "zod";
 import { ApiError, handle } from "../../../../../server/context";
-import { listEngines } from "../../../../../server/pieces";
+import { keylessEngineIds, listEngines } from "../../../../../server/pieces";
 import { provisionAgent } from "../../../../../server/tenant-agent";
 
 /** As empresas clientes da instalação. Só dono ou administrador da plataforma. */
-export const GET = handle({ platform: true }, ({ deps, session }) => listPlatformTenants(deps.db, session.organizationId, deps.clock.now()));
+export const GET = handle({ platform: true }, async ({ deps, session }) => listPlatformTenants(deps.db, session.organizationId, deps.clock.now(), await keylessEngineIds()));
 
 const cnpj = z.string().transform((value, ctx) => {
   const digits = normalizeCnpj(value);

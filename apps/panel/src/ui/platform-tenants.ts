@@ -22,6 +22,7 @@ export interface TenantRow {
     items: Array<{ key: "ownerAccepted" | "engineKey" | "voiceAgent" | "line" | "outboundPolicy" | "plan"; status: "configured" | "missing"; required: boolean }>;
     ready: boolean;
     missingRequired: number;
+    blockedBy: "suspended" | "cancelled" | null;
   };
 }
 

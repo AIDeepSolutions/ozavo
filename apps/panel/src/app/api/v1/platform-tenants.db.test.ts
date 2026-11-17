@@ -171,6 +171,7 @@ describe("FinOps da plataforma", () => {
 describe("prontidão da empresa pela API", () => {
   it("a plataforma lê a prontidão na lista e no detalhe, sem segredo; quem não é plataforma recebe 403", async () => {
     const secret = "enc:v1:SEGREDO-DA-ROTA";
+    await withSystem(panel.app, (q) => q.exec("insert into agents (organization_id, name, engine) values ($1, 'Nico', 'gemini_live')", [neighbour]));
     await withSystem(panel.app, (q) => q.exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.gemini_live.api_key', $2::jsonb, true)", [neighbour, JSON.stringify(secret)]));
     type Readiness = { items: Array<{ key: string; status: string; required: boolean }>; ready: boolean; missingRequired: number };
     const detail = await call(getTenant, { cookie: platformOwner, params: { id: neighbour } });

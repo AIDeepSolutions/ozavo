@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createOrganization, openTestDbs } from "../test/helpers";
-import { READINESS_KEYS, createPlatformTenant, getPlatformTenant, listPlatformTenants, type PanelTenantInput, type ReadinessKey } from "./platform-tenants";
+import { READINESS_KEYS, createPlatformTenant, getPlatformTenant, listPlatformTenants, setPlatformTenantStatus, type PanelTenantInput, type ReadinessKey } from "./platform-tenants";
 import { withSystem } from "./with-org";
 
 /** A lista de prontidão: o que falta para a empresa operar, sem nunca devolver um valor secreto. */
@@ -22,7 +22,7 @@ const form = (): PanelTenantInput => ({
   owner: { name: "Dona", email: `dona-${randomUUID()}@example.test` },
   plan: "starter",
   initialStatus: "active",
-  agent: { name: "Nico", personaName: "Nico", voiceId: null, basePrompt: "", instructions: "Atenda.", greeting: null, engine: "simulated", tools: [] },
+  agent: { name: "Nico", personaName: "Nico", voiceId: null, basePrompt: "", instructions: "Atenda.", greeting: null, engine: "gemini_live", tools: [] },
 });
 
 async function newTenant(): Promise<string> {
@@ -31,8 +31,8 @@ async function newTenant(): Promise<string> {
   return result.organizationId;
 }
 
-const statusOf = async (id: string): Promise<Record<ReadinessKey, "configured" | "missing">> => {
-  const detail = await getPlatformTenant(app, platform, id, now);
+const statusOf = async (id: string, keyless: string[] = []): Promise<Record<ReadinessKey, "configured" | "missing">> => {
+  const detail = await getPlatformTenant(app, platform, id, now, keyless);
   if (!detail) throw new Error("tenant not found");
   return Object.fromEntries(detail.readiness.items.map((item) => [item.key, item.status])) as Record<ReadinessKey, "configured" | "missing">;
 };
@@ -100,13 +100,56 @@ describe("prontidão da empresa", () => {
   it("todos prontos: pronta, nenhum item obrigatório faltando", async () => {
     const id = await newTenant();
     await exec("insert into users (id, organization_id, email, name, role, password_hash) values ($1, $2, $3, 'Dona', 'owner', 'h')", [randomUUID(), id, `dona-${randomUUID()}@example.test`]);
-    await exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.openai_realtime.api_key', $2::jsonb, true)", [id, JSON.stringify(SECRET_VALUE)]);
+    await exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.gemini_live.api_key', $2::jsonb, true)", [id, JSON.stringify(SECRET_VALUE)]);
     await exec("insert into trunks (id, organization_id, name, host, auth_mode) values ($1, $2, 'Tronco', 'sip.example.test', 'ip')", [id.replace(/^./, "b"), id]);
     await exec("insert into phone_numbers (organization_id, trunk_id, e164) values ($1, $2, '+5511999990002')", [id, id.replace(/^./, "b")]);
     await exec("update outbound_policy set enabled = true where organization_id = $1", [id]);
     const detail = await getPlatformTenant(app, platform, id, now);
     expect(detail?.readiness.ready).toBe(true);
     expect(detail?.readiness.items.every((item) => item.status === "configured")).toBe(true);
+    await exec("delete from phone_numbers where organization_id = $1", [id]);
+    await exec("delete from trunks where organization_id = $1", [id]);
+  });
+
+  it("a chave tem que ser a do motor do agente: agente openai_realtime com chave só de gemini_live falta", async () => {
+    const id = await newTenant();
+    await exec("update agents set engine = 'openai_realtime' where organization_id = $1", [id]);
+    await exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.gemini_live.api_key', $2::jsonb, true)", [id, JSON.stringify(SECRET_VALUE)]);
+    expect((await statusOf(id)).engineKey).toBe("missing");
+    expect((await getPlatformTenant(app, platform, id, now))?.readiness.items.find((item) => item.key === "engineKey")?.status).toBe("missing");
+    await exec("insert into settings (organization_id, key, value, secret) values ($1, 'engine.openai_realtime.api_key', $2::jsonb, true)", [id, JSON.stringify(SECRET_VALUE)]);
+    expect((await statusOf(id)).engineKey).toBe("configured");
+    // Agente desligado não conta, mesmo com a chave do motor dele salva.
+    await exec("update agents set enabled = false where organization_id = $1", [id]);
+    expect((await statusOf(id)).engineKey).toBe("missing");
+  });
+
+  it("motor sem chave (simulado) conta a chave como configurada, só quando a rota informa que ele não pede chave", async () => {
+    const id = await newTenant();
+    await exec("update agents set engine = 'simulated' where organization_id = $1", [id]);
+    expect((await statusOf(id)).engineKey).toBe("missing");
+    expect((await statusOf(id, ["simulated"])).engineKey).toBe("configured");
+    const row = (await listPlatformTenants(app, platform, now, ["simulated"])).find((tenant) => tenant.organizationId === id);
+    expect(row?.readiness.items.find((item) => item.key === "engineKey")?.status).toBe("configured");
+  });
+
+  it("empresa suspensa ou cancelada nunca fica pronta, mesmo com tudo configurado", async () => {
+    const id = await newTenant();
+    await exec("update agents set engine = 'simulated' where organization_id = $1", [id]);
+    await exec("insert into users (id, organization_id, email, name, role, password_hash) values ($1, $2, $3, 'Dona', 'owner', 'h')", [randomUUID(), id, `dona-${randomUUID()}@example.test`]);
+    await exec("insert into trunks (id, organization_id, name, host, auth_mode) values ($1, $2, 'Tronco', 'sip.example.test', 'ip')", [id.replace(/^./, "c"), id]);
+    await exec("insert into phone_numbers (organization_id, trunk_id, e164) values ($1, $2, '+5511999990003')", [id, id.replace(/^./, "c")]);
+    const readinessOf = async () => (await getPlatformTenant(app, platform, id, now, ["simulated"]))?.readiness;
+    expect(await readinessOf()).toMatchObject({ ready: true, missingRequired: 0, blockedBy: null });
+    await setPlatformTenantStatus(app, platform, platformUser, id, "suspended", now);
+    expect(await readinessOf()).toMatchObject({ ready: false, missingRequired: 0, blockedBy: "suspended" });
+    const row = (await listPlatformTenants(app, platform, now, ["simulated"])).find((tenant) => tenant.organizationId === id);
+    expect(row?.readiness).toMatchObject({ ready: false, blockedBy: "suspended" });
+    await setPlatformTenantStatus(app, platform, platformUser, id, "active", now);
+    expect(await readinessOf()).toMatchObject({ ready: true, blockedBy: null });
+    await exec("insert into asaas_subscriptions (organization_id, environment, subscription_id, tenant_id, cancelled) values ($1, 'sandbox', $2, $3, true)", [platform, `sub_${randomUUID()}`, id]);
+    expect(await readinessOf()).toMatchObject({ ready: false, blockedBy: "cancelled" });
+    await exec("delete from asaas_subscriptions where tenant_id = $1", [id]);
     await exec("delete from phone_numbers where organization_id = $1", [id]);
     await exec("delete from trunks where organization_id = $1", [id]);
   });
@@ -124,7 +167,7 @@ describe("prontidão da empresa", () => {
     for (const readiness of [detail?.readiness, row?.readiness]) {
       expect(readiness?.items.find((item) => item.key === "engineKey")).toEqual({ key: "engineKey", status: "configured", required: true });
       for (const item of readiness?.items ?? []) expect(Object.keys(item).sort()).toEqual(["key", "required", "status"]);
-      expect(Object.keys(readiness ?? {}).sort()).toEqual(["items", "missingRequired", "ready"]);
+      expect(Object.keys(readiness ?? {}).sort()).toEqual(["blockedBy", "items", "missingRequired", "ready"]);
     }
     expect(JSON.stringify(detail)).not.toContain(SECRET_VALUE);
     expect(JSON.stringify(row)).not.toContain(SECRET_VALUE);

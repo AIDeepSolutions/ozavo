@@ -15,6 +15,11 @@ const loadAll = <T>(modules: Record<string, () => Promise<{ default: T }>>): Pro
 let engines: Promise<VoiceEngine[]> | undefined;
 let tools: Promise<Tool[]> | undefined;
 
+/** Os motores que não pedem chave (o simulado): a prontidão da empresa não cobra chave deles. */
+export async function keylessEngineIds(): Promise<string[]> {
+  return (await listEngines()).filter((engine) => engine.keyless === true).map((engine) => engine.id);
+}
+
 export function listEngines(): Promise<VoiceEngine[]> {
   return (engines ??= loadAll(engineModules));
 }

@@ -45,18 +45,19 @@ function ReadinessPanel({ tenant }: { tenant: TenantDetail }) {
   const t = useTenantsDict();
   return (
     <Panel title={t.readiness.title} description={t.readiness.lead} actions={<ReadinessBadge readiness={tenant.readiness} />}>
-      <ul className="grid gap-2">
+      {tenant.readiness.blockedBy ? <Notice tone={tenant.readiness.blockedBy === "cancelled" ? "fail" : "warn"}>{t.readiness.blocked[tenant.readiness.blockedBy]}</Notice> : null}
+      <ul className="grid gap-2 mt-3">
         {tenant.readiness.items.map((item) => {
           const done = item.status === "configured";
           return (
             <li key={item.key} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line pb-2 last:border-b-0">
               <span className="flex items-center gap-2">
                 {done ? <CheckCircle size={20} weight="duotone" className="text-ok" aria-hidden /> : <XCircle size={20} weight="duotone" className={item.required ? "text-warn" : "text-muted"} aria-hidden />}
-                {t.readiness.items[item.key]}
+                {t.readiness.items[item.key].label}
               </span>
               <span className="flex flex-wrap items-center gap-2">
                 {!item.required ? <span className="text-[0.87rem] text-muted">{t.readiness.info}</span> : null}
-                <Badge tone={done ? "ok" : item.required ? "warn" : "neutral"}>{done ? t.readiness.configured : t.readiness.absent}</Badge>
+                <Badge tone={done ? "ok" : item.required ? "warn" : "neutral"}>{done ? t.readiness.items[item.key].ok : t.readiness.items[item.key].missing}</Badge>
               </span>
             </li>
           );
