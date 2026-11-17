@@ -6,7 +6,7 @@ produção, atualize este arquivo no mesmo PR ou no seguinte.
 ## Estado atual
 
 - **Produção:** o painel e as rotinas rodam no Coolify, publicados pela `main`. A `main` está em
-  `4cb0e5d` (PR #16). A saúde mostra painel, banco e rotinas ok. Voz e Asterisk não sobem sem o
+  `26ec5c6` (PR #19). Em 17/11, às 19:06 UTC, os PRs #17, #18 e #19 foram mergeados. A saúde mostra painel, banco e rotinas ok. Voz e Asterisk não sobem sem o
   número, então a saúde segue com `voice_down` e a rota `?strict=1` responde 503. Guia:
   [producao-coolify.md](docs/guides/producao-coolify.md).
 - **Banco:** 37 migrations aplicadas no Supabase de produção. Fonte: os 37 arquivos de
@@ -53,12 +53,14 @@ Depende do número (DID e tronco SIP da BRDID) que ainda não chegou:
 
 Cada item vira um PR pequeno, com `pnpm verify` e `pnpm test:db`; migration só vai à produção com OK.
 
-1. **Onda 1:** MT-10 (checklist de prontidão da empresa, no detalhe em `/platform`); robustez da
-   varredura de gravações órfãs (um erro local não pode interromper os órfãos seguintes nem a
-   contagem de auditoria, em `packages/core/src/recordings.ts`); este STATUS.
-2. **Onda 2:** MT-07 (nome RCD e logo no cadastro da empresa, normalização em caixa alta ASCII,
+1. **Onda 1 (feita, mergeada em 17/11 às 19:06 UTC):** este STATUS (PR #17), a robustez da
+   varredura de gravações órfãs (PR #18: um erro local não interrompe os órfãos seguintes nem a
+   contagem de auditoria, em `packages/core/src/recordings.ts`) e MT-10 (PR #19: lista de prontidão
+   da empresa, na lista e no detalhe em `/platform`). Sobra um ajuste pequeno no mesmo arquivo: só
+   ENOENT no `stat` da limpeza é ignorado, e os demais erros entram nas falhas.
+2. **Onda 2 (EM ANDAMENTO):** MT-07 (nome RCD e logo no cadastro da empresa, normalização em caixa alta ASCII,
    BMP; o envio à operadora fica bloqueado) e MT-12 (webhooks universais por empresa, entrada e
-   saída, com assinatura HMAC).
+   saída, com assinatura HMAC). Cada um em seu PR, com a migration só no PR e sem aplicar em produção.
 3. **Onda 3:** MT-11 (trilha de ações da plataforma), MT-15 (papéis de plataforma), MT-16 (LGPD por
    empresa e cerca contra biometria de voz) e a parte local de MT-09 (cálculo do excedente com Asaas
    falso, sem ligar a chave).
@@ -77,7 +79,8 @@ Cada item vira um PR pequeno, com `pnpm verify` e `pnpm test:db`; migration só 
 
 ## Histórico
 
-- Fase 1 (áudio em pipeline: Deepgram, OpenRouter e Cartesia, identidade visual): `c077dfd`.
+- Fase 1 (áudio em pipeline: Deepgram, OpenRouter e Cartesia, identidade visual): commit direto na `main`, sem PR.
+  São 5 commits até `c077dfd`: a importação inicial da VPS e 4 da fase.
 - Fase 2 (multi-tenant e API de provisionamento): PR #3.
 - Fase 3 (planos, FinOps e regulatório): PR #5.
 - Fase 4 (produção e conformidade: TLS/SRTP, RCD, gravações cifradas, checklist): PR #6.
