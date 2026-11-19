@@ -44,7 +44,17 @@ describe("isAffirmative: só vale a fala de assentimento", () => {
   });
 
   it("ótimo, tudo bem, bom e 'não, pode sim' valem como sim (falsos negativos da revisão)", () => {
-    for (const ok of ["Ótimo", "Tudo bem", "Bom", "Não, pode sim", "Não... sim, pode", "Sim, pode confirmar", "Beleza, pode marcar.", "Claro"]) expect(isAffirmative(ok), ok).toBe(true);
+    for (const ok of ["Ótimo", "Tudo bem", "Não, pode sim", "Não... sim, pode", "Sim, pode confirmar", "Beleza, pode marcar.", "Claro"]) expect(isAffirmative(ok), ok).toBe(true);
+  });
+});
+
+describe("isAffirmative: o que não é sim (médio 1 da revisão do PR #24)", () => {
+  it("'ok' ou 'claro' seguido de pedido de espera, 'bom' solto e 'não pode' isolado NÃO são sim", () => {
+    for (const no of ["Ok, só um minuto", "Bom, deixa eu ver a agenda", "Bom", "Claro, espera um pouco", "Ok, deixa eu ver", "Claro, um momento", "Ok, me dá um minuto", "Certo, vou ver a agenda", "Ok, aguarde", "Não pode", "Não pode marcar", "Ok, só um segundo"]) expect(isAffirmative(no), no).toBe(false);
+  });
+
+  it("os sins curtos de sempre continuam valendo", () => {
+    for (const ok of ["Sim", "Pode", "Pode marcar", "Confirmo", "Isso", "Ok", "Fechado", "Combinado", "Ok, pode marcar", "Sim, pode", "Não, pode sim", "Não, pode marcar", "Tá bom"]) expect(isAffirmative(ok), ok).toBe(true);
   });
 });
 

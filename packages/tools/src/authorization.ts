@@ -137,10 +137,15 @@ const strip = (text: string): string => text.normalize("NFD").replace(/\p{M}/gu,
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** Palavras de assentimento. "quero" NÃO está aqui: "quero outro horário" e "quero remarcar" pedem coisa, não respondem sim. */
-const ASSENT = /\b(sim|pode|podem|confirmo|confirmado|confirma|isso|certo|ok|okay|beleza|fechado|combinado|perfeito|claro|esse mesmo|esta bom|ta bom|tudo bem|otimo|bom|uhum|aham|positivo)\b/;
+const ASSENT = /\b(sim|pode|podem|confirmo|confirmado|confirma|isso|certo|ok|okay|beleza|fechado|combinado|perfeito|claro|esse mesmo|esta bom|ta bom|tudo bem|otimo|uhum|aham|positivo)\b/;
 /** "Pode falar", "pode repetir": dão a vez ao agente, não autorizam nada. */
 const NOT_CONSENT = /\bpode\s+(?:me\s+|nos\s+)?(?:repetir|falar|dizer|explicar|informar|ler|passar|mandar|enviar)\b/;
 const NEGATIVE = /\b(nao|nunca|jamais|espera|calma|pera|desisto|deixa pra la|esquece|melhor nao)\b/;
+/**
+ * "Ok, só um minuto", "Claro, deixa eu ver a agenda": a palavra de assentimento reconhece que ouviu e pede tempo; não autoriza a escrita.
+ * Vale para qualquer fala que traga o pedido de espera, com ou sem "ok" antes.
+ */
+const ASKS_TO_WAIT = /\b(so um (?:minuto|momento|segundo|instante|instantinho)|um (?:minuto|momento|segundo|instante|instantinho)|um pouco|ja volto|deixa eu|deixe-me|deixa-me|deixe eu|vou (?:ver|olhar|conferir|checar|verificar|anotar)|me da um|aguard\w*|segura (?:a[ií]|ai))\b/;
 /**
  * Mudança de ideia ou pedido diferente: "sim, mas…", "na verdade…", "outro dia". Nada disso é um sim ao que foi lido. "Trocar", "mudar" e
  * "alterar" NÃO entram: são a própria ação que se confirma numa remarcação ("pode confirmar essa troca"); o dia ou a hora diferentes
@@ -159,9 +164,11 @@ export function isAffirmative(text: string | undefined): boolean {
   // "Não preciso de mais nada" e "sem problema" respondem a outra pergunta: não negam o sim.
   const withoutIdioms = plain.replace(/nao tem problema|sem problema|nao (?:preciso|precisa|tenho|quero) (?:de )?mais (?:nada|nenhuma)\w*|nao precisa de mais nada|so isso|e so/g, "");
   // "Não, pode sim" / "Não… sim, pode": a negação é seguida logo do assentimento.
-  const withoutRetractedNo = withoutIdioms.replace(/\bnao\b[\s,.…-]+(?=(?:pode\s+sim|sim\b|pode\b))/g, "");
+  // O "não" só se desfaz se a pessoa o interrompe: "pode sim", "sim", ou "pode" depois de pontuação ("Não, pode."). "Não pode" corrido nega.
+  const withoutRetractedNo = withoutIdioms.replace(/\bnao\b(?:[\s,.…-]+(?=pode\s+sim|sim\b)|\s*[,.…-]+\s*(?=pode\b))/g, "");
   if (NEGATIVE.test(withoutRetractedNo)) return false;
   if (CHANGE_OF_MIND.test(withoutRetractedNo)) return false;
+  if (ASKS_TO_WAIT.test(withoutRetractedNo)) return false;
   return withoutRetractedNo
     .split(/(?<=[.!?…])\s+/)
     .some((sentence) => !/\?\s*$/.test(sentence.trim()) && ASSENT.test(sentence) && !NOT_CONSENT.test(sentence));
