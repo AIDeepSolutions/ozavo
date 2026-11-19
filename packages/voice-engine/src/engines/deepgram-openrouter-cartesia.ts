@@ -34,6 +34,7 @@ import { checkKeyOverHttp } from "../key-check";
 import { CARTESIA_API_URL, CARTESIA_MODEL, CARTESIA_VERSION, openCartesiaTts } from "../pipeline/cartesia-tts";
 import { InvalidPipelineKeyError, parsePipelineKey, type PipelineCredentials } from "../pipeline/credentials";
 import { DEEPGRAM_API_URL, DEEPGRAM_MODEL, openDeepgramStt } from "../pipeline/deepgram-stt";
+import { llmProfileOf } from "../pipeline/llm-profile";
 import { OPENROUTER_API_URL, OPENROUTER_MODEL, streamChat } from "../pipeline/openrouter-llm";
 import { createPipelineSession, type TurnMetrics } from "../pipeline/session";
 import type { AmdOptions } from "../pipeline/amd";
@@ -65,7 +66,9 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
   if (!/^[A-Za-z0-9-]{8,64}$/.test(voiceId)) throw new InvalidVoiceError();
   const clock = options.clock ?? systemClock;
   const timeout = { readyTimeoutMs: options.readyTimeoutMs, schedule: options.schedule };
-  const llmModel = options.model ?? OPENROUTER_MODEL;
+  // O perfil é do agente (tela de configuração); `options.model` (testes) troca só o modelo.
+  const profile = llmProfileOf(config.llmProfile);
+  const llmModel = options.model ?? profile.model;
   return createPipelineSession({
     config,
     clock,
@@ -87,7 +90,7 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
     openTts: (handlers) =>
       openCartesiaTts({ apiKey: keys.cartesia, voiceId, language: config.language, clock, url: options.urls?.tts, timeout }, handlers),
     chat: (messages, tools, signal) =>
-      streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: llmModel, baseUrl: options.urls?.llm, fetch: options.fetch }),
+      streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: llmModel, profile, baseUrl: options.urls?.llm, fetch: options.fetch }),
   });
 }
 

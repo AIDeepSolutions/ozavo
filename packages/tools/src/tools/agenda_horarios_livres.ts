@@ -110,7 +110,7 @@ export function createAgendaHorariosLivres(deps: ToolDeps = {}, options: Horario
             `Leia em voz alta, uma por vez, e peça que a pessoa escolha: ${spoken}. ` +
             "Depois que ela confirmar o dia e a hora em voz alta, chame agenda_marcar com esse horário e confirmed=true. " +
             "Não ofereça horário fora da lista." +
-            (options.groupByDay
+            (options.groupByDay || ctx.presentation?.groupSlotsByDay
               ? ` Todos os horários livres, por dia: ${groupSlotsByDay(agenda.slots, agenda.timezone)}. Ao oferecer ou confirmar, use só horários desta lista, no dia e no período que a pessoa pediu (manhã até 11:59, tarde a partir de 12:00); se a lista não tem horário no dia ou período pedido, diga isso e ofereça os dias que têm.`
               : ""),
           data: { slots: agenda.slots, timezone: agenda.timezone, window },

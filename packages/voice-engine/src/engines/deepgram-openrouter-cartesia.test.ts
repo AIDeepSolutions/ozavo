@@ -4,7 +4,7 @@ import type { TurnMetrics } from "../pipeline/session";
 import { pcm16ToUlaw } from "../resample";
 import { expireAtOnce, startFakeHttp } from "../testing/fake-http";
 import { manualClock, startFakeSse, startFakeWs, textChunk, toolChunk, until, usageChunk, type SseReply } from "../testing/fake-pipeline";
-import type { ToolSpec, VoiceSession } from "../types";
+import type { LlmCallInfo, ToolSpec, VoiceSession } from "../types";
 import engine, { CARTESIA_DEFAULT_VOICE, connectPipeline, InvalidVoiceError, worstKeyCheck } from "./deepgram-openrouter-cartesia";
 
 const stops: Array<() => Promise<void>> = [];
@@ -28,7 +28,7 @@ const results = (transcript: string, speechFinal: boolean) => ({
   channel: { alternatives: [{ transcript }] },
 });
 
-async function setup(options: { greeting?: string; voiceId?: string } = {}) {
+async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" } = {}) {
   const deepgram = await startFakeWs();
   const cartesia = await startFakeWs();
   const replies: SseReply[] = [];
@@ -37,7 +37,7 @@ async function setup(options: { greeting?: string; voiceId?: string } = {}) {
   const time = manualClock();
   const metrics: TurnMetrics[] = [];
   const session = await connectPipeline(
-    { instructions: "Você é a recepcionista.", language: "pt-BR", tools: TOOLS, greeting: options.greeting, voiceId: options.voiceId },
+    { instructions: "Você é a recepcionista.", language: "pt-BR", tools: TOOLS, greeting: options.greeting, voiceId: options.voiceId, llmProfile: options.llmProfile },
     KEY,
     { urls: { stt: deepgram.url, tts: cartesia.url, llm: openrouter.url }, clock: time.clock, onMetrics: (m) => metrics.push(m) },
   );
@@ -111,6 +111,40 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     await until(() => t.log.transcripts.length === 2);
     expect(t.log.audio[0]?.length).toBe(320);
     expect(t.log.transcripts).toEqual(["user:Quero marcar uma consulta.", "agent:Claro, para quando?"]);
+  });
+
+  it("o perfil do agente chega ao pedido do modelo: padrão A (Haiku, cache, 1024), B (raciocínio desligado), C (Flash de antes)", async () => {
+    const pedido = async (llmProfile?: "a" | "b" | "c") => {
+      const t = await setup({ llmProfile });
+      t.deepgram.send(results("Quero marcar uma consulta.", true));
+      await until(() => t.replies.length === 1);
+      return t.openrouter.requests[0]?.body as Record<string, unknown>;
+    };
+    const padrao = await pedido();
+    expect(padrao).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 1024 });
+    expect(padrao).not.toHaveProperty("reasoning");
+    expect(JSON.stringify(padrao["messages"])).toContain("cache_control");
+
+    expect(await pedido("a")).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 1024 });
+    expect(await pedido("b")).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 400, reasoning: { enabled: false } });
+    const c = await pedido("c");
+    expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400 });
+    expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
+  });
+
+  it("cada chamada ao modelo emite `llmCall` com provedor, fim, raciocínio e cache, sem o texto", async () => {
+    const t = await setup();
+    const calls: LlmCallInfo[] = [];
+    t.session.on("llmCall", (call) => calls.push(call));
+    t.deepgram.send(results("Meu CPF é um dois três.", true));
+    await until(() => t.replies.length === 1);
+    t.replies[0]?.write({ provider: "Claude Platform on AWS", choices: [{ delta: { content: "Certo." }, finish_reason: "stop" }] });
+    t.replies[0]?.write({ choices: [], usage: { prompt_tokens: 500, completion_tokens: 60, cost: 0.0002, prompt_tokens_details: { cached_tokens: 400 }, completion_tokens_details: { reasoning_tokens: 40 } } });
+    t.replies[0]?.end();
+    await until(() => calls.length === 1);
+    expect(calls[0]).toMatchObject({ model: "anthropic/claude-haiku-5.5", provider: "Claude Platform on AWS", finishReason: "stop", reasoningTokens: 40, promptTokens: 500, cachedTokens: 400, completionTokens: 60 });
+    expect(JSON.stringify(calls)).not.toContain("CPF");
+    expect(JSON.stringify(calls)).not.toContain("Certo");
   });
 
   it("chamada de função vira `toolCall`, e o resultado volta ao modelo com o mesmo id", async () => {

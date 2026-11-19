@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeSse, textChunk, toolChunk, usageChunk } from "../testing/fake-pipeline";
 import type { ToolSpec } from "../types";
-import { FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, streamChat, type LlmEvent } from "./openrouter-llm";
+import { LLM_PROFILES } from "./llm-profile";
+import { FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, chatBody, streamChat, type LlmEvent } from "./openrouter-llm";
 
 const stops: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -36,6 +37,35 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     });
   });
 
+  it("sem perfil, o padrão é o A: Haiku 5.5, cache do prompt de sistema, teto 1024 e raciocínio do modelo (sem o campo)", () => {
+    const body = chatBody({ messages: [{ role: "system", content: "Você é a recepção." }, { role: "user", content: "oi" }], tools: [] });
+    expect(body["model"]).toBe("anthropic/claude-haiku-5.5");
+    expect(body["max_tokens"]).toBe(1024);
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body["messages"]).toEqual([
+      { role: "system", content: [{ type: "text", text: "Você é a recepção.", cache_control: { type: "ephemeral" } }] },
+      { role: "user", content: "oi" },
+    ]);
+  });
+
+  it("cada perfil do agente é respeitado: B desliga o raciocínio; C é o Flash de antes, sem cache e com teto 400", () => {
+    const messages = [{ role: "system" as const, content: "s" }, { role: "user" as const, content: "oi" }];
+    const b = chatBody({ messages, tools: [], profile: LLM_PROFILES.b });
+    expect(b).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 400, reasoning: { enabled: false } });
+    expect(JSON.stringify(b["messages"])).toContain("cache_control");
+
+    const c = chatBody({ messages, tools: [], profile: LLM_PROFILES.c });
+    expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400, messages });
+    expect(c).not.toHaveProperty("reasoning");
+    expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
+  });
+
+  it("cache_control só vai a modelo que o aceita, mesmo no perfil que o pede", () => {
+    const messages = [{ role: "system" as const, content: "s" }];
+    expect(JSON.stringify(chatBody({ messages, tools: [], profile: LLM_PROFILES.a, model: "google/gemini-2.5-flash" }))).not.toContain("cache_control");
+    expect(JSON.stringify(chatBody({ messages, tools: [], profile: LLM_PROFILES.a, model: "anthropic/claude-haiku-5.5" }))).toContain("cache_control");
+  });
+
   it("entrega o texto em pedaços, a chamada de função montada e o custo declarado em centavos", async () => {
     const server = await startFakeSse((_request, reply) => {
       reply.comment("OPENROUTER PROCESSING");
@@ -53,7 +83,7 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     expect(events).toEqual([
       { type: "text", delta: "Claro, " },
       { type: "text", delta: "vou marcar." },
-      { type: "usage", usage: { promptTokens: 1200, completionTokens: 40, cachedTokens: 1000, costCents: expect.closeTo(0.042, 9) } },
+      { type: "usage", usage: { promptTokens: 1200, completionTokens: 40, cachedTokens: 1000, costCents: expect.closeTo(0.042, 9), model: OPENROUTER_MODEL } },
       { type: "tool_call", call: { id: "call_1", type: "function", function: { name: "agenda_marcar", arguments: '{"inicio":"2026-11-20T10:00"}' } } },
     ]);
   });
@@ -66,8 +96,39 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     stops.push(() => server.stop());
     const events = await collect(streamChat({ apiKey: "k", baseUrl: server.url, messages: [], tools: [] }));
     expect(events).toEqual([
-      { type: "usage", usage: { promptTokens: 1_000_000, completionTokens: 1_000_000, cachedTokens: 0, costCents: FALLBACK_PRICING.inputCentsPerMillion + FALLBACK_PRICING.outputCentsPerMillion } },
+      { type: "usage", usage: { promptTokens: 1_000_000, completionTokens: 1_000_000, cachedTokens: 0, costCents: FALLBACK_PRICING.inputCentsPerMillion + FALLBACK_PRICING.outputCentsPerMillion, model: OPENROUTER_MODEL } },
     ]);
+  });
+
+  it("registra por chamada o modelo, o provedor, o fim da resposta, os tokens de raciocínio e os de cache, sem conteúdo", async () => {
+    const server = await startFakeSse((_request, reply) => {
+      reply.write({ provider: "Claude Platform on AWS", choices: [{ delta: { content: "Segredo da conversa" }, finish_reason: null }] });
+      reply.write({ provider: "Claude Platform on AWS", choices: [{ delta: {}, finish_reason: "length" }] });
+      reply.write({
+        provider: "Claude Platform on AWS",
+        choices: [],
+        usage: { prompt_tokens: 900, completion_tokens: 1024, cost: 0.001, prompt_tokens_details: { cached_tokens: 700, cache_write_tokens: 100 }, completion_tokens_details: { reasoning_tokens: 980 } },
+      });
+      reply.end();
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChat({ apiKey: "k", baseUrl: server.url, messages: [], tools: [] }));
+    const usage = events.find((event) => event.type === "usage");
+    expect(usage).toEqual({
+      type: "usage",
+      usage: {
+        promptTokens: 900,
+        completionTokens: 1024,
+        cachedTokens: 700,
+        cacheWriteTokens: 100,
+        reasoningTokens: 980,
+        finishReason: "length",
+        provider: "Claude Platform on AWS",
+        model: OPENROUTER_MODEL,
+        costCents: expect.closeTo(0.1, 9),
+      },
+    });
+    expect(JSON.stringify(usage)).not.toContain("Segredo");
   });
 
   it("HTTP de erro lança `LlmHttpError` com o status, sem repetir o corpo", async () => {
@@ -93,7 +154,7 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     }
     expect(events).toEqual([
       { type: "text", delta: "Começando " },
-      { type: "usage", usage: expect.objectContaining({ completionTokens: 400, costCents: expect.any(Number) }) },
+      { type: "usage", usage: expect.objectContaining({ completionTokens: LLM_PROFILES.a.maxTokens, costCents: expect.any(Number) }) },
     ]);
     expect(events.some((event) => event.type === "tool_call")).toBe(false);
   });

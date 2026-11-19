@@ -419,6 +419,17 @@ export function Timeline({
         const ms = (value: unknown): string => Math.round(Number(value)).toLocaleString(locale);
         return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency, { rtt: ms(p.rttMs), ttfb: ms(p.ttfbMs), llm: ms(p.llmFirstTokenMs) })}</Quiet> };
       }
+      case "llm_call": {
+        // O corte pelo teto de saída (`length`) é o que mais importa ver: a resposta do agente ficou incompleta.
+        const n = (value: unknown): string => (typeof value === "number" ? Math.round(value).toLocaleString(locale) : "?");
+        const label = (value: unknown): string => (typeof value === "string" && value !== "" ? value : "?");
+        return {
+          ...base,
+          tone: p.finishReason === "length" ? "accent" : "neutral",
+          icon: Gauge,
+          body: <Quiet>{fill(e.llm_call, { model: label(p.model), provider: label(p.provider), prompt: n(p.promptTokens), cached: n(p.cachedTokens), reasoning: n(p.reasoningTokens), finish: label(p.finishReason) })}</Quiet>,
+        };
+      }
       case "webhook_queue_failed":
         return { ...base, tone: "fail", body: <Quiet>{fill(e.webhook_queue_failed, { error: String(p.error ?? "") })}</Quiet> };
       default:

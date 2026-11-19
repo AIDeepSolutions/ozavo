@@ -1,5 +1,6 @@
 import { checkVocabulary, callerDisplayNameSchema, toE164, type OrgQuery } from "@ozavo/core";
 import { z } from "zod";
+import { DEFAULT_LLM_PROFILE, LLM_PROFILE_IDS } from "@ozavo/voice-engine/llm-profile";
 import { ApiError } from "./context";
 import { listEngines } from "./pieces";
 import { isTrunkHost } from "./trunk-host";
@@ -34,7 +35,7 @@ const optionalText = (max: number) =>
 
 export const AGENT_COLUMNS = `id, name, role_label as "roleLabel", instructions, greeting, engine, voice_id as "voiceId", language, tools,
   enabled, max_call_seconds as "maxCallSeconds", cost_ceiling_cents as "costCeilingCents", transfer_to_e164 as "transferTo",
-  follow_up_owner_user_id as "followUpOwnerUserId", vocabulary, listening_environment as "listeningEnvironment", created_at as "createdAt", updated_at as "updatedAt"`;
+  follow_up_owner_user_id as "followUpOwnerUserId", vocabulary, listening_environment as "listeningEnvironment", llm_profile as "llmProfile", created_at as "createdAt", updated_at as "updatedAt"`;
 
 const agentFields = z.object({
   name: z.string().trim().min(1).max(80),
@@ -55,6 +56,8 @@ const agentFields = z.object({
   vocabulary,
   // Ambiente de quem liga: `noisy` ajusta a detecção de fala do provedor para ruído de fundo.
   listeningEnvironment: z.enum(["normal", "noisy"]),
+  // Perfil do modelo de texto do agente (motor em pipeline): a = padrão, b = telefonia, c = Flash (packages/voice-engine/src/pipeline/llm-profile.ts).
+  llmProfile: z.enum(LLM_PROFILE_IDS),
 });
 export type AgentValues = z.output<typeof agentFields>;
 export const agentPatch = agentFields.partial();
@@ -74,6 +77,7 @@ export const AGENT_DEFAULTS: Omit<AgentValues, "name" | "engine"> = {
   followUpOwnerUserId: null,
   vocabulary: [],
   listeningEnvironment: "normal",
+  llmProfile: DEFAULT_LLM_PROFILE,
 };
 
 export const TRUNK_COLUMNS = `id, name, host, username, auth_mode as "authMode", caller_id_e164 as "callerId", caller_display_name as "callerDisplayName", sip_tls as "sipTls",

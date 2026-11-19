@@ -218,6 +218,7 @@ const timeline: TimelineDictionary = {
     },
     webhook_queue_failed: "The company webhooks could not be notified of this call ending ({error}). The call ended normally.",
     turn_latency: "The agent started answering {rtt} ms after the caller stopped speaking (model: {llm} ms; speech synthesis: {ttfb} ms).",
+    llm_call: "Call to model {model} (provider: {provider}): {prompt} input tokens, {cached} of them from cache; {reasoning} reasoning tokens; finished by: {finish}.",
     caller_unanswered: {
       turn_closed: "The caller went {seconds} s without an answer, possibly because of noise on the line. The agent was asked to answer what it heard.",
       asked_to_repeat: "The agent was still silent {seconds} s after the caller last spoke, and asked them to repeat.",

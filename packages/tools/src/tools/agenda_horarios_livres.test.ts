@@ -34,6 +34,18 @@ describe("agenda_horarios_livres", () => {
     expect(agrupado.data).toEqual(padrao.data);
   });
 
+  it("o perfil do agente liga a lista agrupada pelo contexto da ligação (presentation); sem ele, a mensagem é a de sempre", async () => {
+    const pedido = { service_type: "Consulta", from: "2026-11-18T00:00:00-03:00", to: "2026-11-19T00:00:00-03:00" };
+    const tool = createAgendaHorariosLivres({ agenda: crmSimulado() });
+    const ligado = await tool.run(pedido, { ...contextoDaAgenda(), presentation: { groupSlotsByDay: true } });
+    const desligado = await tool.run(pedido, { ...contextoDaAgenda(), presentation: { groupSlotsByDay: false } });
+    const semPerfil = await tool.run(pedido, contextoDaAgenda());
+
+    expect(ligado.message).toContain("Todos os horários livres, por dia:");
+    expect(desligado.message).not.toContain("por dia");
+    expect(semPerfil.message).not.toContain("por dia");
+  });
+
   it("sem período, consulta os próximos sete dias a partir do relógio da chamada", async () => {
     const crm = crmSimulado();
     await createAgendaHorariosLivres({ agenda: crm }).run({ service_type: "Consulta" }, contextoDaAgenda());

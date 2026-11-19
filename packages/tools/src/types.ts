@@ -30,6 +30,11 @@ export interface ToolContext {
    * da hora, o dono do compromisso). Omitido: o canal não declara a conversa e nada é conferido.
    */
   conversation?: ConversationView;
+  /**
+   * Como as ferramentas apresentam o resultado ao modelo desta ligação (hoje, só a agenda). Vem do perfil do agente; omitido vale
+   * o padrão. É um objeto vivo: quem roda a ligação o preenche quando lê o agente.
+   */
+  presentation?: { groupSlotsByDay?: boolean };
 }
 
 /**

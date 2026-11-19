@@ -21,9 +21,11 @@
  */
 import { z } from "zod";
 import type { ToolSpec } from "../types";
+import { acceptsCacheControl, llmProfileOf, LLM_PROFILES, type LlmProfile } from "./llm-profile";
 
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
-export const OPENROUTER_MODEL = "google/gemini-2.5-flash";
+/** O modelo do perfil padrão (A). Cada agente escolhe o seu perfil (`llm-profile.ts`). */
+export const OPENROUTER_MODEL = LLM_PROFILES.a.model;
 /** Centavos por milhão de tokens, usados só quando o OpenRouter não declara o custo. */
 export const FALLBACK_PRICING = { inputCentsPerMillion: 500, outputCentsPerMillion: 2000 } as const;
 
@@ -42,6 +44,16 @@ export interface LlmUsage {
   promptTokens: number;
   completionTokens: number;
   cachedTokens: number;
+  /**
+   * Observabilidade por chamada (sem conteúdo nem dado pessoal): o modelo pedido, o provedor que respondeu, por que a resposta
+   * terminou (`length` é corte pelo teto de saída), os tokens de raciocínio e os que foram gravados no cache. Ausentes quando o
+   * provedor não declara (ou quando a chamada foi abortada sem extrato).
+   */
+  model?: string;
+  provider?: string;
+  finishReason?: string;
+  reasoningTokens?: number;
+  cacheWriteTokens?: number;
   /** Centavos de dólar, já com o `cost` do provedor ou a estimativa de reserva. */
   costCents: number;
 }
@@ -84,9 +96,11 @@ const chunkSchema = z.object({
       prompt_tokens: z.number(),
       completion_tokens: z.number(),
       cost: z.number().nullish(),
-      prompt_tokens_details: z.object({ cached_tokens: z.number().nullish() }).nullish(),
+      prompt_tokens_details: z.object({ cached_tokens: z.number().nullish(), cache_write_tokens: z.number().nullish() }).nullish(),
+      completion_tokens_details: z.object({ reasoning_tokens: z.number().nullish() }).nullish(),
     })
     .nullish(),
+  provider: z.string().nullish(),
   error: z.object({ message: z.string().optional() }).optional(),
 });
 
@@ -95,18 +109,31 @@ export interface ChatRequest {
   messages: readonly ChatMessage[];
   tools: readonly ToolSpec[];
   model?: string;
+  /** Perfil do agente (`llm-profile.ts`). Omitido: o padrão (A). */
+  profile?: LlmProfile;
   baseUrl?: string;
   signal?: AbortSignal;
   fetch?: typeof fetch;
 }
 
-export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model">): Record<string, unknown> {
+/** Marca o prompt de sistema (primeira mensagem) para cache: `cache_control` em bloco de conteúdo, como o OpenRouter documenta para o Claude. */
+function withCachedSystemPrompt(messages: readonly ChatMessage[]): readonly unknown[] {
+  return messages.map((message, index) =>
+    index === 0 && message.role === "system" ? { ...message, content: [{ type: "text", text: message.content, cache_control: { type: "ephemeral" } }] } : message,
+  );
+}
+
+export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile">): Record<string, unknown> {
+  const profile = request.profile ?? llmProfileOf(undefined);
+  const model = request.model ?? profile.model;
   return {
-    model: request.model ?? OPENROUTER_MODEL,
-    messages: request.messages,
+    model,
+    messages: profile.cacheSystemPrompt && acceptsCacheControl(model) ? withCachedSystemPrompt(request.messages) : request.messages,
     stream: true,
-    // Fala ao telefone: resposta curta. O teto também limita o gasto de uma resposta descontrolada.
-    max_tokens: 400,
+    // Fala ao telefone: resposta curta. O teto também limita o gasto de uma resposta descontrolada. Com o raciocínio ligado ele
+    // é dividido com o texto, por isso o perfil que o mantém ligado usa 1024.
+    max_tokens: profile.maxTokens,
+    ...(profile.reasoning === "off" && { reasoning: { enabled: false } }),
     ...(request.tools.length > 0 && {
       tools: request.tools.map((tool) => ({ type: "function", function: tool })),
       tool_choice: "auto",
@@ -114,7 +141,7 @@ export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "mode
   };
 }
 
-function usageOf(raw: NonNullable<z.infer<typeof chunkSchema>["usage"]>): LlmUsage {
+function usageOf(raw: NonNullable<z.infer<typeof chunkSchema>["usage"]>, observed: Pick<LlmUsage, "model" | "provider" | "finishReason"> = {}): LlmUsage {
   const costCents =
     typeof raw.cost === "number"
       ? raw.cost * 100
@@ -124,6 +151,9 @@ function usageOf(raw: NonNullable<z.infer<typeof chunkSchema>["usage"]>): LlmUsa
     completionTokens: raw.completion_tokens,
     cachedTokens: raw.prompt_tokens_details?.cached_tokens ?? 0,
     costCents,
+    ...observed,
+    ...(raw.completion_tokens_details?.reasoning_tokens != null && { reasoningTokens: raw.completion_tokens_details.reasoning_tokens }),
+    ...(raw.prompt_tokens_details?.cache_write_tokens != null && { cacheWriteTokens: raw.prompt_tokens_details.cache_write_tokens }),
   };
 }
 
@@ -149,6 +179,9 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
   let buffered = "";
   let finished = false;
   let usageReceived = false;
+  let finishReason: string | undefined;
+  let provider: string | undefined;
+  const model = request.model ?? (request.profile ?? llmProfileOf(undefined)).model;
   try {
     while (!finished) {
       let read: Awaited<ReturnType<typeof reader.read>>;
@@ -182,7 +215,9 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
         if (!parsed.success) continue;
         const chunk = parsed.data;
         if (chunk.error) throw new Error("OpenRouter: erro no meio da resposta");
+        if (chunk.provider) provider = chunk.provider;
         for (const choice of chunk.choices ?? []) {
+          if (choice.finish_reason) finishReason = choice.finish_reason;
           const content = choice.delta?.content;
           if (content) yield { type: "text", delta: content };
           for (const part of choice.delta?.tool_calls ?? []) {
@@ -195,7 +230,7 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
         }
         if (chunk.usage && !usageReceived) {
           usageReceived = true;
-          yield { type: "usage", usage: usageOf(chunk.usage) };
+          yield { type: "usage", usage: usageOf(chunk.usage, { model, ...(provider && { provider }), ...(finishReason && { finishReason }) }) };
         }
       }
     }
@@ -206,7 +241,7 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
       // Um aborto também custa. Sem extrato final, estima a entrada por byte e todo o teto
       // de saída: conserva o teto da chamada mesmo quando o usuário interrompe cada resposta.
       const promptTokens = Buffer.byteLength(JSON.stringify(request.messages)) + Buffer.byteLength(JSON.stringify(request.tools));
-      yield { type: "usage", usage: usageOf({ prompt_tokens: promptTokens, completion_tokens: 400 }) };
+      yield { type: "usage", usage: usageOf({ prompt_tokens: promptTokens, completion_tokens: (request.profile ?? llmProfileOf(undefined)).maxTokens }, { model }) };
     }
   }
   if (request.signal?.aborted) return;

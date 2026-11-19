@@ -203,4 +203,24 @@ describe("runMigrations", () => {
     await expect(db.pool.query("insert into agents (organization_id, name, engine, listening_environment) values ($1, 'Alto', 'simulated', 'loud')", [org])).rejects.toThrow(/listening_environment/);
     await expect(db.pool.query("insert into agents (organization_id, name, engine, listening_environment) values ($1, 'Nulo', 'simulated', null)", [org])).rejects.toThrow(/listening_environment/);
   });
+
+  it("o agente que já existe fica no perfil A do modelo de texto, e o perfil só aceita a, b ou c", async () => {
+    const PROFILE = "20261119T120000_agents_llm_profile.sql";
+    for (const name of await readdir(REAL_MIGRATIONS)) if (name < PROFILE) await copyFile(path.join(REAL_MIGRATIONS, name), path.join(dir, name));
+    await runMigrations(db, dir);
+    const org = (await db.pool.query<{ id: string }>("insert into organizations (name) values ('A') returning id")).rows[0]?.id;
+    await db.pool.query("insert into agents (organization_id, name, engine) values ($1, 'Antes', 'simulated')", [org]);
+    await copyFile(path.join(REAL_MIGRATIONS, PROFILE), path.join(dir, PROFILE));
+    expect(await runMigrations(db, dir)).toEqual([PROFILE]);
+    await db.pool.query("insert into agents (organization_id, name, engine) values ($1, 'Depois', 'simulated')", [org]);
+    await db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Rapido', 'simulated', 'b')", [org]);
+    const rows = (await db.pool.query<{ name: string; llm_profile: string }>("select name, llm_profile from agents order by name")).rows;
+    expect(rows).toEqual([
+      { name: "Antes", llm_profile: "a" },
+      { name: "Depois", llm_profile: "a" },
+      { name: "Rapido", llm_profile: "b" },
+    ]);
+    await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Z', 'simulated', 'z')", [org])).rejects.toThrow(/llm_profile/);
+    await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Nulo', 'simulated', null)", [org])).rejects.toThrow(/llm_profile/);
+  });
 });

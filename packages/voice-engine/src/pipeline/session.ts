@@ -264,6 +264,16 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       for await (const event of deps.chat(history, config.tools, current.abort.signal)) {
         if (event.type === "usage") {
           const { promptTokens, cachedTokens, completionTokens, costCents } = event.usage;
+          emitter.emit("llmCall", {
+            model: event.usage.model,
+            provider: event.usage.provider,
+            finishReason: event.usage.finishReason,
+            reasoningTokens: event.usage.reasoningTokens,
+            promptTokens,
+            cachedTokens,
+            cacheWriteTokens: event.usage.cacheWriteTokens,
+            completionTokens,
+          });
           flushUsage({ textInputTokens: Math.max(0, promptTokens - cachedTokens), cachedInputTokens: cachedTokens, textOutputTokens: completionTokens, providerCostCents: costCents });
           continue;
         }

@@ -62,6 +62,7 @@ export const CALL_EVENT_KINDS = [
   "analysis_not_done",
   "caller_unanswered",
   "turn_latency",
+  "llm_call",
   "webhook_queue_failed",
 ] as const;
 
