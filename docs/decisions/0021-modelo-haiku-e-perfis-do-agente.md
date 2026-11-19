@@ -42,6 +42,9 @@ fica adequada ao telefone (mediana composta ~1,4 s) com o raciocínio desligado 
 7. **Correções de código da agenda do benchmark R2**, trazidas sem a bancada: janela de horários válida e erro de consulta
    explícito; trava de autorização (sim afirmativo, leitura do horário com minuto, dia e fuso, última leitura, compromisso da
    própria pessoa); retenção da fala "pronto, marcado" até a escrita dar certo.
+8. **Fallback do provedor.** Se o OpenRouter recusar `reasoning` ou `cache_control` (HTTP 400/422), a chamada é repetida uma vez sem eles,
+   o resto da ligação já pede sem eles e a linha do tempo mostra um `llm_call` com `fallback: true` (sem tokens), em vez de o agente
+   pedir desculpa em todo turno.
 
 Os preços dos planos e a configuração comercial não mudam.
 
@@ -63,6 +66,13 @@ Os preços dos planos e a configuração comercial não mudam.
   conservador para o teto de gasto, e nunca menor que antes.
 - O roteamento de provedor segue o padrão do OpenRouter; o provedor de cada chamada agora é registrado em `llm_call`.
 
+## Ordem do deploy (obrigatória)
+
+Aplicar a migration `db/migrations/20261119T120000_agents_llm_profile.sql` **antes** do deploy: o código passa a selecionar `agents.llm_profile` e o deploy do Coolify não
+aplica migrations. Passo a passo (backup com `pg_dump`, comando manual com `MIGRATION_DATABASE_URL`, verificação em
+`schema_migrations` e reversão) em [producao-coolify.md](../guides/producao-coolify.md#ordem-obrigatória-do-deploy-migration-antes-do-código).
+Reversão da migration: migration nova que remove a coluna (depois de reverter o deploy) ou `update agents set llm_profile = 'c'`.
+
 ## Como reverter
 
 - **Um agente:** na tela do agente, "Modelo de texto" → "Gemini 2.5 Flash (o de antes)". Ou `update agents set llm_profile =
@@ -78,4 +88,4 @@ Os preços dos planos e a configuração comercial não mudam.
 ## Como o operador usa
 
 Em Agentes, no agente com o motor Deepgram + OpenRouter + Cartesia, o campo **Modelo de texto** escolhe o perfil. Para a
-ligação de saída que pode remarcar ou cancelar, informe no pedido `request_context: { "appointmentIds": ["..."] }`.
+ligação de saída que pode remarcar ou cancelar, informe no pedido `context: { "appointmentIds": ["..."] }` (vira `request_context`; ver [a API](../guides/api-para-sistemas-de-fora.md)).

@@ -58,6 +58,10 @@ Toda ligação de saída passa por essa checagem, e cada recusa tem um motivo pr
 tela. **Não há importação de lista para discagem, nem jeito de afrouxar o teto por fora da tela**:
 disparo em massa bloqueia a linha de quem usa e prejudica quem recebe. Não ajude a contornar.
 
+**Ligação de saída que remarca ou cancela.** O agente só mexe em compromisso que marcou na própria ligação ou que o pedido
+informou em `context.appointmentIds` (até 50 ids, comparação exata). Sem isso, "remarcar" e "cancelar" são negados. Se o agente
+"não consegue cancelar", confira se o id veio no pedido de ligação ([API](../../../docs/guides/api-para-sistemas-de-fora.md)).
+
 Antes de ligar o recurso, leia com a pessoa
 [`ligacoes-de-saida.md`](../../../docs/doctrine/ligacoes-de-saida.md) e
 [`conformidade-brasil.md`](../../../docs/guides/conformidade-brasil.md). Regra de telecomunicação
