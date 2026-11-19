@@ -161,6 +161,7 @@ export function createGoogleAgenda(config: GoogleAgendaConfig, net: SafeFetchOpt
   const events = `${calendarBase}/calendars/${encodeURIComponent(config.calendarId)}/events`;
 
   return {
+    timezone: config.timezone,
     services: (): AgendaService[] => config.services.map((service) => ({ name: service.name })),
     async freeSlots(input) {
       await authorized();

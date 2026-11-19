@@ -1,6 +1,6 @@
 import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
-import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
-import { AnsweringMachineDetector, EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type AnsweringMachineDetection, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
+import { ConversationLog, appointmentIdsFromRequestContext, autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type CallerAppointmentsSource, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
+import { AnsweringMachineDetector, EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, isLlmProfileId, llmProfileOf, type AnsweringMachineDetection, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
 import { messageOf, silentLogger, type Logger } from "./log";
 import { panelNotice } from "./panel-notice";
@@ -25,6 +25,8 @@ export interface CallSessionDeps {
   recordingsDir?: string;
   /** Espaço livre mínimo na pasta para gravar (padrão `MIN_FREE_BYTES_TO_RECORD`). */
   recordingMinFreeBytes?: number;
+  /** Ponto de extensão (opção (a)): os compromissos de quem ligou, pelo telefone. Sem ele, valem só os ids da ligação e do `request_context`. */
+  callerAppointments?: CallerAppointmentsSource;
 }
 
 export interface CallSessionInput {
@@ -85,6 +87,7 @@ interface AgentRow {
   transfer_to_e164: string | null;
   vocabulary: string[];
   listening_environment: "normal" | "noisy";
+  llm_profile: string;
 }
 
 export const engineKeySetting = (engineId: string): string => `engine.${engineId}.api_key`;
@@ -361,6 +364,24 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     }
   }
 
+  // A conversa desta ligação, para as ferramentas de agenda conferirem o sim da pessoa e a leitura da hora antes de escrever.
+  //
+  // Ordem (provada em call-session.db.test.ts, "ANTES da ferramenta"): o motor entrega `transcript` e `toolCall` no mesmo emissor e o
+  // `push` no log é síncrono, então tudo o que o motor já entregou está no log quando a ferramenta roda.
+  // - Pipeline (Deepgram + LLM + Cartesia): a fala da pessoa entra em `endCallerTurn`, antes do pedido ao LLM; a do agente, em
+  //   `recordAgent`, antes de `toolCall`.
+  // - Motores diretos, lendo o código (NÃO medido com provedor real): o Gemini Live entrega a fala do agente em `turnComplete` ou
+  //   `interrupted` (a leitura de um turno anterior chega a tempo) e só descarrega a fala da PESSOA ao receber a chamada da ferramenta;
+  //   o OpenAI Realtime entrega a do agente em `response.output_audio_transcript.done` e a da pessoa em
+  //   `conversation.item.input_audio_transcription.completed`, de forma assíncrona. A transcrição da pessoa pode, portanto, chegar
+  //   DEPOIS da ferramenta: a trava então recusa (nunca autoriza sem ver o sim) e o modelo precisa chamar de novo.
+  //
+  // Lista de ids (decisão do dono, 18/11, opção (b)): cancelar e remarcar só valem para o compromisso marcado NESTA ligação
+  // (`rememberAppointment`) e para os ids que o operador informou em `request_context.appointmentIds`; nega por padrão. Limitação:
+  // "quero remarcar a minha consulta" numa ligação recebida não tem id conhecido e a ferramenta recusa. A opção (a), consultar o
+  // conector da agenda pelo telefone de quem ligou, entra por `deps.callerAppointments` (ver `CallerAppointmentsSource`).
+  const conversation = new ConversationLog();
+  const presentation: NonNullable<ToolContext["presentation"]> = {};
   const context: ToolContext = {
     organizationId,
     callId,
@@ -390,6 +411,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     say(text) {
       if (!ending) voice?.say(text);
     },
+    conversation,
+    presentation,
     waitForApproval: (approvalId, timeoutMs) =>
       deps.approvals.wait(
         approvalId,
@@ -428,7 +451,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
 
   async function run(): Promise<void> {
     agent = (await q.one<AgentRow>(
-      "select name, instructions, greeting, engine, voice_id, language, tools, max_call_seconds, cost_ceiling_cents, transfer_to_e164, vocabulary, listening_environment from agents where id = $1",
+      "select name, instructions, greeting, engine, voice_id, language, tools, max_call_seconds, cost_ceiling_cents, transfer_to_e164, vocabulary, listening_environment, llm_profile from agents where id = $1",
       [agentId],
     )) ?? undefined;
     const call = await q.one<{ direction: "inbound" | "outbound"; from_e164: string | null; to_e164: string | null; request_context: unknown }>(
@@ -436,6 +459,14 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       [callId],
     );
     if (!agent || !call) throw new Error(`Agent ${agentId} or call ${callId} not found in organization ${organizationId}`);
+    // A lista de horários agrupada por dia só liga junto do perfil B (raciocínio desligado); o perfil do agente manda.
+    presentation.groupSlotsByDay = llmProfileOf(agent.llm_profile).groupSlotsByDay;
+    conversation.allowAppointments(appointmentIdsFromRequestContext(call.request_context));
+    const callerPhone = call.direction === "inbound" ? call.from_e164 : call.to_e164;
+    if (deps.callerAppointments && callerPhone) {
+      // Falha da consulta não derruba a ligação: sem a lista, a trava segue negando.
+      await deps.callerAppointments.appointmentsOf(callerPhone).then((ids) => conversation.allowAppointments(ids), logFailure("could not look up the caller's appointments"));
+    }
     // O perfil da empresa: o prompt base vem antes da instrução do agente, e a voz da empresa vale
     // quando o agente não escolheu a dele. Sem perfil, tudo segue como antes.
     const tenant = await readTenantProfile(q);
@@ -516,6 +547,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
           vocabulary: agent.vocabulary,
           // `normal` envia ao provedor o mesmo de antes; `noisy` ajusta a detecção de fala.
           listeningEnvironment: agent.listening_environment,
+          // O perfil do modelo de texto (só o motor em pipeline usa).
+          llmProfile: isLlmProfileId(agent.llm_profile) ? agent.llm_profile : undefined,
         },
         apiKey,
       );
@@ -599,7 +632,10 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
         logFailure("could not record a turn latency"),
       ),
     );
+    // O que se mede de cada chamada ao modelo (tokens de raciocínio e de cache, corte por teto, provedor), sem o conteúdo.
+    session.on("llmCall", (call) => void event("llm_call", { ...call }).catch(logFailure("could not record an llm call")));
     session.on("transcript", (turn) => {
+      conversation.push(turn.speaker === "user" ? "user" : "agent", turn.text);
       if (turn.speaker === "user") amd?.pushTranscript(turn.text);
       void event(turn.speaker === "user" ? "transcript_user" : "transcript_agent", { text: turn.text }).catch(logFailure("could not record a transcript"));
     });

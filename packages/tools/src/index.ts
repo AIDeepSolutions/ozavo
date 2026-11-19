@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./authorization";
 export * from "./define-tool";
 export * from "./deps";
 export * from "./load";

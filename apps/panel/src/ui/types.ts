@@ -31,9 +31,12 @@ export interface Agent {
   followUpOwnerUserId: string | null;
   /** Onde quem liga costuma estar. Agente gravado antes do campo existir pode chegar sem ele: vale `normal`. */
   listeningEnvironment?: ListeningEnvironment;
+  /** Perfil do modelo de texto (motor em pipeline). Agente gravado antes do campo existir pode chegar sem ele: vale `a`. */
+  llmProfile?: LlmProfile;
 }
 
 export type ListeningEnvironment = "normal" | "noisy";
+export type LlmProfile = "a" | "b" | "c";
 
 export type CallStatus = "ringing" | "in_progress" | "transferred" | "completed" | "failed" | "refused";
 export interface Call {

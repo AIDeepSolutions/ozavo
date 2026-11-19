@@ -3,6 +3,7 @@ import { isPublicAddress } from "@ozavo/core";
 import { z } from "zod";
 import type { AnalysisGuess } from "./analysis";
 import type { OutcomeGuess } from "./outcome";
+import type { LlmProfileId } from "./pipeline/llm-profile";
 
 /** Definição de ferramenta no formato que os motores entendem (JSON Schema em `parameters`). */
 export interface ToolSpec {
@@ -35,6 +36,11 @@ export interface VoiceSessionConfig {
    * de partida (docs/specs/2026-11-14-ambiente-barulhento.md); o efeito real não foi medido.
    */
   listeningEnvironment?: ListeningEnvironment;
+  /**
+   * Perfil do modelo de texto do motor em pipeline (`pipeline/llm-profile.ts`): `a` (padrão), `b` (telefonia) ou `c` (Flash). Ausente
+   * ou desconhecido vale `a`. Os motores de voz direta ignoram.
+   */
+  llmProfile?: LlmProfileId;
 }
 
 /** Como o agente ajusta a detecção de fala do provedor. `normal` é o de sempre. */
@@ -100,9 +106,34 @@ export interface VoiceSessionEvents {
    * a chamada grava na linha do tempo (`turn_latency`).
    */
   turnMetrics(metrics: TurnLatency): void;
+  /**
+   * Uma chamada ao modelo de texto terminou (só o pipeline): o que se mede sem guardar conteúdo nem dado pessoal. Quem conduz a
+   * chamada grava na linha do tempo (`llm_call`).
+   */
+  llmCall(call: LlmCallInfo): void;
   /** Seguido de `closed` quando é fatal; sozinho, a sessão continua. */
   error(error: Error): void;
   closed(reason: string): void;
+}
+
+/** Observabilidade de uma chamada ao modelo de texto. Nunca carrega texto da conversa. */
+export interface LlmCallInfo {
+  model?: string;
+  provider?: string;
+  /** Por que a resposta terminou (`stop`, `tool_calls`, `length`: este último é corte pelo teto de saída). */
+  finishReason?: string;
+  reasoningTokens?: number;
+  promptTokens: number;
+  cachedTokens: number;
+  cacheWriteTokens?: number;
+  completionTokens: number;
+  /**
+   * O provedor recusou `reasoning` ou `cache_control` (HTTP 4xx) e o pedido foi repetido sem eles; a sessão segue sem esses
+   * parâmetros até acabar. Este registro não é uma chamada medida: os tokens vêm zerados.
+   */
+  fallback?: boolean;
+  /** O status HTTP da recusa que causou o fallback. */
+  fallbackStatus?: number;
 }
 
 export interface AnsweringMachineDetection {

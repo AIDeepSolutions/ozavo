@@ -62,6 +62,7 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
   };
 
   return {
+    timezone: config.timezone,
     services: (): AgendaService[] => config.services.map((service) => ({ name: service.name })),
     async freeSlots(request) {
       const query = new URLSearchParams({ eventTypeId: String(eventTypeOf(request.serviceType)), start: request.from, end: request.to, timeZone: config.timezone, format: "range" });

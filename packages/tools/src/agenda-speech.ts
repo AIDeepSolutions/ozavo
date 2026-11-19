@@ -25,6 +25,34 @@ export function agendaUnavailable(outcome: string, neverSay = "que está marcado
 }
 
 /**
+ * A consulta de horários deu ERRO (a agenda não respondeu, ou recusou o pedido): não é falta de vaga.
+ * A fala diz isso em voz alta ao modelo, para ele nunca transformar erro em "não há horário".
+ */
+export function agendaQueryError(): string {
+  return (
+    "ERRO DE CONSULTA: a agenda não respondeu e os horários NÃO foram consultados, então não se sabe se há vaga. " +
+    "NÃO diga que não há horário livre nem que a agenda está cheia. Diga à pessoa que não foi possível consultar a agenda neste momento " +
+    "e ofereça anotar o pedido para a equipe retornar (create_task) ou transferir para uma pessoa (transfer_to_human)."
+  );
+}
+
+/**
+ * Todos os horários livres agrupados por dia, no fuso da agenda: "segunda-feira, 23/11: 09:00, 11:00, 17:00; terça-feira, 24/11: ...".
+ * Dá ao modelo a lista inteira já filtrável por dia e período, em vez de só os três primeiros horários lidos em voz alta.
+ */
+export function groupSlotsByDay(slots: ReadonlyArray<{ startsAt: string }>, timezone: string, max = 40): string {
+  const dayOf = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, weekday: "long", day: "2-digit", month: "2-digit" });
+  const timeOf = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false });
+  const days = new Map<string, string[]>();
+  for (const slot of slots.slice(0, max)) {
+    const at = new Date(slot.startsAt);
+    const day = dayOf.format(at);
+    days.set(day, [...(days.get(day) ?? []), timeOf.format(at)]);
+  }
+  return [...days].map(([day, times]) => `${day}: ${times.join(", ")}`).join("; ");
+}
+
+/**
  * O horário em palavras, para o agente ler ao telefone: dia da semana, data e hora no fuso da regra
  * da agenda. Datas vêm do CRM em ISO; a conversão é só de apresentação e não lê o relógio.
  */

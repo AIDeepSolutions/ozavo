@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./types": "./src/types.ts",
     "./pricing": "./src/pricing.ts",
+    "./llm-profile": "./src/pipeline/llm-profile.ts",
     "./transcription": "./src/transcription.ts"
   },
   "dependencies": {

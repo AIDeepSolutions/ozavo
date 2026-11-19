@@ -17,7 +17,7 @@ import { ActionStatus, ReadOnlyNotice, useAction, useErrorText } from "../../../
 import { formatPhone } from "../../../../ui/format";
 import { Button, Field, Notice, Panel, Select, Skeleton, Switch, TextArea, TextInput } from "../../../../ui/kit";
 import { useCanConfigure } from "../../../../ui/me";
-import type { Agent, Engine, ListeningEnvironment, Person, Setting, ToolInfo } from "../../../../ui/types";
+import type { Agent, Engine, ListeningEnvironment, LlmProfile, Person, Setting, ToolInfo } from "../../../../ui/types";
 
 interface Draft {
   name: string;
@@ -35,9 +35,13 @@ interface Draft {
   /** Vazio: as pendências do agente são da equipe. */
   followUpOwner: string;
   listeningEnvironment: ListeningEnvironment;
+  llmProfile: LlmProfile;
 }
 
-const BLANK: Draft = { name: "", roleLabel: "", greeting: "", instructions: "", engine: "", voiceId: "", language: "pt-BR", tools: [], transferTo: "", maxMinutes: "10", costCeiling: "5.00", enabled: true, followUpOwner: "", listeningEnvironment: "normal" };
+const BLANK: Draft = { name: "", roleLabel: "", greeting: "", instructions: "", engine: "", voiceId: "", language: "pt-BR", tools: [], transferTo: "", maxMinutes: "10", costCeiling: "5.00", enabled: true, followUpOwner: "", listeningEnvironment: "normal", llmProfile: "a" };
+
+/** O motor em pipeline (Deepgram + OpenRouter + Cartesia): o único que usa o perfil do modelo de texto. */
+const PIPELINE_ENGINE = "deepgram-openrouter-cartesia";
 
 /** Motores em que a sessão em Barulhento foi provada numa instalação real. */
 const NOISY_PROVEN_ENGINES: readonly string[] = ["openai-realtime"];
@@ -57,6 +61,7 @@ const toDraft = (agent: Agent): Draft => ({
   enabled: agent.enabled,
   followUpOwner: agent.followUpOwnerUserId ?? "",
   listeningEnvironment: agent.listeningEnvironment ?? "normal",
+  llmProfile: agent.llmProfile ?? "a",
 });
 
 export default function AgentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -132,6 +137,7 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
         enabled: draft.enabled,
         followUpOwnerUserId: draft.followUpOwner === "" ? null : draft.followUpOwner,
         listeningEnvironment: draft.listeningEnvironment,
+        llmProfile: draft.llmProfile,
       };
       const saved = await api<Agent>(isNew ? "/agents" : `/agents/${id}`, { method: isNew ? "POST" : "PATCH", body });
       setSavedEnvironment(saved.listeningEnvironment ?? "normal");
@@ -240,6 +246,17 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
             // Sem o campo, a linha fica: é ela que conta a quem usa outro motor que o modo existe.
             <p className="mt-4 max-w-md text-[0.87rem] text-muted">{t.listeningEnvironmentOnlyOpenAi}</p>
           )}
+          {draft.engine === PIPELINE_ENGINE ? (
+            <div className="mt-4 max-w-md">
+              <Field label={t.llmProfile} hint={t.llmProfileHint}>
+                <Select value={draft.llmProfile} onChange={(event) => set("llmProfile", event.target.value === "b" ? "b" : event.target.value === "c" ? "c" : "a")}>
+                  <option value="a">{t.llmProfileA}</option>
+                  <option value="b">{t.llmProfileB}</option>
+                  <option value="c">{t.llmProfileC}</option>
+                </Select>
+              </Field>
+            </div>
+          ) : null}
           {backToNormalPending ? (
             <div className="mt-2 max-w-md">
               <Notice tone="warn">

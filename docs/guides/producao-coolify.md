@@ -15,6 +15,26 @@ subir as outras peças. Sem elas, a saúde acusa o que falta: `routines_not_list
 | Voz | `voice` | Nenhuma (8090 e 9092 só na rede interna) | Sim, para ligar de verdade |
 | Asterisk | imagem `andrius/asterisk` fixada por resumo | 5061/TCP e a faixa RTP/UDP | Sim |
 
+## Ordem obrigatória do deploy: migration antes do código
+
+O deploy do Coolify **não aplica migrations** (o Dockerfile só sobe o processo; o serviço `migrate` existe só nos Compose de
+`deploy/`). O código do PR #24 lê `agents.llm_profile` na consulta do agente e na API de agentes: **deploy antes da coluna
+derruba a API de agentes e toda ligação**. O código antigo convive com a coluna nova (padrão `'a'`), então a ordem segura é sempre
+**migration → deploy**.
+
+1. Backup, com a conexão do dono do schema (a URL vem do cofre, nunca colada no terminal compartilhado nem em log):
+   `pg_dump "$MIGRATION_DATABASE_URL" --format=custom --file=ozavo-antes-llm-profile.dump`
+2. Aplicar a migration `db/migrations/20261119T120000_agents_llm_profile.sql` no worktree da `main` já com o PR, com TLS verificado (`sslmode=verify-full` e
+   `sslrootcert` no fim da URL; `require` falha com certificado próprio do Supabase):
+   `MIGRATION_DATABASE_URL="..." APP_DB_PASSWORD= SYSTEM_DB_PASSWORD= pnpm --filter @ozavo/routines run migrate`
+3. Conferir que foi registrada e que a coluna existe:
+   `select name from schema_migrations where name like '%agents_llm_profile%';` e
+   `select llm_profile, count(*) from agents group by 1;` (todo agente antigo sai com `a`).
+4. Só então o deploy do painel e das rotinas.
+5. Reversão: o código novo exige a coluna; o código antigo não liga para ela. Para voltar o comportamento, uma **migration nova**
+   (migration publicada nunca é editada) com `alter table agents drop column llm_profile` (só depois de reverter o deploy) ou
+   `update agents set llm_profile = 'c'` para voltar ao Flash sem remover a coluna.
+
 ## Rotinas: segunda aplicação, mesmo repositório
 
 As rotinas não dependem de tronco e devem subir junto com o painel.

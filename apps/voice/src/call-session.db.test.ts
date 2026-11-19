@@ -10,6 +10,7 @@ import { openTestDbs } from "../../../packages/core/test/helpers";
 import { notificationsOf, putSetting, tasksOf } from "../../../packages/tools/test/helpers";
 import { crmSimulado } from "../../../packages/tools/test/agenda";
 import { createAgendaHorariosLivres } from "../../../packages/tools/src/tools/agenda_horarios_livres";
+import { createAgendaCancelar } from "../../../packages/tools/src/tools/agenda_cancelar";
 import { createAgendaMarcar } from "../../../packages/tools/src/tools/agenda_marcar";
 import { createAgendaRemarcar } from "../../../packages/tools/src/tools/agenda_remarcar";
 import { EngineTimeoutError, type VoiceEngine } from "@ozavo/voice-engine";
@@ -244,6 +245,38 @@ describe("motor sem chave ao atender (Review Focus 2)", { timeout: 120_000 }, ()
     await session.done;
   });
 
+  it("a conversa chega ao log da trava ANTES da ferramenta: agenda_marcar só grava com a leitura do agente e o sim da pessoa já entregues pelo motor (achado 5 da revisão)", async () => {
+    // O fuso vem do conector, então a trava confere a hora sem consulta prévia de horários.
+    const crm = Object.assign(crmSimulado(), { timezone: "America/Sao_Paulo" });
+    const manual = manualEngine({ keyless: true });
+    const made = await scene("agenda-conversation-order", { engine: "manual", tools: ["agenda_marcar"] }, manual);
+    made.harness.deps.tools.set("agenda_marcar", createAgendaMarcar({ agenda: crm }));
+    const session = made.start();
+    await waitFor(() => manual.configs.length === 1, "the engine to connect");
+    const marcar = { service_type: "Consulta", starts_at: "2099-03-10T09:00:00-03:00", confirmed: true };
+
+    // 1) A leitura do agente foi entregue, mas o sim da pessoa ainda não (a transcrição de entrada dos motores diretos é assíncrona):
+    //    a trava recusa, nada é gravado, e o resultado volta ao modelo para ele perguntar de novo.
+    manual.emit("transcript", { speaker: "agent", text: "Tenho terça às 9h. Posso marcar?" });
+    manual.emit("toolCall", { id: "t1", name: "agenda_marcar", args: marcar });
+    await waitFor(() => manual.toolResults.length === 1, "the first tool result");
+    expect(manual.toolResults[0]?.result).toMatchObject({ ok: false, noEffect: true });
+    expect(crm.pedidos.marcacoes).toEqual([]);
+
+    // 2) O sim chega ao log (o evento `transcript` do motor) e a ferramenta é chamada de novo: agora grava.
+    manual.emit("transcript", { speaker: "user", text: "Sim, pode marcar." });
+    manual.emit("toolCall", { id: "t2", name: "agenda_marcar", args: marcar });
+    await waitFor(() => manual.toolResults.length === 2, "the second tool result");
+    expect(manual.toolResults[1]?.result).toMatchObject({ ok: true });
+    expect(crm.pedidos.marcacoes).toHaveLength(1);
+
+    // 3) A linha do tempo mostra a ordem: leitura do agente, ferramenta recusada, sim da pessoa, ferramenta que gravou.
+    const kinds = (await eventsOf(app, made.callId)).map((event) => event.kind).filter((kind) => ["transcript_agent", "transcript_user", "tool_called", "tool_result"].includes(kind));
+    expect(kinds).toEqual(["transcript_agent", "tool_called", "tool_result", "transcript_user", "tool_called", "tool_result"]);
+    made.transport.callerHangup();
+    await session.done;
+  });
+
   it("o vocabulário do agente chega ao motor; sem termos, chega a lista vazia", async () => {
     const manual = manualEngine({ keyless: true });
     const made = await scene("engine-vocabulary", { engine: "manual", vocabulary: ["Melgaço", "Ozavo"] }, manual);
@@ -278,6 +311,106 @@ describe("motor sem chave ao atender (Review Focus 2)", { timeout: 120_000 }, ()
     expect(plain.configs[0]?.listeningEnvironment).toBe("normal");
     without.transport.callerHangup();
     await second.done;
+  });
+
+  it("o perfil do modelo do agente chega ao motor; sem escolha, chega o padrão A (decisão do dono, 18/11)", async () => {
+    const manual = manualEngine({ keyless: true });
+    const made = await scene("engine-llm-profile", { engine: "manual", llmProfile: "b" }, manual);
+    const session = made.start();
+    await waitFor(() => manual.configs.length === 1, "the engine to connect");
+    expect(manual.configs[0]?.llmProfile).toBe("b");
+    made.transport.callerHangup();
+    await session.done;
+
+    const plain = manualEngine({ keyless: true });
+    const without = await scene("engine-llm-profile-default", { engine: "manual" }, plain);
+    const second = without.start();
+    await waitFor(() => plain.configs.length === 1, "the engine to connect");
+    expect(plain.configs[0]?.llmProfile).toBe("a");
+    without.transport.callerHangup();
+    await second.done;
+  });
+
+  it("a lista agrupada por dia só liga no perfil B: o perfil do agente decide o que a ferramenta devolve", async () => {
+    const pedido = { service_type: "Consulta", from: "2099-03-10T00:00:00-03:00", to: "2099-03-11T00:00:00-03:00" };
+    const horarios = async (label: string, llmProfile: "a" | "b" | "c"): Promise<string> => {
+      const manual = manualEngine({ keyless: true });
+      const made = await scene(label, { engine: "manual", tools: ["agenda_horarios_livres"], llmProfile }, manual);
+      made.harness.deps.tools.set("agenda_horarios_livres", createAgendaHorariosLivres({ agenda: crmSimulado() }));
+      const session = made.start();
+      await waitFor(() => manual.configs.length === 1, "the engine to connect");
+      manual.emit("toolCall", { id: "t1", name: "agenda_horarios_livres", args: pedido });
+      await waitFor(() => manual.toolResults.length === 1, "the tool result");
+      made.transport.callerHangup();
+      await session.done;
+      return (manual.toolResults[0]?.result as { message: string }).message;
+    };
+    expect(await horarios("slots-profile-a", "a")).not.toContain("por dia");
+    expect(await horarios("slots-profile-c", "c")).not.toContain("por dia");
+    expect(await horarios("slots-profile-b", "b")).toContain("Todos os horários livres, por dia:");
+  });
+
+  it("cancelar só vale para o id marcado na ligação ou informado em request_context.appointmentIds; nega por padrão", async () => {
+    const crm = Object.assign(crmSimulado(), { timezone: "America/Sao_Paulo" });
+    for (const id of ["apt-informado", "apt-de-outra-pessoa"]) crm.compromissos.set(id, { id, startsAt: "2099-03-10T10:00:00-03:00" });
+    const manual = manualEngine({ keyless: true });
+    const made = await scene("appointment-ids", { engine: "manual", tools: ["agenda_cancelar"] }, manual, "outbound");
+    made.harness.deps.tools.set("agenda_cancelar", createAgendaCancelar({ agenda: crm }));
+    await withSystem(app, (q) => q.exec("update calls set request_context = $1::jsonb where id = $2", [JSON.stringify({ appointmentIds: ["apt-informado"] }), made.callId]));
+    const session = made.start();
+    await waitFor(() => manual.configs.length === 1, "the engine to connect");
+    manual.emit("transcript", { speaker: "agent", text: "Confirmo: cancelar a consulta de terça às 10h. Pode confirmar?" });
+    manual.emit("transcript", { speaker: "user", text: "Sim" });
+    const cancelar = (id: string) => ({ appointment_id: id, appointment_starts_at: "2099-03-10T10:00:00-03:00", confirmed: true });
+
+    manual.emit("toolCall", { id: "t1", name: "agenda_cancelar", args: cancelar("apt-de-outra-pessoa") });
+    await waitFor(() => manual.toolResults.length === 1, "the first result");
+    expect(manual.toolResults[0]?.result).toMatchObject({ ok: false, noEffect: true });
+    expect(crm.pedidos.cancelamentos).toEqual([]);
+
+    manual.emit("toolCall", { id: "t2", name: "agenda_cancelar", args: cancelar("apt-informado") });
+    await waitFor(() => manual.toolResults.length === 2, "the second result");
+    expect(manual.toolResults[1]?.result).toMatchObject({ ok: true });
+    expect(crm.pedidos.cancelamentos).toHaveLength(1);
+    made.transport.callerHangup();
+    await session.done;
+  });
+
+  it("a fonte de compromissos por telefone (ponto de extensão da opção a) vale quando existe, e a falha dela não derruba a ligação", async () => {
+    const crm = Object.assign(crmSimulado(), { timezone: "America/Sao_Paulo" });
+    crm.compromissos.set("apt-da-pessoa", { id: "apt-da-pessoa", startsAt: "2099-03-10T10:00:00-03:00" });
+    const run = async (label: string, source: { appointmentsOf(phone: string): Promise<readonly string[]> }) => {
+      const manual = manualEngine({ keyless: true });
+      const made = await scene(label, { engine: "manual", tools: ["agenda_cancelar"] }, manual);
+      made.harness.deps.tools.set("agenda_cancelar", createAgendaCancelar({ agenda: crm }));
+      made.harness.deps.callerAppointments = source;
+      await withSystem(app, (q) => q.exec("update calls set from_e164 = '+5531999990000' where id = $1", [made.callId]));
+      const session = made.start();
+      await waitFor(() => manual.configs.length === 1, "the engine to connect");
+      manual.emit("transcript", { speaker: "agent", text: "Confirmo: cancelar a consulta de terça às 10h. Pode confirmar?" });
+      manual.emit("transcript", { speaker: "user", text: "Sim" });
+      manual.emit("toolCall", { id: "t1", name: "agenda_cancelar", args: { appointment_id: "apt-da-pessoa", appointment_starts_at: "2099-03-10T10:00:00-03:00", confirmed: true } });
+      await waitFor(() => manual.toolResults.length === 1, "the result");
+      made.transport.callerHangup();
+      await session.done;
+      return manual.toolResults[0]?.result;
+    };
+    expect(await run("lookup-ok", { appointmentsOf: async (phone) => (phone === "+5531999990000" ? ["apt-da-pessoa"] : []) })).toMatchObject({ ok: true });
+    expect(await run("lookup-fails", { appointmentsOf: async () => { throw new Error("conector fora do ar"); } })).toMatchObject({ ok: false, noEffect: true });
+  });
+
+  it("cada chamada ao modelo emite llm_call na linha do tempo, com os números e sem texto", async () => {
+    const manual = manualEngine({ keyless: true });
+    const { callId, start } = await scene("llm-call-event", { engine: "manual" }, manual);
+    const session = start();
+    await waitFor(async () => (await kindsOf(app, callId)).includes("call_answered"), "the call to be answered");
+    manual.emit("llmCall", { model: "anthropic/claude-haiku-5.5", provider: "Claude Platform on AWS", finishReason: "length", reasoningTokens: 980, promptTokens: 900, cachedTokens: 700, cacheWriteTokens: 100, completionTokens: 1024 });
+    await waitFor(async () => (await kindsOf(app, callId)).includes("llm_call"), "the llm call to be recorded");
+    expect((await eventsOf(app, callId)).find((event) => event.kind === "llm_call")?.payload).toEqual({
+      model: "anthropic/claude-haiku-5.5", provider: "Claude Platform on AWS", finishReason: "length", reasoningTokens: 980, promptTokens: 900, cachedTokens: 700, cacheWriteTokens: 100, completionTokens: 1024,
+    });
+    session.stop("caller_hangup");
+    await session.done;
   });
 
   it("na ligação feita pelo agente a saudação não é falada: quem atende fala primeiro", async () => {

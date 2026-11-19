@@ -125,6 +125,27 @@ describe("agents", () => {
     const back = await call(patchAgent, { method: "PATCH", cookie: owner, params: { id }, body: { listeningEnvironment: "normal" } });
     expect([back.status, back.data]).toMatchObject([200, { listeningEnvironment: "normal" }]);
   });
+
+  it("keeps the LLM profile: a (Haiku) when absent, b or c when chosen, and refuses any other value", async () => {
+    const created = await call(createAgent, { method: "POST", cookie: owner, body: { name: "Perfil", engine: "simulated" } });
+    expect(created.data).toMatchObject({ llmProfile: "a" });
+    const id = (created.data as { id: string }).id;
+    expect(await stored("select llm_profile from agents where id = $1", [id])).toEqual({ llm_profile: "a" });
+
+    const fast = await call(patchAgent, { method: "PATCH", cookie: owner, params: { id }, body: { llmProfile: "b" } });
+    expect([fast.status, fast.data]).toMatchObject([200, { llmProfile: "b" }]);
+    expect(await stored("select llm_profile from agents where id = $1", [id])).toEqual({ llm_profile: "b" });
+    // Mudar outro campo não mexe no perfil.
+    expect((await call(patchAgent, { method: "PATCH", cookie: owner, params: { id }, body: { enabled: false } })).data).toMatchObject({ llmProfile: "b" });
+
+    for (const llmProfile of ["d", "A", "", null, 1]) {
+      const refused = await call(patchAgent, { method: "PATCH", cookie: owner, params: { id }, body: { llmProfile } });
+      expect([refused.status, refused.code, refused.message]).toEqual([400, "validation_error", expect.stringMatching(/llmProfile/)]);
+    }
+    const flash = await call(createAgent, { method: "POST", cookie: owner, body: { name: "Flash", engine: "simulated", llmProfile: "c" } });
+    expect(flash.data).toMatchObject({ llmProfile: "c" });
+    expect(await stored("select llm_profile from agents where id = $1", [id])).toEqual({ llm_profile: "b" });
+  });
 });
 
 describe("secrets", () => {

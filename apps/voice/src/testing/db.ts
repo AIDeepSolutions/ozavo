@@ -70,6 +70,7 @@ export interface AgentOptions {
   costCeilingCents?: number;
   vocabulary?: string[];
   listeningEnvironment?: "normal" | "noisy";
+  llmProfile?: "a" | "b" | "c";
 }
 
 export async function createAgent(app: Db, organizationId: string, options: AgentOptions = {}): Promise<string> {
@@ -77,9 +78,9 @@ export async function createAgent(app: Db, organizationId: string, options: Agen
   const instructions = options.script ? SIMULATED_PREFIX + JSON.stringify(options.script) : (options.instructions ?? "Você é a recepção.");
   await withSystem(app, (q) =>
     q.exec(
-      `insert into agents (id, organization_id, name, instructions, greeting, engine, tools, transfer_to_e164, enabled, max_call_seconds, cost_ceiling_cents, vocabulary, listening_environment)
-       values ($1, $2, 'Recepção', $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, '{}'::text[]), coalesce($12, 'normal'))`,
-      [id, organizationId, instructions, options.greeting ?? null, options.engine ?? "simulated", options.tools ?? [], options.transferTo ?? null, options.enabled ?? true, options.maxCallSeconds ?? 600, options.costCeilingCents ?? 500, options.vocabulary ?? null, options.listeningEnvironment ?? null],
+      `insert into agents (id, organization_id, name, instructions, greeting, engine, tools, transfer_to_e164, enabled, max_call_seconds, cost_ceiling_cents, vocabulary, listening_environment, llm_profile)
+       values ($1, $2, 'Recepção', $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, '{}'::text[]), coalesce($12, 'normal'), coalesce($13, 'a'))`,
+      [id, organizationId, instructions, options.greeting ?? null, options.engine ?? "simulated", options.tools ?? [], options.transferTo ?? null, options.enabled ?? true, options.maxCallSeconds ?? 600, options.costCeilingCents ?? 500, options.vocabulary ?? null, options.listeningEnvironment ?? null, options.llmProfile ?? null],
     ),
   );
   return id;

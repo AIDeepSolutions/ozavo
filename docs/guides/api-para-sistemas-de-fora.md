@@ -32,6 +32,11 @@ Idempotency-Key: lead-42
 - O mesmo `Idempotency-Key` (ou `requestKey` no corpo) devolve a mesma ligação com `200` e
   `repeated: true`, sem ligar de novo. Use-o sempre que o integrador puder repetir o pedido.
 - `context` vai para o agente como dado sobre a pessoa e o motivo, nunca como instrução. Até 8 KB.
+- **Remarcar ou cancelar numa ligação de saída:** o agente só mexe num compromisso que ele mesmo marcou na ligação ou que o
+  integrador informou em `context.appointmentIds` (até 50 textos de até 200 caracteres; qualquer outra forma é ignorada).
+  O `context` vira `request_context` da chamada. A trava **nega por padrão** o id que não está lá, e a comparação é exata (maiúscula
+  e espaço contam). Exemplo: `"context": { "nome": "Ana", "appointmentIds": ["apt_123"] }`. Ver
+  [decisão 0021](../decisions/0021-modelo-haiku-e-perfis-do-agente.md).
 - O pedido não passa pela fila de rotinas: vai direto ao processo de voz, que responde em até 5 s.
 - A ligação passa pela mesma política de ligação de saída de qualquer outra: desligada de fábrica,
   janela de horário, teto diário por linha, tentativas por contato e lista de não ligar. A recusa
