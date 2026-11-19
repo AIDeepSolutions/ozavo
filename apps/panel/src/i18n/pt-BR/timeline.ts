@@ -220,6 +220,7 @@ const timeline = {
     webhook_queue_failed: "Não foi possível avisar os webhooks da empresa deste fim de chamada ({error}). A chamada terminou normalmente.",
     turn_latency: "O agente começou a responder {rtt} ms depois de quem ligou parar de falar (modelo: {llm} ms; síntese de voz: {ttfb} ms).",
     llm_call: "Chamada ao modelo {model} (provedor: {provider}): {prompt} tokens de entrada, {cached} deles do cache; {reasoning} tokens de raciocínio; terminou por: {finish}.",
+    llm_call_fallback: "O provedor do modelo recusou raciocínio ou cache (HTTP {status}). O pedido foi repetido sem eles e a ligação segue assim. Se o aviso se repetir em outras ligações, escolha outro modelo de texto na tela do agente.",
     caller_unanswered: {
       turn_closed: "Quem ligou ficou {seconds} s sem resposta, talvez por barulho na linha. O agente foi chamado a responder ao que ouviu.",
       asked_to_repeat: "O agente seguia calado {seconds} s depois da última fala de quem ligou e pediu para a pessoa repetir.",

@@ -423,6 +423,7 @@ export function Timeline({
         // O corte pelo teto de saída (`length`) é o que mais importa ver: a resposta do agente ficou incompleta.
         const n = (value: unknown): string => (typeof value === "number" ? Math.round(value).toLocaleString(locale) : "?");
         const label = (value: unknown): string => (typeof value === "string" && value !== "" ? value : "?");
+        if (p.fallback === true) return { ...base, tone: "accent", icon: Gauge, body: <Quiet>{fill(e.llm_call_fallback, { status: n(p.fallbackStatus) })}</Quiet> };
         return {
           ...base,
           tone: p.finishReason === "length" ? "accent" : "neutral",

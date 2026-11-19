@@ -219,6 +219,7 @@ const timeline: TimelineDictionary = {
     webhook_queue_failed: "No se pudo avisar a los webhooks de la empresa de este fin de llamada ({error}). La llamada terminó con normalidad.",
     turn_latency: "El agente empezó a responder {rtt} ms después de que quien llamó dejó de hablar (modelo: {llm} ms; síntesis de voz: {ttfb} ms).",
     llm_call: "Llamada al modelo {model} (proveedor: {provider}): {prompt} tokens de entrada, {cached} del caché; {reasoning} tokens de razonamiento; terminó por: {finish}.",
+    llm_call_fallback: "El proveedor del modelo rechazó el razonamiento o el caché (HTTP {status}). La solicitud se repitió sin ellos y la llamada sigue así. Si el aviso se repite en otras llamadas, elija otro modelo de texto en la pantalla del agente.",
     caller_unanswered: {
       turn_closed: "Quien llamó estuvo {seconds} s sin respuesta, quizás por ruido en la línea. Se pidió al agente que respondiera a lo que escuchó.",
       asked_to_repeat: "El agente seguía callado {seconds} s después de lo último que dijo quien llamó, y le pidió que lo repitiera.",

@@ -69,6 +69,7 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
   // O perfil é do agente (tela de configuração); `options.model` (testes) troca só o modelo.
   const profile = llmProfileOf(config.llmProfile);
   const llmModel = options.model ?? profile.model;
+  let plain = false;
   return createPipelineSession({
     config,
     clock,
@@ -89,8 +90,13 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
       ),
     openTts: (handlers) =>
       openCartesiaTts({ apiKey: keys.cartesia, voiceId, language: config.language, clock, url: options.urls?.tts, timeout }, handlers),
-    chat: (messages, tools, signal) =>
-      streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: llmModel, profile, baseUrl: options.urls?.llm, fetch: options.fetch }),
+    chat: async function* (messages, tools, signal) {
+      // Depois do primeiro 4xx por reasoning/cache_control, o resto da ligação já pede sem eles (uma repetição só, não a cada turno).
+      for await (const event of streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: llmModel, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
+        if (event.type === "fallback") plain = true;
+        yield event;
+      }
+    },
   });
 }
 

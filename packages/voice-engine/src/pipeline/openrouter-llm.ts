@@ -61,7 +61,9 @@ export interface LlmUsage {
 export type LlmEvent =
   | { type: "text"; delta: string }
   | { type: "tool_call"; call: ChatToolCall }
-  | { type: "usage"; usage: LlmUsage };
+  | { type: "usage"; usage: LlmUsage }
+  /** O provedor recusou `reasoning` ou `cache_control` (HTTP 4xx): o pedido foi repetido sem eles. Vem antes de qualquer texto. */
+  | { type: "fallback"; status: number };
 
 export class LlmHttpError extends Error {
   constructor(readonly status: number) {
@@ -111,6 +113,8 @@ export interface ChatRequest {
   model?: string;
   /** Perfil do agente (`llm-profile.ts`). Omitido: o padrão (A). */
   profile?: LlmProfile;
+  /** Pedido sem `reasoning` nem `cache_control`: a sessão que já caiu no fallback segue assim, sem tentar de novo a cada turno. */
+  plain?: boolean;
   baseUrl?: string;
   signal?: AbortSignal;
   fetch?: typeof fetch;
@@ -123,22 +127,27 @@ function withCachedSystemPrompt(messages: readonly ChatMessage[]): readonly unkn
   );
 }
 
-export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile">): Record<string, unknown> {
+export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile" | "plain">): Record<string, unknown> {
   const profile = request.profile ?? llmProfileOf(undefined);
   const model = request.model ?? profile.model;
   return {
     model,
-    messages: profile.cacheSystemPrompt && acceptsCacheControl(model) ? withCachedSystemPrompt(request.messages) : request.messages,
+    messages: !request.plain && profile.cacheSystemPrompt && acceptsCacheControl(model) ? withCachedSystemPrompt(request.messages) : request.messages,
     stream: true,
     // Fala ao telefone: resposta curta. O teto também limita o gasto de uma resposta descontrolada. Com o raciocínio ligado ele
     // é dividido com o texto, por isso o perfil que o mantém ligado usa 1024.
     max_tokens: profile.maxTokens,
-    ...(profile.reasoning === "off" && { reasoning: { enabled: false } }),
+    ...(!request.plain && profile.reasoning === "off" && { reasoning: { enabled: false } }),
     ...(request.tools.length > 0 && {
       tools: request.tools.map((tool) => ({ type: "function", function: tool })),
       tool_choice: "auto",
     }),
   };
+}
+
+/** O perfil manda algo que o fallback tira (`reasoning` ou `cache_control`)? Se não, repetir não muda nada. */
+function chatBodyDiffersWhenPlain(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile">): boolean {
+  return JSON.stringify(chatBody(request)) !== JSON.stringify(chatBody({ ...request, plain: true }));
 }
 
 function usageOf(raw: NonNullable<z.infer<typeof chunkSchema>["usage"]>, observed: Pick<LlmUsage, "model" | "provider" | "finishReason"> = {}): LlmUsage {
@@ -162,12 +171,21 @@ function usageOf(raw: NonNullable<z.infer<typeof chunkSchema>["usage"]>, observe
  * Pedido abortado (barge-in) termina sem erro. HTTP fora de 2xx lança `LlmHttpError`.
  */
 export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent> {
-  const response = await (request.fetch ?? fetch)(`${request.baseUrl ?? OPENROUTER_API_URL}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${request.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(chatBody(request)),
-    signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
-  });
+  const post = (plain: boolean): Promise<Response> =>
+    (request.fetch ?? fetch)(`${request.baseUrl ?? OPENROUTER_API_URL}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${request.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(chatBody({ ...request, plain })),
+      signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+    });
+  let response = await post(request.plain === true);
+  // 400/422: o provedor não aceitou o corpo, e o que o perfil acrescenta (reasoning, cache_control) é o suspeito. Repete uma vez sem
+  // eles, em vez de deixar o agente pedir desculpa em todo turno. 401/402/403/429 e 5xx são outra coisa e seguem como erro.
+  if ((response.status === 400 || response.status === 422) && request.plain !== true && chatBodyDiffersWhenPlain(request)) {
+    await response.body?.cancel();
+    yield { type: "fallback", status: response.status };
+    response = await post(true);
+  }
   if (!response.ok || !response.body) {
     await response.body?.cancel();
     throw new LlmHttpError(response.status);

@@ -147,6 +147,27 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     expect(JSON.stringify(calls)).not.toContain("Certo");
   });
 
+  it("provedor que recusa reasoning/cache_control (400): repete sem eles, registra llmCall com fallback e os turnos seguintes já pedem sem", async () => {
+    const t = await setup({ llmProfile: "b" });
+    const calls: LlmCallInfo[] = [];
+    t.session.on("llmCall", (call) => calls.push(call));
+    t.deepgram.send(results("Quero marcar uma consulta.", true));
+    await until(() => t.replies.length === 1);
+    t.replies[0]?.status(400, { error: { message: "unsupported parameter" } });
+    await until(() => t.replies.length === 2);
+    t.replies[1]?.write(textChunk("Claro, para quando?"));
+    t.replies[1]?.write(usageChunk(300, 8, 0.0001));
+    t.replies[1]?.end();
+    await until(() => calls.length === 2);
+    expect(calls[0]).toEqual({ promptTokens: 0, cachedTokens: 0, completionTokens: 0, fallback: true, fallbackStatus: 400 });
+    expect(calls[1]?.fallback).toBeUndefined();
+    expect(t.openrouter.requests[0]?.body).toHaveProperty("reasoning");
+    expect(t.openrouter.requests[1]?.body).not.toHaveProperty("reasoning");
+    expect(JSON.stringify(t.openrouter.requests[1]?.body)).not.toContain("cache_control");
+    // Nenhuma desculpa: a fala do agente chegou à síntese.
+    expect(await t.cartesia.waitFor((m) => m.context_id === "turn-1")).toMatchObject({ transcript: "Claro, para quando?" });
+  });
+
   it("chamada de função vira `toolCall`, e o resultado volta ao modelo com o mesmo id", async () => {
     const t = await setup();
     t.deepgram.send(results("Pode marcar sexta às dez.", true));

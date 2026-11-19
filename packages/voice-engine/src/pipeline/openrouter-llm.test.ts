@@ -139,6 +139,55 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     await expect(failure).rejects.toThrow("HTTP 401");
   });
 
+  describe("provedor que recusa reasoning ou cache_control (4xx)", () => {
+    const messages = [{ role: "system" as const, content: "s" }, { role: "user" as const, content: "oi" }];
+
+    it("repete o pedido sem esses parâmetros, avisa com um evento de fallback e entrega a resposta", async () => {
+      const server = await startFakeSse((request, reply) => {
+        if (JSON.stringify(request.body).includes("cache_control") || "reasoning" in request.body) return reply.status(400, { error: { message: "unsupported parameter" } });
+        reply.write(textChunk("Olá"));
+        reply.write(usageChunk(10, 2));
+        reply.end();
+      });
+      stops.push(() => server.stop());
+      const events = await collect(streamChat({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: LLM_PROFILES.b }));
+      expect(events[0]).toEqual({ type: "fallback", status: 400 });
+      expect(events.filter((event) => event.type === "text")).toEqual([{ type: "text", delta: "Olá" }]);
+      expect(server.requests).toHaveLength(2);
+      expect(server.requests[1]?.body).not.toHaveProperty("reasoning");
+      expect(JSON.stringify(server.requests[1]?.body)).not.toContain("cache_control");
+      expect(server.requests[1]?.body).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 400 });
+    });
+
+    it("com plain já ligado (sessão que caiu antes) não manda os parâmetros nem emite fallback de novo", async () => {
+      const server = await startFakeSse((_request, reply) => reply.end());
+      stops.push(() => server.stop());
+      const events = await collect(streamChat({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: LLM_PROFILES.b, plain: true }));
+      expect(events.some((event) => event.type === "fallback")).toBe(false);
+      expect(server.requests).toHaveLength(1);
+      expect(JSON.stringify(server.requests[0]?.body)).not.toContain("cache_control");
+    });
+
+    it("401 (chave) não é fallback: lança sem repetir; e 4xx também falha se o pedido sem os parâmetros falhar", async () => {
+      const auth = await startFakeSse((_request, reply) => reply.status(401, {}));
+      stops.push(() => auth.stop());
+      await expect(collect(streamChat({ apiKey: "k", baseUrl: auth.url, messages, tools: [], profile: LLM_PROFILES.b }))).rejects.toThrow("HTTP 401");
+      expect(auth.requests).toHaveLength(1);
+
+      const always = await startFakeSse((_request, reply) => reply.status(400, {}));
+      stops.push(() => always.stop());
+      await expect(collect(streamChat({ apiKey: "k", baseUrl: always.url, messages, tools: [], profile: LLM_PROFILES.b }))).rejects.toThrow("HTTP 400");
+      expect(always.requests).toHaveLength(2);
+    });
+
+    it("perfil C (sem reasoning nem cache) não tem o que tirar: o 4xx lança direto", async () => {
+      const server = await startFakeSse((_request, reply) => reply.status(400, {}));
+      stops.push(() => server.stop());
+      await expect(collect(streamChat({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: LLM_PROFILES.c }))).rejects.toThrow("HTTP 400");
+      expect(server.requests).toHaveLength(1);
+    });
+  });
+
   it("abortado no meio (barge-in) termina sem erro e sem chamada de função pela metade", async () => {
     const controller = new AbortController();
     const server = await startFakeSse((_request, reply) => {

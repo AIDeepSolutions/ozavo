@@ -127,6 +127,13 @@ export interface LlmCallInfo {
   cachedTokens: number;
   cacheWriteTokens?: number;
   completionTokens: number;
+  /**
+   * O provedor recusou `reasoning` ou `cache_control` (HTTP 4xx) e o pedido foi repetido sem eles; a sessão segue sem esses
+   * parâmetros até acabar. Este registro não é uma chamada medida: os tokens vêm zerados.
+   */
+  fallback?: boolean;
+  /** O status HTTP da recusa que causou o fallback. */
+  fallbackStatus?: number;
 }
 
 export interface AnsweringMachineDetection {

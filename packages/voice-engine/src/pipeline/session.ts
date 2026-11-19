@@ -262,6 +262,10 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     };
     try {
       for await (const event of deps.chat(history, config.tools, current.abort.signal)) {
+        if (event.type === "fallback") {
+          emitter.emit("llmCall", { promptTokens: 0, cachedTokens: 0, completionTokens: 0, fallback: true, fallbackStatus: event.status });
+          continue;
+        }
         if (event.type === "usage") {
           const { promptTokens, cachedTokens, completionTokens, costCents } = event.usage;
           emitter.emit("llmCall", {
