@@ -8,6 +8,7 @@ import type { DeepgramStt, SttHandlers } from "./deepgram-stt";
 import { endpointDelayMs } from "./endpointing";
 import type { ChatMessage, ChatToolCall, LlmEvent } from "./openrouter-llm";
 import { TURN_TARGET_MAX_CHARACTERS, createTurnLimiter } from "./turn-guard";
+import { WRITE_FAILURE_RESPONSES, WRITE_TOOLS, WRITE_UNAVAILABLE, claimsDone, failureCovers, startsAtOfCall, writeKindOf, type WriteFailure } from "./write-guard";
 import { EnergyVad, type VadOptions } from "./vad";
 
 /**
@@ -158,6 +159,13 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   const awaitingTools = new Map<string, ChatToolCall>();
   let toolResults: ChatMessage[] = [];
   let queuedUser: { text: string; endedAt: number; delay: number }[] = [];
+  /** O agente só segura "pronto, marcado" se tem ferramenta de escrita nesta ligação. */
+  const hasWriteTools = config.tools.some((tool) => WRITE_TOOLS.has(tool.name));
+  /**
+   * A última escrita que não deu certo (falhou ou foi recusada). Segura só a confirmação do MESMO tipo, que não cite outro horário,
+   * e só pelas próximas `WRITE_FAILURE_RESPONSES` respostas: não é permanente. Uma escrita bem-sucedida do mesmo tipo a levanta.
+   */
+  let writeFailure: WriteFailure | undefined;
 
   const flushUsage = (llm?: Partial<Usage>): void => {
     const seconds = stt?.drainSeconds() ?? 0;
@@ -227,13 +235,30 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     // O limitador suave do turno: o que passa do alvo de caracteres não chega à síntese.
     const limiter = createTurnLimiter();
     const calls: ChatToolCall[] = [];
-    const send = (piece: string, final: boolean): void => {
+    // Frases de confirmação seguradas até o fim do turno (ver write-guard.ts). Depois da primeira, o resto do turno espera junto, na ordem.
+    // Vale pelas próximas respostas depois da falha (inclusive com um turno só de consulta no meio), só para o mesmo tipo e alvo.
+    const failure = writeFailure !== undefined && writeFailure.responsesLeft > 0 ? writeFailure : undefined;
+    // Cada resposta depois da falha gasta uma das que a retenção ainda vale, já ao começar (uma resposta cortada por barge-in também conta).
+    if (failure) failure.responsesLeft -= 1;
+    const held: string[] = [];
+    let heldAny = false;
+    let heldCoveredByFailure = false;
+    const emit = (piece: string, final: boolean): void => {
       if (piece.trim() === "" && !final) return;
       if (current.ttsStartedAt === undefined && piece.trim() !== "") current.ttsStartedAt = now();
       if (piece.trim() !== "") current.synthesizing = true;
       current.spoken += piece;
       tts?.speak(current.contextId, piece, final);
       flushUsage();
+    };
+    const send = (piece: string, final: boolean): void => {
+      if (hasWriteTools && (heldAny || (piece.trim() !== "" && claimsDone(piece, lang)))) {
+        heldAny = true;
+        if (failure && piece.trim() !== "" && claimsDone(piece, lang) && failureCovers(piece, failure)) heldCoveredByFailure = true;
+        if (piece.trim() !== "") held.push(piece);
+        return;
+      }
+      emit(piece, final);
     };
     try {
       for await (const event of deps.chat(history, config.tools, current.abort.signal)) {
@@ -272,7 +297,24 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     pending += tail;
     current.written = true;
     if (current.spoken !== "" || pending.trim() !== "") send(pending, true);
-    history.push({ role: "assistant", content: text.trim() === "" ? null : text.trim(), ...(calls.length > 0 && { tool_calls: calls }) });
+    let kept = text;
+    if (heldAny) {
+      const writes = calls.some((call) => WRITE_TOOLS.has(call.function.name));
+      if (writes || heldCoveredByFailure) {
+        // Confirmação antes do resultado (ou depois de uma falha): não é falada, nem fica no histórico como dita.
+        for (const piece of held) kept = kept.replace(piece, "");
+        if (current.spoken !== "") emit("", true);
+        if (!writes && current.spoken === "") {
+          const apology = WRITE_UNAVAILABLE[lang] ?? WRITE_UNAVAILABLE.en ?? "";
+          kept = apology;
+          emit(apology, true);
+        }
+      } else {
+        for (const piece of held) emit(piece, false);
+        emit("", true);
+      }
+    }
+    history.push({ role: "assistant", content: kept.trim() === "" ? null : kept.trim(), ...(calls.length > 0 && { tool_calls: calls }) });
     if (calls.length > 0) {
       recordAgent(current);
       for (const call of calls) awaitingTools.set(call.id, call);
@@ -465,7 +507,14 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       }
     },
     sendToolResult(id, result) {
-      if (finished || !awaitingTools.delete(id)) return;
+      if (finished) return;
+      const call = awaitingTools.get(id);
+      if (!awaitingTools.delete(id)) return;
+      if (call && WRITE_TOOLS.has(call.function.name) && result && typeof result === "object") {
+        const kind = writeKindOf(call.function.name);
+        if ((result as { ok?: unknown }).ok !== true) writeFailure = { kind, startsAt: startsAtOfCall(call.function.arguments), responsesLeft: WRITE_FAILURE_RESPONSES };
+        else if (writeFailure?.kind === kind) writeFailure = undefined;
+      }
       toolResults.push({ role: "tool", tool_call_id: id, content: JSON.stringify(result ?? null) });
       if (awaitingTools.size > 0) return;
       history.push(...toolResults);

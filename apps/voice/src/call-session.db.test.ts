@@ -244,6 +244,38 @@ describe("motor sem chave ao atender (Review Focus 2)", { timeout: 120_000 }, ()
     await session.done;
   });
 
+  it("a conversa chega ao log da trava ANTES da ferramenta: agenda_marcar só grava com a leitura do agente e o sim da pessoa já entregues pelo motor (achado 5 da revisão)", async () => {
+    // O fuso vem do conector, então a trava confere a hora sem consulta prévia de horários.
+    const crm = Object.assign(crmSimulado(), { timezone: "America/Sao_Paulo" });
+    const manual = manualEngine({ keyless: true });
+    const made = await scene("agenda-conversation-order", { engine: "manual", tools: ["agenda_marcar"] }, manual);
+    made.harness.deps.tools.set("agenda_marcar", createAgendaMarcar({ agenda: crm }));
+    const session = made.start();
+    await waitFor(() => manual.configs.length === 1, "the engine to connect");
+    const marcar = { service_type: "Consulta", starts_at: "2099-03-10T09:00:00-03:00", confirmed: true };
+
+    // 1) A leitura do agente foi entregue, mas o sim da pessoa ainda não (a transcrição de entrada dos motores diretos é assíncrona):
+    //    a trava recusa, nada é gravado, e o resultado volta ao modelo para ele perguntar de novo.
+    manual.emit("transcript", { speaker: "agent", text: "Tenho terça às 9h. Posso marcar?" });
+    manual.emit("toolCall", { id: "t1", name: "agenda_marcar", args: marcar });
+    await waitFor(() => manual.toolResults.length === 1, "the first tool result");
+    expect(manual.toolResults[0]?.result).toMatchObject({ ok: false, noEffect: true });
+    expect(crm.pedidos.marcacoes).toEqual([]);
+
+    // 2) O sim chega ao log (o evento `transcript` do motor) e a ferramenta é chamada de novo: agora grava.
+    manual.emit("transcript", { speaker: "user", text: "Sim, pode marcar." });
+    manual.emit("toolCall", { id: "t2", name: "agenda_marcar", args: marcar });
+    await waitFor(() => manual.toolResults.length === 2, "the second tool result");
+    expect(manual.toolResults[1]?.result).toMatchObject({ ok: true });
+    expect(crm.pedidos.marcacoes).toHaveLength(1);
+
+    // 3) A linha do tempo mostra a ordem: leitura do agente, ferramenta recusada, sim da pessoa, ferramenta que gravou.
+    const kinds = (await eventsOf(app, made.callId)).map((event) => event.kind).filter((kind) => ["transcript_agent", "transcript_user", "tool_called", "tool_result"].includes(kind));
+    expect(kinds).toEqual(["transcript_agent", "tool_called", "tool_result", "transcript_user", "tool_called", "tool_result"]);
+    made.transport.callerHangup();
+    await session.done;
+  });
+
   it("o vocabulário do agente chega ao motor; sem termos, chega a lista vazia", async () => {
     const manual = manualEngine({ keyless: true });
     const made = await scene("engine-vocabulary", { engine: "manual", vocabulary: ["Melgaço", "Ozavo"] }, manual);

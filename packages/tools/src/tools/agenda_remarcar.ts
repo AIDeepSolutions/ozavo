@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
+import { checkWriteAuthorization } from "../authorization";
 import { defineTool } from "../define-tool";
 import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
@@ -43,6 +44,11 @@ export function createAgendaRemarcar(deps: ToolDeps = {}) {
             "Esse horário já passou, e nada foi remarcado. Confira o dia e a hora com a pessoa e consulte de novo os horários livres.",
         };
       }
+
+      if (client.timezone) ctx.conversation?.rememberTimezone(client.timezone);
+
+      const authorization = checkWriteAuthorization(ctx.conversation, { verb: "remarcar", startsAt: input.starts_at, appointmentId: input.appointment_id, now: ctx.clock.now() });
+      if (!authorization.ok) return { ok: false, noEffect: true, message: authorization.message ?? "Nada foi remarcado: falta a autorização da pessoa." };
 
       ctx.say("Um instante, estou remarcando.");
       try {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
+import { checkWriteAuthorization } from "../authorization";
 import { defineTool } from "../define-tool";
 import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
@@ -49,6 +50,11 @@ export function createAgendaCancelar(deps: ToolDeps = {}) {
             "A agenda ligada nesta central não aceita cancelamento pelo agente, e o compromisso continua marcado. Ofereça anotar o pedido para a equipe cancelar (create_task) ou transferir para uma pessoa (transfer_to_human).",
         };
       }
+
+      if (client.timezone) ctx.conversation?.rememberTimezone(client.timezone);
+
+      const authorization = checkWriteAuthorization(ctx.conversation, { verb: "cancelar", startsAt: input.appointment_starts_at, appointmentId: input.appointment_id, now: ctx.clock.now() });
+      if (!authorization.ok) return { ok: false, noEffect: true, message: authorization.message ?? "Nada foi cancelado: falta a autorização da pessoa." };
 
       ctx.say("Um instante, estou cancelando.");
       try {

@@ -486,3 +486,141 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
     expect(splitPoint("Ok.", false)).toBe(-1);
   });
 });
+
+describe("confirmação só depois do resultado da escrita (write-guard)", () => {
+  const writeCall = (id: string) => ({ type: "tool_call" as const, call: { id, type: "function" as const, function: { name: "agenda_marcar", arguments: "{}" } } });
+
+  it("a frase 'está marcado' dita no mesmo turno da chamada de escrita não é falada nem fica no histórico", async () => {
+    const t = await setup();
+    callerSays(t, "Sim, pode marcar.");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "text", delta: "Pronto, sua consulta está marcada para quinta às nove." }, writeCall("w1"));
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    expect(t.spoken.map((piece) => piece.text).join("")).toBe("");
+    t.session.sendToolResult("w1", { ok: true, message: "Horário marcado." });
+    await until(() => t.streams.length === 2);
+    const assistant = t.streams[1]?.messages.find((m) => m.role === "assistant" && "tool_calls" in m);
+    expect(assistant).toMatchObject({ content: null });
+  });
+
+  it("texto que não afirma nada feito sai como antes, junto da chamada de escrita", async () => {
+    const t = await setup();
+    callerSays(t, "Sim, pode marcar.");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "text", delta: "Um instante, vou marcar para você." }, writeCall("w1"));
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    expect(t.spoken.map((piece) => piece.text).join("")).toBe("Um instante, vou marcar para você.");
+  });
+
+  it("depois de uma escrita que falhou, 'está marcado' não é falado e a pessoa ouve a indisponibilidade", async () => {
+    const t = await setup();
+    callerSays(t, "Sim, pode marcar.");
+    t.timers.runAll();
+    t.streams[0]?.push(writeCall("w1"));
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    t.session.sendToolResult("w1", { ok: false, message: "O sistema de agenda não respondeu." });
+    await until(() => t.streams.length === 2);
+    t.streams[1]?.push({ type: "text", delta: "Pronto, está marcado para quinta às nove." });
+    t.streams[1]?.end();
+    await until(() => t.spoken.length > 0);
+    const said = t.spoken.map((piece) => piece.text).join("");
+    expect(said).toContain("Não consegui concluir isso na agenda agora");
+    expect(said).not.toContain("está marcado");
+  });
+
+  it("a retenção vale também depois de um turno só de consulta no meio: só uma escrita bem-sucedida a levanta", async () => {
+    const t = await setup();
+    callerSays(t, "Sim, pode marcar.");
+    t.timers.runAll();
+    t.streams[0]?.push(writeCall("w1"));
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    t.session.sendToolResult("w1", { ok: false, message: "recusada" });
+    await until(() => t.streams.length === 2);
+    t.streams[1]?.push({ type: "tool_call", call: { id: "r1", type: "function", function: { name: "call_webhook", arguments: "{}" } } });
+    t.streams[1]?.end();
+    await until(() => t.toolCalls.length === 2);
+    t.session.sendToolResult("r1", { ok: true });
+    await until(() => t.streams.length === 3);
+    t.streams[2]?.push({ type: "text", delta: "Sua consulta foi agendada para quinta às nove." });
+    t.streams[2]?.end();
+    await until(() => t.spoken.length > 0);
+    expect(t.spoken.map((piece) => piece.text).join("")).not.toContain("foi agendada");
+  });
+
+  describe("a retenção depois de uma falha não é permanente (achado 9 da revisão)", () => {
+    const failedWrite = (id: string, args: object) => ({ type: "tool_call" as const, call: { id, type: "function" as const, function: { name: "agenda_marcar", arguments: JSON.stringify(args) } } });
+
+    async function afterFailure(args: object) {
+      const t = await setup();
+      callerSays(t, "Sim, pode marcar.");
+      t.timers.runAll();
+      t.streams[0]?.push(failedWrite("w1", args));
+      t.streams[0]?.end();
+      await until(() => t.toolCalls.length === 1);
+      t.session.sendToolResult("w1", { ok: false, message: "recusada" });
+      await until(() => t.streams.length === 2);
+      return t;
+    }
+
+    it("expira: na terceira resposta depois da falha, uma confirmação legítima é falada", async () => {
+      const t = await afterFailure({ starts_at: "2026-11-20T14:00:00-03:00" });
+      t.streams[1]?.push({ type: "text", delta: "Não consegui marcar. Posso anotar para a equipe?" });
+      t.streams[1]?.end();
+      await until(() => t.spoken.length > 0);
+      callerSays(t, "Pode anotar, obrigada.");
+      t.timers.runAll();
+      await until(() => t.streams.length === 3);
+      t.streams[2]?.push({ type: "text", delta: "Anotado." });
+      t.streams[2]?.end();
+      callerSays(t, "Está bem, e a consulta de sexta?");
+      t.timers.runAll();
+      await until(() => t.streams.length === 4);
+      t.streams[3]?.push({ type: "text", delta: "Pronto, sua consulta está marcada para sexta às 14h." });
+      t.streams[3]?.end();
+      await until(() => t.spoken.map((piece) => piece.text).join("").includes("está marcada"));
+      expect(t.spoken.map((piece) => piece.text).join("")).toContain("está marcada para sexta às 14h");
+    });
+
+    it("segura a confirmação do mesmo horário que falhou, mas não a de outro compromisso (fala sobre outro horário)", async () => {
+      const igual = await afterFailure({ starts_at: "2026-11-20T14:00:00-03:00" });
+      igual.streams[1]?.push({ type: "text", delta: "Pronto, está marcada para sexta às 14h." });
+      igual.streams[1]?.end();
+      await until(() => igual.spoken.length > 0);
+      expect(igual.spoken.map((piece) => piece.text).join("")).toContain("Não consegui concluir isso na agenda agora");
+      expect(igual.spoken.map((piece) => piece.text).join("")).not.toContain("está marcada");
+
+      const outro = await afterFailure({ starts_at: "2026-11-20T14:00:00-03:00" });
+      outro.streams[1]?.push({ type: "text", delta: "A sua consulta de sexta às 10h já está marcada." });
+      outro.streams[1]?.end();
+      await until(() => outro.spoken.length > 0);
+      expect(outro.spoken.map((piece) => piece.text).join("")).toContain("às 10h já está marcada");
+    });
+
+    it("a falha de marcar não segura uma frase de cancelamento, e a de cancelar não segura 'está marcada'", async () => {
+      const t = await afterFailure({ starts_at: "2026-11-20T14:00:00-03:00" });
+      t.streams[1]?.push({ type: "text", delta: "A consulta antiga foi cancelada pelo sistema ontem." });
+      t.streams[1]?.end();
+      await until(() => t.spoken.length > 0);
+      expect(t.spoken.map((piece) => piece.text).join("")).toContain("foi cancelada");
+    });
+  });
+
+  it("depois de uma escrita que deu certo, a confirmação do modelo é falada normalmente", async () => {
+    const t = await setup();
+    callerSays(t, "Sim, pode marcar.");
+    t.timers.runAll();
+    t.streams[0]?.push(writeCall("w1"));
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    t.session.sendToolResult("w1", { ok: true, message: "Horário marcado." });
+    await until(() => t.streams.length === 2);
+    t.streams[1]?.push({ type: "text", delta: "Pronto, sua consulta está marcada para quinta às nove." });
+    t.streams[1]?.end();
+    await until(() => t.spoken.length > 0);
+    expect(t.spoken.map((piece) => piece.text).join("")).toContain("está marcada");
+  });
+});

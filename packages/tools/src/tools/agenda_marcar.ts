@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
+import { checkWriteAuthorization } from "../authorization";
 import { defineTool } from "../define-tool";
 import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
@@ -41,6 +42,11 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
         };
       }
 
+      if (client.timezone) ctx.conversation?.rememberTimezone(client.timezone);
+
+      const authorization = checkWriteAuthorization(ctx.conversation, { verb: "marcar", startsAt: input.starts_at, now: ctx.clock.now() });
+      if (!authorization.ok) return { ok: false, noEffect: true, message: authorization.message ?? "Nada foi marcado: falta a autorização da pessoa." };
+
       ctx.say("Um instante, estou marcando.");
       try {
         // O telefone vem da ligação, nunca do modelo.
@@ -51,6 +57,7 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
           callId: ctx.callId,
           ...(line?.phone ? { attendeePhone: line.phone } : {}),
         });
+        ctx.conversation?.rememberAppointment(appointment.id);
         return {
           ok: true,
           message:

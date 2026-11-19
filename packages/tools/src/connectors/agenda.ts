@@ -85,6 +85,8 @@ export interface CancelRequest {
  * de rota nem de token.
  */
 export interface AgendaClient {
+  /** O fuso em que a regra da agenda vale, quando o conector o conhece sem consultar (a trava de autorização o usa para ler a hora de um instante em UTC). */
+  timezone?: string;
   freeSlots(request: FreeSlotsRequest): Promise<AgendaFreeSlots>;
   book(request: BookRequest): Promise<AgendaAppointment>;
   reschedule(request: RescheduleRequest): Promise<AgendaAppointment>;

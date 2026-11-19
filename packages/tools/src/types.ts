@@ -1,5 +1,6 @@
 import type { ApprovalOutcome, Clock, OrgQuery } from "@ozavo/core";
 import type { ZodType } from "zod";
+import type { ConversationView } from "./authorization";
 
 export interface ToolContext {
   organizationId: string;
@@ -24,6 +25,11 @@ export interface ToolContext {
   /** Faz o agente dizer algo enquanto a ferramenta trabalha ("um instante, estou conferindo"). */
   say(text: string): void;
   waitForApproval(approvalId: string, timeoutMs: number): Promise<ApprovalOutcome>;
+  /**
+   * O que foi dito nesta ligação, para as ferramentas de agenda conferirem a autorização (o sim da pessoa, a leitura
+   * da hora, o dono do compromisso). Omitido: o canal não declara a conversa e nada é conferido.
+   */
+  conversation?: ConversationView;
 }
 
 /**

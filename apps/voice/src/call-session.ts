@@ -1,5 +1,5 @@
 import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
-import { autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
+import { ConversationLog, autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
 import { AnsweringMachineDetector, EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, type AnsweringMachineDetection, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
 import { messageOf, silentLogger, type Logger } from "./log";
@@ -361,6 +361,21 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     }
   }
 
+  // A conversa desta ligação, para as ferramentas de agenda conferirem o sim da pessoa e a leitura da hora antes de escrever.
+  //
+  // Ordem (provada em call-session.db.test.ts, "ANTES da ferramenta"): o motor entrega `transcript` e `toolCall` no mesmo emissor e o
+  // `push` no log é síncrono, então tudo o que o motor já entregou está no log quando a ferramenta roda.
+  // - Pipeline (Deepgram + LLM + Cartesia): a fala da pessoa entra em `endCallerTurn`, antes do pedido ao LLM; a do agente, em
+  //   `recordAgent`, antes de `toolCall`.
+  // - Motores diretos, lendo o código (NÃO medido com provedor real): o Gemini Live entrega a fala do agente em `turnComplete` ou
+  //   `interrupted` (a leitura de um turno anterior chega a tempo) e só descarrega a fala da PESSOA ao receber a chamada da ferramenta;
+  //   o OpenAI Realtime entrega a do agente em `response.output_audio_transcript.done` e a da pessoa em
+  //   `conversation.item.input_audio_transcription.completed`, de forma assíncrona. A transcrição da pessoa pode, portanto, chegar
+  //   DEPOIS da ferramenta: a trava então recusa (nunca autoriza sem ver o sim) e o modelo precisa chamar de novo.
+  //
+  // Lista de ids: sem `knownAppointmentIds`, `ownsAppointment` devolve `true` para qualquer id. A proteção "cancelar e remarcar só o
+  // compromisso da própria pessoa" NÃO age em produção até o Macgyver decidir de onde vem a lista (docs/benchmark-llm-r2/04-recomendacao.md).
+  const conversation = new ConversationLog();
   const context: ToolContext = {
     organizationId,
     callId,
@@ -390,6 +405,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     say(text) {
       if (!ending) voice?.say(text);
     },
+    conversation,
     waitForApproval: (approvalId, timeoutMs) =>
       deps.approvals.wait(
         approvalId,
@@ -600,6 +616,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       ),
     );
     session.on("transcript", (turn) => {
+      conversation.push(turn.speaker === "user" ? "user" : "agent", turn.text);
       if (turn.speaker === "user") amd?.pushTranscript(turn.text);
       void event(turn.speaker === "user" ? "transcript_user" : "transcript_agent", { text: turn.text }).catch(logFailure("could not record a transcript"));
     });
