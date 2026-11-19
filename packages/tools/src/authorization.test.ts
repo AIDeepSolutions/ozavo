@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConversationLog, checkWriteAuthorization, isAffirmative, lastReadbackMatches, mentionsClockTime, mentionsDay, readsHour } from "./authorization";
+import { ConversationLog, appointmentIdsFromRequestContext, checkWriteAuthorization, isAffirmative, lastReadbackMatches, mentionsClockTime, mentionsDay, readsHour } from "./authorization";
 import { AGORA, contextoDaAgenda, crmSimulado } from "../test/agenda";
 import { createAgendaHorariosLivres } from "./tools/agenda_horarios_livres";
 import { createAgendaMarcar } from "./tools/agenda_marcar";
@@ -260,7 +260,7 @@ describe("autorização das escritas da agenda", () => {
 
     const cancelar = await createAgendaCancelar({ agenda: crm }).run({ appointment_id: "apt-de-outra-pessoa", appointment_starts_at: "2026-11-20T10:00:00-03:00", confirmed: true }, ctx);
     expect(cancelar).toMatchObject({ ok: false, noEffect: true });
-    expect(cancelar.message).toContain("não é de quem está na ligação");
+    expect(cancelar.message).toContain("não está entre os que esta ligação conhece");
 
     const remarcar = await createAgendaRemarcar({ agenda: crm }).run({ appointment_id: "apt-de-outra-pessoa", starts_at: "2026-11-23T10:00:00-03:00", confirmed: true }, ctx);
     expect(remarcar).toMatchObject({ ok: false, noEffect: true });
@@ -270,6 +270,33 @@ describe("autorização das escritas da agenda", () => {
     const propria = await createAgendaCancelar({ agenda: crm }).run({ appointment_id: "apt-minha", appointment_starts_at: "2026-11-20T10:00:00-03:00", confirmed: true }, ctx);
     expect(propria.noEffect).not.toBe(true);
     expect(crm.pedidos.cancelamentos).toHaveLength(1);
+  });
+
+  it("sem lista, nega por padrão: só vale o id marcado NESTA ligação (decisão do dono, opção b)", async () => {
+    const crm = crmSimulado();
+    const conversation = conversa([["agent", "Confirmo: cancelar a consulta de sexta às 10h?"], ["user", "Sim"]]);
+    const ctx = { ...contextoDaAgenda(), conversation };
+    const pedido = { appointment_id: "apt-qualquer", appointment_starts_at: "2026-11-20T10:00:00-03:00", confirmed: true };
+
+    expect(await createAgendaCancelar({ agenda: crm }).run(pedido, ctx)).toMatchObject({ ok: false, noEffect: true });
+    expect(crm.pedidos.cancelamentos).toEqual([]);
+
+    conversation.rememberAppointment("apt-qualquer");
+    expect((await createAgendaCancelar({ agenda: crm }).run(pedido, ctx)).noEffect).not.toBe(true);
+    expect(crm.pedidos.cancelamentos).toHaveLength(1);
+  });
+
+  it("ids informados pelo operador (request_context.appointmentIds) e pelo ponto de extensão valem; qualquer outra forma é ignorada", () => {
+    expect(appointmentIdsFromRequestContext({ appointmentIds: ["a1", "a2"], outro: 1 })).toEqual(["a1", "a2"]);
+    expect(appointmentIdsFromRequestContext({ appointmentIds: ["a1", 2, "", "  ", "x".repeat(201), null] })).toEqual(["a1"]);
+    expect(appointmentIdsFromRequestContext({ appointmentIds: Array.from({ length: 80 }, (_, i) => `id${i}`) })).toHaveLength(50);
+    for (const ruim of [undefined, null, "a1", ["a1"], { appointmentIds: "a1" }, { appointmentIds: { 0: "a1" } }]) expect(appointmentIdsFromRequestContext(ruim)).toEqual([]);
+
+    const conversation = new ConversationLog();
+    expect(conversation.ownsAppointment("a1")).toBe(false);
+    conversation.allowAppointments(appointmentIdsFromRequestContext({ appointmentIds: ["a1"] }));
+    expect(conversation.ownsAppointment("a1")).toBe(true);
+    expect(conversation.ownsAppointment("a2")).toBe(false);
   });
 
   it("horário em UTC copiado da consulta: a hora lida é a do fuso da agenda, que a consulta de horários registra", async () => {

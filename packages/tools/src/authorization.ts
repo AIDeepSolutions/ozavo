@@ -24,20 +24,47 @@ export interface ConversationView {
   agendaTimezone(): string | undefined;
   /** O compromisso passa a pertencer a quem está na ligação (marcado nesta ligação). */
   rememberAppointment(id: string): void;
-  /** `false` só quando a lista de compromissos da pessoa é conhecida e o id não está nela. Sem lista, não bloqueia. */
+  /**
+   * Compromissos que o operador ou uma consulta ao conector da agenda declararam como de quem está na ligação (além dos marcados
+   * nesta ligação). É o PONTO DE EXTENSÃO da opção (a): ver `CallerAppointmentsSource`.
+   */
+  allowAppointments(ids: Iterable<string>): void;
+  /** `true` só para id marcado nesta ligação ou declarado por `allowAppointments`/`knownAppointmentIds`. Nega por padrão. */
   ownsAppointment(id: string): boolean;
+}
+
+/**
+ * Ponto de extensão (opção (a), NÃO implementado): consultar o conector da agenda pelo telefone de quem ligou e devolver os ids dos
+ * compromissos dele. Quem o implementar passa a fonte a `call-session` (`CallSessionDeps.callerAppointments`), que a consulta uma
+ * vez por ligação e entrega o resultado a `ConversationView.allowAppointments`. Enquanto não existir, valem só os ids marcados
+ * nesta ligação e os que o operador informa em `request_context.appointmentIds` (`appointmentIdsFromRequestContext`).
+ */
+export interface CallerAppointmentsSource {
+  appointmentsOf(phoneE164: string): Promise<readonly string[]>;
+}
+
+/** Chave de `request_context` em que o operador informa os ids de compromisso da pessoa da ligação de saída. */
+export const REQUEST_CONTEXT_APPOINTMENT_IDS = "appointmentIds";
+const MAX_CONTEXT_APPOINTMENT_IDS = 50;
+
+/** Lê `request_context.appointmentIds` (lista de textos, até 50, até 200 caracteres cada). Qualquer outra forma é ignorada. */
+export function appointmentIdsFromRequestContext(requestContext: unknown): string[] {
+  if (typeof requestContext !== "object" || requestContext === null || Array.isArray(requestContext)) return [];
+  const raw = (requestContext as Record<string, unknown>)[REQUEST_CONTEXT_APPOINTMENT_IDS];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id): id is string => typeof id === "string" && id.trim() !== "" && id.length <= 200).slice(0, MAX_CONTEXT_APPOINTMENT_IDS);
 }
 
 /** O registro da conversa de uma ligação. Quem roda a ligação alimenta `push` com cada `transcript`. */
 export class ConversationLog implements ConversationView {
   private readonly turns: { speaker: "user" | "agent"; text: string }[] = [];
   private readonly owned = new Set<string>();
-  private readonly known: Set<string> | undefined;
+  private readonly known: Set<string>;
   private timezone: string | undefined;
 
-  /** `knownAppointmentIds`: os compromissos que a pessoa já tinha ao ligar. Omitido: o id não é conferido contra uma lista. */
+  /** `knownAppointmentIds`: os compromissos que a pessoa já tinha ao ligar. Omitido: nenhum (cancelar e remarcar só valem para o que for marcado nesta ligação). */
   constructor(options: { knownAppointmentIds?: Iterable<string> } = {}) {
-    this.known = options.knownAppointmentIds ? new Set(options.knownAppointmentIds) : undefined;
+    this.known = new Set(options.knownAppointmentIds ?? []);
   }
 
   push(speaker: "user" | "agent", text: string): void {
@@ -94,9 +121,12 @@ export class ConversationLog implements ConversationView {
     this.owned.add(id);
   }
 
+  allowAppointments(ids: Iterable<string>): void {
+    for (const id of ids) this.known.add(id);
+  }
+
   ownsAppointment(id: string): boolean {
-    if (this.owned.has(id)) return true;
-    return this.known === undefined ? true : this.known.has(id);
+    return this.owned.has(id) || this.known.has(id);
   }
 }
 
@@ -320,7 +350,7 @@ export function checkWriteAuthorization(
   if (what.appointmentId !== undefined && what.verb !== "marcar" && !conversation.ownsAppointment(what.appointmentId)) {
     return {
       ok: false,
-      message: `Nada foi ${done}: esse compromisso não é de quem está na ligação (ou o identificador está errado). Peça à pessoa o dia e a hora do compromisso dela e use só o identificador que ela tem; se não houver, ofereça anotar o pedido para a equipe (create_task) ou transferir para uma pessoa (transfer_to_human).`,
+      message: `Nada foi ${done}: esse compromisso não está entre os que esta ligação conhece como de quem está na linha (só valem os marcados agora, nesta ligação, e os que a empresa informou ao pedir a ligação). Não tente outro identificador; se não houver, ofereça anotar o pedido para a equipe (create_task) ou transferir para uma pessoa (transfer_to_human).`,
     };
   }
   const lastUser = conversation.lastUserUtterance();
