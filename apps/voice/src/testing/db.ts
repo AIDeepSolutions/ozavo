@@ -70,7 +70,7 @@ export interface AgentOptions {
   costCeilingCents?: number;
   vocabulary?: string[];
   listeningEnvironment?: "normal" | "noisy";
-  llmProfile?: "a" | "b" | "c";
+  llmProfile?: "a" | "b" | "c" | "d" | "e";
 }
 
 export async function createAgent(app: Db, organizationId: string, options: AgentOptions = {}): Promise<string> {

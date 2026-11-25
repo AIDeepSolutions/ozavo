@@ -36,7 +36,7 @@ export interface Agent {
 }
 
 export type ListeningEnvironment = "normal" | "noisy";
-export type LlmProfile = "a" | "b" | "c";
+export type LlmProfile = "a" | "b" | "c" | "d" | "e";
 
 export type CallStatus = "ringing" | "in_progress" | "transferred" | "completed" | "failed" | "refused";
 export interface Call {
