@@ -28,7 +28,7 @@ const results = (transcript: string, speechFinal: boolean) => ({
   channel: { alternatives: [{ transcript }] },
 });
 
-async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" } = {}) {
+async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" | "d" | "e" } = {}) {
   const deepgram = await startFakeWs();
   const cartesia = await startFakeWs();
   const replies: SseReply[] = [];
@@ -114,7 +114,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
   });
 
   it("o perfil do agente chega ao pedido do modelo: padrão A (Haiku, cache, 1024), B (raciocínio desligado), C (Flash de antes)", async () => {
-    const pedido = async (llmProfile?: "a" | "b" | "c") => {
+    const pedido = async (llmProfile?: "a" | "b" | "c" | "d" | "e") => {
       const t = await setup({ llmProfile });
       t.deepgram.send(results("Quero marcar uma consulta.", true));
       await until(() => t.replies.length === 1);
@@ -130,6 +130,18 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     const c = await pedido("c");
     expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400 });
     expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
+  });
+
+  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together), pelo motor e não só pela montagem do corpo", async () => {
+    const pedido = async (llmProfile: "d" | "e") => {
+      const t = await setup({ llmProfile });
+      t.deepgram.send(results("Quero marcar uma consulta.", true));
+      await until(() => t.replies.length === 1);
+      return t.openrouter.requests[0]?.body as Record<string, unknown>;
+    };
+    expect(await pedido("d")).toMatchObject({ model: "openai/gpt-oss-120b", provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ reasoning: { enabled: false } });
   });
 
   it("cada chamada ao modelo emite `llmCall` com provedor, fim, raciocínio e cache, sem o texto", async () => {

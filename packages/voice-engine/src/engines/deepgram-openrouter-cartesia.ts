@@ -69,9 +69,9 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
   if (!/^[A-Za-z0-9-]{8,64}$/.test(voiceId)) throw new InvalidVoiceError();
   const clock = options.clock ?? systemClock;
   const timeout = { readyTimeoutMs: options.readyTimeoutMs, schedule: options.schedule };
-  // O perfil é do agente (tela de configuração); `options.model` (testes) troca só o modelo.
+  // O perfil é do agente (tela de configuração); `options.model` (testes) troca só o modelo. Sem ele, o pedido NÃO leva `model`
+  // próprio: o perfil manda o modelo e a ordem de provedores (D e E fixam o provedor; com `model` preenchido o corpo omitia `provider`).
   const profile = llmProfileOf(config.llmProfile);
-  const llmModel = options.model ?? profile.model;
   let plain = false;
   return createPipelineSession({
     config,
@@ -104,7 +104,7 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
       openCartesiaTts({ apiKey: keys.cartesia, voiceId, language: config.language, clock, url: options.urls?.tts, timeout }, handlers),
     chat: async function* (messages, tools, signal) {
       // Depois do primeiro 4xx por reasoning/cache_control, o resto da ligação já pede sem eles (uma repetição só, não a cada turno).
-      for await (const event of streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: llmModel, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
+      for await (const event of streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
         if (event.type === "fallback") plain = true;
         yield event;
       }
