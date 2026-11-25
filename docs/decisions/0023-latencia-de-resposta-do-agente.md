@@ -75,7 +75,7 @@ Os WebSockets da Deepgram e da Cartesia já são abertos na conexão, antes de o
 Perfil E, voz real, do fim real da fala ao primeiro som: **p50 1,52 s e p90 1,93 s antes, p50 0,39 s e p90 0,43 s depois**. O texto da resposta (sem a espera da
 ponte) sai em p50 0,88 s. Fim de turno pela pausa: −0,46 s no p50 e some a cauda de 5 a 6 s. Aquecimento e especulação valem pouco (≈ 0 a 0,2 s e ≈ 0,03 s).
 
-10. **Fim de turno que sobrevive a sinal que não é palavra (25/11).** Na ligação do dono, 7 de 23 turnos (6 com pedido adiantado descartado) fecharam só pelo
+11. **Fim de turno que sobrevive a sinal que não é palavra (25/11).** Na ligação do dono, 7 de 23 turnos (6 com pedido adiantado descartado) fecharam só pelo
     `UtteranceEnd` (~1,25 s). Com ruído de linha a Deepgram manda `SpeechStarted` logo depois do final do `Finalize` (reproduzido com
     `scripts/bancada-latencia/sondar-fim-de-turno.ts --noise 500`), e isso cancelava o prazo de fim de turno e o pedido adiantado. Agora: (a) `SpeechStarted` não cancela
     quando a pausa local já foi vista e há texto final (palavra nova ou voz sustentada cancelam como antes); (b) o silêncio de palavras (`WORDS_QUIET_MS`, 320 ms) pede o
