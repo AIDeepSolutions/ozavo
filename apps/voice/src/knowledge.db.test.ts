@@ -77,7 +77,7 @@ describe("agente sem base de conhecimento", () => {
   it("o prompt, a configuração do motor e a linha do tempo são os de sempre", async () => {
     const s = await scene("kb voz sem base");
     const { config, events } = await s.run();
-    expect(config?.instructions).toBe("Você é a recepção da clínica.");
+    expect(config?.instructions).toMatch(/^Você é a recepção da clínica\.\n\nAgora, nesta ligação, é [^\n]*$/);
     expect(config?.knowledge).toBeUndefined();
     expect(events.map((event) => event.kind)).not.toContain("knowledge_loaded");
   });
@@ -89,7 +89,7 @@ describe("agente sem base de conhecimento", () => {
       await setAgentKnowledge(q, s.agentId, { sourceIds: [created.sourceId], mode: "auto", only: false }, now);
     });
     const { config, events } = await s.run();
-    expect(config?.instructions).toBe("Você é a recepção da clínica.");
+    expect(config?.instructions).toMatch(/^Você é a recepção da clínica\.\n\nAgora, nesta ligação, é [^\n]*$/);
     expect(config?.knowledge).toBeUndefined();
     expect(events.map((event) => event.kind)).not.toContain("knowledge_loaded");
   });
@@ -163,7 +163,7 @@ describe("modo de busca", () => {
     await withSystem(app, (q) => q.exec("update knowledge_sources set token_count = $2 where organization_id = $1", [s.organizationId, 80000]));
     const { config, events } = await s.run();
     expect(config?.knowledge).toBeUndefined();
-    expect(config?.instructions).toBe("Você é a recepção da clínica.");
+    expect(config?.instructions).toMatch(/^Você é a recepção da clínica\.\n\nAgora, nesta ligação, é [^\n]*$/);
     expect(events.find((event) => event.kind === "knowledge_loaded")?.payload).toMatchObject({ configuredMode: "rag", fallback: "engine_unsupported" });
   });
 });
