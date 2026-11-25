@@ -8,8 +8,9 @@
  * primeiro token do modelo, primeira frase, tokens (entrada, cache, saída), custo e, no fim, se o fato esperado
  * aparece na resposta (um juiz de texto confere; a busca por texto é só a referência) nos modos `rag` e `full`.
  *
- * Uso (Postgres vazio, dono do schema; a chave do OpenRouter só do ambiente, nunca impressa nem gravada):
- *   BENCH_DATABASE_URL=postgres://postgres@127.0.0.1:55440/NOME OPENROUTER_API_KEY=... \
+ * Uso (Postgres vazio com pgvector, dono do schema; a chave do OpenRouter só do ambiente, nunca impressa nem gravada;
+ * BENCH_DATA_DIR aponta a pasta com o manual sintético e as perguntas):
+ *   BENCH_DATABASE_URL=postgres://postgres@127.0.0.1:55440/NOME OPENROUTER_API_KEY=... BENCH_DATA_DIR=PASTA \
  *     pnpm tsx scripts/medir-conhecimento-voz.ts --live --out PASTA [--limit 40] [--configs rag-b,full-e] [--budget 0.9] [--jev]
  *
  * Só grava métricas e as respostas da base sintética: nenhuma credencial, nenhum áudio.
@@ -44,7 +45,8 @@ import type { LlmProfileId } from "../packages/voice-engine/src/pipeline/llm-pro
 import { needsKnowledge } from "../packages/voice-engine/src/pipeline/knowledge-retrieval";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const DATA = path.join(process.env.HOME ?? "", "agent-state/entregas/ozavo-base-conhecimento-25nov/dados/sintetica");
+/** Pasta com `manual-sorriso-verde.md` (a base sintética) e `perguntas.json` (`[{q, expected, section, kind}]`): informada por quem mede. */
+const dataDir = (): string => requireEnv("BENCH_DATA_DIR");
 
 interface Question {
   q: string;
@@ -501,18 +503,18 @@ async function measureJev(apiKey: string, questions: Question[], out: string): P
 async function main(): Promise<void> {
   if (!flag("live")) throw new Error("Use --live para medir serviços pagos (OpenRouter).");
   const apiKey = requireEnv("OPENROUTER_API_KEY");
-  const out = path.resolve(arg("out") ?? path.join(process.env.HOME ?? ".", "agent-state/entregas/ozavo-base-conhecimento-25nov/medicoes-voz"));
+  const out = path.resolve(arg("out") ?? requireEnv("BENCH_OUT_DIR"));
   mkdirSync(out, { recursive: true });
   const limit = Number(arg("limit") ?? "40");
   const wanted = arg("configs")?.split(",");
   const configs = CONFIGS.filter((c) => !wanted || wanted.includes(c.id));
-  const questions = (JSON.parse(readFileSync(path.join(DATA, "perguntas.json"), "utf8")) as Question[]).slice(0, limit);
+  const questions = (JSON.parse(readFileSync(path.join(dataDir(), "perguntas.json"), "utf8")) as Question[]).slice(0, limit);
   if (flag("jev-only")) {
     await measureJev(apiKey, questions, out);
     note(readFileSync(path.join(out, "jev.json"), "utf8"));
     return;
   }
-  const manual = readFileSync(path.join(DATA, "manual-sorriso-verde.md"), "utf8");
+  const manual = readFileSync(path.join(dataDir(), "manual-sorriso-verde.md"), "utf8");
 
   const { app, owner } = await openDatabases();
   try {
