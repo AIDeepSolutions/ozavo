@@ -68,9 +68,15 @@ ponte) sai em p50 0,88 s. Fim de turno pela pausa: −0,46 s no p50 e some a cau
 ## Consequências e como desligar
 
 - **Ligados por padrão.** Aquecimento, fim de turno pela pausa, especulação e ponte nascem ligados para todo agente em pipeline. O operador desliga a ponte e a
-  especulação por agente na tela (próximo PR da série; até lá valem os padrões). O fim de turno pela pausa e o aquecimento não têm chave na tela.
+  especulação por agente na tela (seção abaixo). O fim de turno pela pausa e o aquecimento não têm chave na tela.
 - **Risco do prazo curto:** quem faz pausa longa entre duas orações pode ser cortado; o prazo por classe (`TURN_END_SILENCE_MS`) é o que se ajusta.
 - **Custo:** o aquecimento custa ~US$ 0,0003 por ligação; um pedido adiantado descartado ou refeito por demora custa uma chamada (estimada pela última completa). As frases de ponte custam
   ~US$ 0,004 por voz e por processo.
 - **Reverter:** `latency: { fastEndpoint: false, speculation: false, bridge: false, warmup: false }` na configuração da sessão devolve o comportamento anterior; a correção da ordem de
   provedores e o ping da Cartesia ficam.
+
+### Configuração por agente (a tela)
+
+Em Agentes, no motor em pipeline, duas chaves, **ligadas por padrão**: "Frase curta enquanto o modelo pensa" (`agents.latency_bridge`) e "Adiantar o pedido ao modelo"
+(`agents.latency_speculation`), migration `20261125T190000_agents_latency_toggles.sql`. A sessão da chamada passa `latency: { bridge, speculation }` ao motor. O aquecimento e o fim de turno
+pela pausa não têm chave: desligá-los é a configuração de sessão `latency` (ver acima). Reverter a migration: migration nova que remove as colunas, depois de reverter o deploy.
