@@ -14,11 +14,19 @@ describe("perfil do modelo de texto", () => {
 
   it("B liga raciocínio desligado e lista agrupada JUNTOS; só B agrupa por dia", () => {
     expect(LLM_PROFILES.b).toMatchObject({ reasoning: "off", groupSlotsByDay: true, cacheSystemPrompt: true });
-    for (const profile of Object.values(LLM_PROFILES)) expect(profile.groupSlotsByDay).toBe(profile.reasoning === "off");
+    for (const profile of Object.values(LLM_PROFILES).filter((p) => p.model.startsWith("anthropic/"))) expect(profile.groupSlotsByDay).toBe(profile.reasoning === "off");
   });
 
   it("C é o Flash de antes: sem cache, sem mudança de raciocínio, teto 400", () => {
     expect(LLM_PROFILES.c).toMatchObject({ model: "google/gemini-2.5-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "default" });
+  });
+
+  it("D é o gpt-oss-120b: raciocínio baixo, sem cache, sem lista agrupada, Cerebras > Groq > BaseTen", () => {
+    expect(LLM_PROFILES.d).toEqual({ id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"] });
+  });
+
+  it("E é o DeepSeek V4.1 Flash: raciocínio desligado, sem marca de cache, Together primeiro", () => {
+    expect(LLM_PROFILES.e).toEqual({ id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together"] });
   });
 
   it("com o raciocínio ligado o teto é 1024 (o de 400 cortava a resposta)", () => {
@@ -27,7 +35,9 @@ describe("perfil do modelo de texto", () => {
 
   it("isLlmProfileId e acceptsCacheControl", () => {
     expect(isLlmProfileId("b")).toBe(true);
-    expect(isLlmProfileId("d")).toBe(false);
+    expect(isLlmProfileId("d")).toBe(true);
+    expect(isLlmProfileId("e")).toBe(true);
+    expect(isLlmProfileId("f")).toBe(false);
     expect(acceptsCacheControl("anthropic/claude-haiku-5.5")).toBe(true);
     expect(acceptsCacheControl("google/gemini-2.5-flash")).toBe(false);
   });

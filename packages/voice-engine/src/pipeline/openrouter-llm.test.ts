@@ -54,6 +54,12 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     expect(b).toMatchObject({ model: "anthropic/claude-haiku-5.5", max_tokens: 400, reasoning: { enabled: false } });
     expect(JSON.stringify(b["messages"])).toContain("cache_control");
 
+    const d = chatBody({ messages, tools: [], profile: LLM_PROFILES.d });
+    expect(d).toMatchObject({ model: "openai/gpt-oss-120b", max_tokens: 400, reasoning: { effort: "low" }, provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
+    expect(JSON.stringify(d)).not.toContain("cache_control");
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.d, plain: true })).not.toHaveProperty("reasoning");
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.b })).not.toHaveProperty("provider");
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e })).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", reasoning: { enabled: false }, provider: { order: ["together"], allow_fallbacks: true } });
     const c = chatBody({ messages, tools: [], profile: LLM_PROFILES.c });
     expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400, messages });
     expect(c).not.toHaveProperty("reasoning");

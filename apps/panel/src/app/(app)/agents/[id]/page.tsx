@@ -249,10 +249,12 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
           {draft.engine === PIPELINE_ENGINE ? (
             <div className="mt-4 max-w-md">
               <Field label={t.llmProfile} hint={t.llmProfileHint}>
-                <Select value={draft.llmProfile} onChange={(event) => set("llmProfile", event.target.value === "b" ? "b" : event.target.value === "c" ? "c" : "a")}>
+                <Select value={draft.llmProfile} onChange={(event) => set("llmProfile", event.target.value === "b" ? "b" : event.target.value === "c" ? "c" : event.target.value === "d" ? "d" : event.target.value === "e" ? "e" : "a")}>
                   <option value="a">{t.llmProfileA}</option>
                   <option value="b">{t.llmProfileB}</option>
                   <option value="c">{t.llmProfileC}</option>
+                  <option value="d">{t.llmProfileD}</option>
+                  <option value="e">{t.llmProfileE}</option>
                 </Select>
               </Field>
             </div>

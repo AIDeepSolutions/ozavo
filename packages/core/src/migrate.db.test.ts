@@ -223,4 +223,24 @@ describe("runMigrations", () => {
     await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Z', 'simulated', 'z')", [org])).rejects.toThrow(/llm_profile/);
     await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Nulo', 'simulated', null)", [org])).rejects.toThrow(/llm_profile/);
   });
+
+  it("o perfil D amplia o conjunto aceito e o E sem mudar nenhum agente existente", async () => {
+    const PROFILE_D = "20261125T150000_agents_llm_profile_d_e.sql";
+    for (const name of await readdir(REAL_MIGRATIONS)) if (name < PROFILE_D) await copyFile(path.join(REAL_MIGRATIONS, name), path.join(dir, name));
+    await runMigrations(db, dir);
+    const org = (await db.pool.query<{ id: string }>("insert into organizations (name) values ('A') returning id")).rows[0]?.id;
+    await db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Antigo', 'simulated', 'b')", [org]);
+    await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Novo', 'simulated', 'd')", [org])).rejects.toThrow(/llm_profile/);
+    await copyFile(path.join(REAL_MIGRATIONS, PROFILE_D), path.join(dir, PROFILE_D));
+    expect(await runMigrations(db, dir)).toEqual([PROFILE_D]);
+    await db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Novo', 'simulated', 'd')", [org]);
+    await db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Novo E', 'simulated', 'e')", [org]);
+    const rows = (await db.pool.query<{ name: string; llm_profile: string }>("select name, llm_profile from agents order by name")).rows;
+    expect(rows).toEqual([
+      { name: "Antigo", llm_profile: "b" },
+      { name: "Novo", llm_profile: "d" },
+      { name: "Novo E", llm_profile: "e" },
+    ]);
+    await expect(db.pool.query("insert into agents (organization_id, name, engine, llm_profile) values ($1, 'Z', 'simulated', 'f')", [org])).rejects.toThrow(/llm_profile/);
+  });
 });

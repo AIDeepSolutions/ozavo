@@ -138,6 +138,8 @@ export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "mode
     // é dividido com o texto, por isso o perfil que o mantém ligado usa 1024.
     max_tokens: profile.maxTokens,
     ...(!request.plain && profile.reasoning === "off" && { reasoning: { enabled: false } }),
+    ...(!request.plain && profile.reasoning === "low" && { reasoning: { effort: "low" } }),
+    ...(profile.providerOrder && !request.model && { provider: { order: profile.providerOrder, allow_fallbacks: true } }),
     ...(request.tools.length > 0 && {
       tools: request.tools.map((tool) => ({ type: "function", function: tool })),
       tool_choice: "auto",
