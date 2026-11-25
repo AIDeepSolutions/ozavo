@@ -992,7 +992,11 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       sayContexts.set(contextId, text);
       rememberAgentText(text);
       tts?.speak(contextId, speakable(text), true);
-      history.push({ role: "assistant", content: text });
+      // Com uma ferramenta em andamento, o fim do histórico é a mensagem com as chamadas: os resultados têm de vir logo depois dela. Uma
+      // mensagem do assistente no meio faz o provedor rígido recusar o pedido (HTTP 400, ligação de 25/11); a fala vira continuação dela.
+      const tail = history.at(-1);
+      if (awaitingTools.size > 0 && tail?.role === "assistant" && tail.tool_calls) tail.content = tail.content ? `${tail.content} ${text}` : text;
+      else history.push({ role: "assistant", content: text });
     },
     closeCallerTurn() {
       if (finished) return;

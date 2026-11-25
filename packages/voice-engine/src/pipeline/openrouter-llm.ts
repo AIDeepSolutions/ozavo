@@ -22,6 +22,7 @@
 import { z } from "zod";
 import type { ToolSpec } from "../types";
 import { acceptsCacheControl, llmProfileOf, LLM_PROFILES, type LlmProfile } from "./llm-profile";
+import { repairToolOrder } from "./tool-order";
 
 export const OPENROUTER_API_URL = "https://openrouter.ai/api/v1";
 /** O modelo do perfil padrão (A). Cada agente escolhe o seu perfil (`llm-profile.ts`). */
@@ -150,7 +151,7 @@ export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "mode
   const model = request.model ?? profile.model;
   return {
     model,
-    messages: !request.plain && profile.cacheSystemPrompt && acceptsCacheControl(model) ? withCachedSystemPrompt(request.messages) : request.messages,
+    messages: !request.plain && profile.cacheSystemPrompt && acceptsCacheControl(model) ? withCachedSystemPrompt(repairToolOrder(request.messages)) : repairToolOrder(request.messages),
     stream: true,
     // Fala ao telefone: resposta curta. O teto também limita o gasto de uma resposta descontrolada. Com o raciocínio ligado ele
     // é dividido com o texto, por isso o perfil que o mantém ligado usa 1024.

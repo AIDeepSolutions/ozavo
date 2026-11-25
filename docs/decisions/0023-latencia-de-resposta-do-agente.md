@@ -59,6 +59,11 @@ Os WebSockets da Deepgram e da Cartesia já são abertos na conexão, antes de o
 8. **Tempo limite no primeiro conteúdo.** Perfis D e E: se o provedor da vez não entrega nada em 800 ms, o pedido é cortado e refeito
    no próximo da ordem (DeepSeek: Together, Wafer, Reka; gpt-oss: Cerebras, Groq, BaseTen); o último não tem limite. O pedido cortado
    aparece como `llm_call` com `purpose: "retry"` e conta no custo (estimado). A conexão da Cartesia recebe um ping a cada 20 s.
+9. **Histórico de ferramenta fora de ordem (achado da ligação de 25/11, a causa de o Together ficar de fora do turno 14 em diante).** `say` durante uma
+   ferramenta ("Um instante, estou conferindo a agenda.") entrava no histórico entre a mensagem com `tool_calls` e o resultado. O Together recusa isso com
+   HTTP 400 `invalid_tool_messages` (reproduzido em 25/11, 6 de 6); o OpenRouter então cai para outro provedor (Baidu 1,2 a 2,5 s), o prazo de 800 ms cortava e o
+   pedido ia ao Wafer, e todo pedido seguinte da ligação (o histórico fica inválido) repetia o caminho: `modelMs` ~1,2 s em vez de ~0,28 s. Corrigido na origem (a fala vira
+   continuação da mensagem da chamada) e com `repairToolOrder` no corpo de todo pedido.
 
 ### Números (detalhe e limites no [relatório](../reports/2026-11-25-latencia-de-resposta.md))
 
