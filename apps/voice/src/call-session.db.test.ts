@@ -313,6 +313,24 @@ describe("motor sem chave ao atender (Review Focus 2)", { timeout: 120_000 }, ()
     await second.done;
   });
 
+  it("os ajustes de latência do agente chegam ao motor: ligados por padrão, desligados quando o operador desliga (ADR 0023)", async () => {
+    const manual = manualEngine({ keyless: true });
+    const made = await scene("engine-latency-off", { engine: "manual", latencyBridge: false, latencySpeculation: false }, manual);
+    const session = made.start();
+    await waitFor(() => manual.configs.length === 1, "the engine to connect");
+    expect(manual.configs[0]?.latency).toEqual({ bridge: false, speculation: false });
+    made.transport.callerHangup();
+    await session.done;
+
+    const plain = manualEngine({ keyless: true });
+    const without = await scene("engine-latency-default", { engine: "manual" }, plain);
+    const second = without.start();
+    await waitFor(() => plain.configs.length === 1, "the engine to connect");
+    expect(plain.configs[0]?.latency).toEqual({ bridge: true, speculation: true });
+    without.transport.callerHangup();
+    await second.done;
+  });
+
   it("o perfil do modelo do agente chega ao motor; sem escolha, chega o padrão A (decisão do dono, 18/11)", async () => {
     const manual = manualEngine({ keyless: true });
     const made = await scene("engine-llm-profile", { engine: "manual", llmProfile: "b" }, manual);

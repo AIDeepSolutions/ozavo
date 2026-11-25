@@ -40,9 +40,11 @@ interface Draft {
   followUpOwner: string;
   listeningEnvironment: ListeningEnvironment;
   llmProfile: LlmProfile;
+  latencyBridge: boolean;
+  latencySpeculation: boolean;
 }
 
-const BLANK: Draft = { name: "", roleLabel: "", greeting: "", instructions: "", engine: "", voiceId: "", language: "pt-BR", tools: [], transferTo: "", maxMinutes: "10", costCeiling: "5.00", enabled: true, followUpOwner: "", listeningEnvironment: "normal", llmProfile: "a" };
+const BLANK: Draft = { name: "", roleLabel: "", greeting: "", instructions: "", engine: "", voiceId: "", language: "pt-BR", tools: [], transferTo: "", maxMinutes: "10", costCeiling: "5.00", enabled: true, followUpOwner: "", listeningEnvironment: "normal", llmProfile: "a", latencyBridge: true, latencySpeculation: true };
 
 /** O motor em pipeline (Deepgram + OpenRouter + Cartesia): o único que usa o perfil do modelo de texto. */
 const PIPELINE_ENGINE = "deepgram-openrouter-cartesia";
@@ -66,6 +68,8 @@ const toDraft = (agent: Agent): Draft => ({
   followUpOwner: agent.followUpOwnerUserId ?? "",
   listeningEnvironment: agent.listeningEnvironment ?? "normal",
   llmProfile: agent.llmProfile ?? "a",
+  latencyBridge: agent.latencyBridge ?? true,
+  latencySpeculation: agent.latencySpeculation ?? true,
 });
 
 export default function AgentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -143,6 +147,8 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
         followUpOwnerUserId: draft.followUpOwner === "" ? null : draft.followUpOwner,
         listeningEnvironment: draft.listeningEnvironment,
         llmProfile: draft.llmProfile,
+        latencyBridge: draft.latencyBridge,
+        latencySpeculation: draft.latencySpeculation,
       };
       const saved = await api<Agent>(isNew ? "/agents" : `/agents/${id}`, { method: isNew ? "POST" : "PATCH", body });
       setSavedEnvironment(saved.listeningEnvironment ?? "normal");
@@ -262,6 +268,12 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
                   <option value="e">{t.llmProfileE}</option>
                 </Select>
               </Field>
+              <div className="mt-4 space-y-3">
+                <Switch checked={draft.latencyBridge} onChange={(next) => set("latencyBridge", next)} label={t.latencyBridge} />
+                <p className="text-[0.87rem] text-muted">{t.latencyBridgeHint}</p>
+                <Switch checked={draft.latencySpeculation} onChange={(next) => set("latencySpeculation", next)} label={t.latencySpeculation} />
+                <p className="text-[0.87rem] text-muted">{t.latencySpeculationHint}</p>
+              </div>
             </div>
           ) : null}
           {backToNormalPending ? (

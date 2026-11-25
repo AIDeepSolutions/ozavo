@@ -33,6 +33,9 @@ export interface Agent {
   listeningEnvironment?: ListeningEnvironment;
   /** Perfil do modelo de texto (motor em pipeline). Agente gravado antes do campo existir pode chegar sem ele: vale `a`. */
   llmProfile?: LlmProfile;
+  /** Ajustes de latência do motor em pipeline. Agente gravado antes dos campos existirem pode chegar sem eles: valem ligados. */
+  latencyBridge?: boolean;
+  latencySpeculation?: boolean;
 }
 
 export type ListeningEnvironment = "normal" | "noisy";

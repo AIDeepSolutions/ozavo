@@ -89,6 +89,8 @@ interface AgentRow {
   vocabulary: string[];
   listening_environment: "normal" | "noisy";
   llm_profile: string;
+  latency_bridge: boolean;
+  latency_speculation: boolean;
 }
 
 export const engineKeySetting = (engineId: string): string => `engine.${engineId}.api_key`;
@@ -452,7 +454,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
 
   async function run(): Promise<void> {
     agent = (await q.one<AgentRow>(
-      "select name, instructions, greeting, engine, voice_id, language, tools, max_call_seconds, cost_ceiling_cents, transfer_to_e164, vocabulary, listening_environment, llm_profile from agents where id = $1",
+      "select name, instructions, greeting, engine, voice_id, language, tools, max_call_seconds, cost_ceiling_cents, transfer_to_e164, vocabulary, listening_environment, llm_profile, latency_bridge, latency_speculation from agents where id = $1",
       [agentId],
     )) ?? undefined;
     const call = await q.one<{ direction: "inbound" | "outbound"; from_e164: string | null; to_e164: string | null; request_context: unknown }>(
@@ -559,6 +561,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
           llmProfile: isLlmProfileId(agent.llm_profile) ? agent.llm_profile : undefined,
           // A base de conhecimento (só o motor em pipeline busca por turno; os outros recebem a base inteira no prompt).
           knowledge: knowledge.kind === "ready" ? knowledge.config : undefined,
+          // Ajustes de latência do pipeline: ligados por padrão, o operador desliga na tela do agente.
+          latency: { bridge: agent.latency_bridge, speculation: agent.latency_speculation },
         },
         apiKey,
       );
