@@ -323,6 +323,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   let cancelQuiet: (() => void) | undefined;
   /** O que fechou o turno de quem ligou, para a linha do tempo (`endBy`). */
   let turnEndBy: TurnEndBy = "pause";
+  /** O final pedido pelo silêncio de palavras (`Finalize`) fecha o turno com esta etiqueta. */
+  let pendingEndBy: TurnEndBy | undefined;
   const awaitingTools = new Map<string, ChatToolCall>();
   let toolResults: ChatMessage[] = [];
   let queuedUser: { text: string; endedAt: number; delay: number }[] = [];
@@ -763,7 +765,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
 
   /** Um final chegou e o turno pode estar acabando: decide quanto esperar, e adianta o pedido ao modelo se a frase parece fechada. */
   const scheduleTurnEnd = (paused: boolean, by?: TurnEndBy): void => {
-    turnEndBy = by ?? (paused ? "pause" : "speech_final");
+    turnEndBy = by ?? pendingEndBy ?? (paused ? "pause" : "speech_final");
+    pendingEndBy = undefined;
     const text = finals.join(" ");
     const assessment = assessTurnEnd(text, environment);
     const delay = paused && speechEndedAt !== undefined ? Math.max(0, assessment.silenceMs - (now() - speechEndedAt)) : endpointDelayMs(text, environment);
@@ -806,6 +809,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     }
     speechEndedAt ??= lastWordsAt - latency.pauseMs;
     if (partial !== "") {
+      pendingEndBy = "quiet";
       // Palavras ainda não finais: o `Finalize` as entrega e o final que chegar fecha o turno pelo caminho da pausa.
       stt?.finalize();
       return;
