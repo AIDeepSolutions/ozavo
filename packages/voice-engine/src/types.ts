@@ -133,6 +133,10 @@ export interface TurnLatency {
   retries?: number;
   /** O que deu o turno de quem ligou por encerrado: `pause` (pausa local + final), `speech_final`, `quiet` (palavras pararam de chegar), `utterance_end` ou `manual`. */
   endBy?: "pause" | "speech_final" | "quiet" | "utterance_end" | "manual";
+  /** A classe da frase que fechou o turno (`closed`, `short`, `default`, `open`, `hesitation`, `dictation`): diz qual prazo valeu. */
+  endKind?: "closed" | "short" | "default" | "open" | "hesitation" | "dictation";
+  /** Depois de quantos ms do fim de turno anterior a pessoa voltou a falar (só até 3 s). Prazo menor que isso cortou a frase. */
+  resumedAfterMs?: number;
 }
 
 export interface VoiceSessionEvents {

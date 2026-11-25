@@ -77,6 +77,14 @@ const NEVER_LAST = new Set(
 const INTERROGATIVE_ENDING = new Set(["como", "quanto", "quantos", "quanta", "quantas", "quando", "onde", "qual", "quais"].map(normalize));
 // Possessivo no fim: quase sempre falta o substantivo ("quais são suas… empreitadas"). Vale mesmo com "?" (a Deepgram pontua sozinha).
 const POSSESSIVE = new Set(["meu", "minha", "meus", "minhas", "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas", "dele", "dela", "deles", "delas", "teu", "tua"]);
+// Determinante ou demonstrativo no fim: falta o substantivo ("automatizar alguma", "esse"). Só vale sem pontuação final ("alguma." fecha).
+const NEEDS_NOUN = new Set(
+  ["algum", "alguma", "alguns", "algumas", "outro", "outra", "outros", "outras", "cada", "todo", "toda", "todos", "todas", "esse", "essa", "esses", "essas", "este", "esta", "estes", "estas", "aquele", "aquela", "aqueles", "aquelas", "nenhum", "nenhuma", "varios", "varias", "certos", "certas", "muitos", "muitas", "poucos", "poucas"].map(normalize),
+);
+// Verbo de intenção seguido de infinitivo sem complemento ("Eu gostaria de fazer", "quero marcar"): o objeto ainda vem. Só sem pontuação final.
+const INTENT_INFINITIVE = /(?:^|\s)(?:gostaria|gostaríamos|queria|queríamos|quero|queremos|preciso|precisamos|precisava|posso|podemos|poderia|pretendo|vou|vamos|tenho\s+que|tinha\s+que|deveria|tentar|tentando)\s+(?:de\s+|em\s+)?\p{L}+(?:ar|er|ir|or)$/iu;
+// E-mail ou site ditado que acaba no domínio ("arroba e-mail ponto com", "ponto com ponto br", "gmail.com"): completo, só não tão certo quanto uma frase com ponto.
+const DOMAIN_ENDING = /(?:\b(?:ponto\s+com(?:\s+ponto\s+br)?|ponto\s+br|ponto\s+net|ponto\s+org)|\.(?:com|br|net|org))[.!?]?$/i;
 // Enchimento de quem pensa: só vale como frase aberta quando a frase não tem pontuação final.
 const FILLER = new Set(["entao", "assim", "tipo", "ne", "e", "hum", "humm", "ahn", "ee", "eh", "um", "uh", "este", "hm", "hmm"]);
 const SHORT_ANSWER = new Set(
@@ -118,7 +126,10 @@ export function assessTurnEnd(text: string, environment: ListeningEnvironment = 
   // Pergunta curta que termina na própria palavra interrogativa ("Tem como?", "Quanto?", "Quando?") está completa; a lista abaixo só vale
   // para o resto. A Deepgram pontua sozinha, por isso o "?" só conta quando a frase é curta (até 3 palavras) e não termina em possessivo.
   if (/\?$/.test(trimmed) && words.length <= 3 && INTERROGATIVE_ENDING.has(last)) return of("closed");
+  // "ponto com" termina em "com", palavra de ligação: o e-mail ditado acaba ali e a frase não está aberta.
+  if (DOMAIN_ENDING.test(trimmed)) return of("default");
   if (NEVER_LAST.has(last) || POSSESSIVE.has(last)) return of("open");
+  if (!/[.?!]$/.test(trimmed) && (NEEDS_NOUN.has(last) || INTENT_INFINITIVE.test(trimmed))) return of("open");
   if (missingDigits(trimmed)) return of("dictation");
   const whole = normalize(trimmed.replace(/[.,!?…]+/g, " ").replace(/\s+/g, ""));
   if (words.length <= 3 && SHORT_ANSWER.has(whole)) return of("short");
