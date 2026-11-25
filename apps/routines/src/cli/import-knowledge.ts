@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { createDb, createKnowledgeSource, getAgentKnowledge, loadConfig, replaceKnowledgeSource, setAgentKnowledge, withOrg, type Db, type KnowledgeKind } from "@ozavo/core";
+import { createDb, createKnowledgeSource, getAgentKnowledge, replaceKnowledgeSource, setAgentKnowledge, withOrg, type Db, type KnowledgeKind } from "@ozavo/core";
 import { z } from "zod";
 import { cliArgs } from "./args";
 
@@ -57,8 +57,9 @@ async function main(): Promise<void> {
   if (!values.org || !values.name || !values.file) {
     throw new Error("uso: import-knowledge --org <id da empresa> --name <nome da base> --file <arquivo.pdf|docx|md|txt> [--agent <id do agente> ...]");
   }
-  const config = loadConfig(process.env);
-  const db = createDb(config.databaseUrl, config.systemDatabaseUrl);
+  // Só as duas conexões: o comando não decifra nada, então não pede a chave de segredos da instalação.
+  const { DATABASE_URL, SYSTEM_DATABASE_URL } = z.object({ DATABASE_URL: z.string().min(1), SYSTEM_DATABASE_URL: z.string().min(1) }).parse(process.env);
+  const db = createDb(DATABASE_URL, SYSTEM_DATABASE_URL);
   try {
     const result = await importKnowledge(db, { organizationId: values.org, name: values.name, file: values.file, agentIds: values.agent ?? [] }, new Date());
     process.stdout.write(`${result.replaced ? "Versão nova da base" : "Base criada"}: ${result.sourceId} (indexação na fila, versão ${result.versionId}). Agentes ligados: ${result.linkedAgents.length}.\n`);
