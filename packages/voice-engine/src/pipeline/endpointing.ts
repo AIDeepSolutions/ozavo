@@ -58,7 +58,7 @@ export interface TurnEndAssessment {
  * `short` quase não esperam além disso. O piso de 300 a 350 ms vem da bancada: com menos, a pausa entre duas frases seguidas ("Quais
  * modelos vocês usam? É só OpenAI?") já fecha o turno no meio.
  */
-export const TURN_END_SILENCE_MS: Record<TurnEndKind, number> = { closed: 350, short: 300, default: 500, open: 1000, dictation: 900, hesitation: 1200 };
+export const TURN_END_SILENCE_MS: Record<TurnEndKind, number> = { closed: 350, short: 300, default: 500, open: 850, dictation: 900, hesitation: 1050 };
 
 const normalize = (word: string): string => word.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
 
@@ -73,6 +73,8 @@ const NEVER_LAST = new Set(
     "y", "pero", "porque", "el", "la", "los", "las", "con", "para", "sin", "si", "cuando", "una", "uno", "del",
   ].map(normalize),
 );
+// Palavra interrogativa que fecha uma pergunta curta ("Tem como?", "Quanto?", "Onde?", "Quais?").
+const INTERROGATIVE_ENDING = new Set(["como", "quanto", "quantos", "quanta", "quantas", "quando", "onde", "qual", "quais"].map(normalize));
 // Possessivo no fim: quase sempre falta o substantivo ("quais são suas… empreitadas"). Vale mesmo com "?" (a Deepgram pontua sozinha).
 const POSSESSIVE = new Set(["meu", "minha", "meus", "minhas", "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas", "dele", "dela", "deles", "delas", "teu", "tua"]);
 // Enchimento de quem pensa: só vale como frase aberta quando a frase não tem pontuação final.
@@ -113,6 +115,9 @@ export function assessTurnEnd(text: string, environment: ListeningEnvironment = 
   if (/[,;:]$|\.\.\.$|…$/.test(trimmed)) return of("open");
   const words = trimmed.split(/\s+/);
   const last = normalize(words.at(-1) ?? "");
+  // Pergunta curta que termina na própria palavra interrogativa ("Tem como?", "Quanto?", "Quando?") está completa; a lista abaixo só vale
+  // para o resto. A Deepgram pontua sozinha, por isso o "?" só conta quando a frase é curta (até 3 palavras) e não termina em possessivo.
+  if (/\?$/.test(trimmed) && words.length <= 3 && INTERROGATIVE_ENDING.has(last)) return of("closed");
   if (NEVER_LAST.has(last) || POSSESSIVE.has(last)) return of("open");
   if (missingDigits(trimmed)) return of("dictation");
   const whole = normalize(trimmed.replace(/[.,!?…]+/g, " ").replace(/\s+/g, ""));

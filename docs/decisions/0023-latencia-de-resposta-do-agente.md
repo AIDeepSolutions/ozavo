@@ -75,6 +75,16 @@ Os WebSockets da Deepgram e da Cartesia já são abertos na conexão, antes de o
 Perfil E, voz real, do fim real da fala ao primeiro som: **p50 1,52 s e p90 1,93 s antes, p50 0,39 s e p90 0,43 s depois**. O texto da resposta (sem a espera da
 ponte) sai em p50 0,88 s. Fim de turno pela pausa: −0,46 s no p50 e some a cauda de 5 a 6 s. Aquecimento e especulação valem pouco (≈ 0 a 0,2 s e ≈ 0,03 s).
 
+10. **Fim de turno que sobrevive a sinal que não é palavra (25/11).** Na ligação do dono, 7 de 23 turnos (6 com pedido adiantado descartado) fecharam só pelo
+    `UtteranceEnd` (~1,25 s). Com ruído de linha a Deepgram manda `SpeechStarted` logo depois do final do `Finalize` (reproduzido com
+    `scripts/bancada-latencia/sondar-fim-de-turno.ts --noise 500`), e isso cancelava o prazo de fim de turno e o pedido adiantado. Agora: (a) `SpeechStarted` não cancela
+    quando a pausa local já foi vista e há texto final (palavra nova ou voz sustentada cancelam como antes); (b) o silêncio de palavras (`WORDS_QUIET_MS`, 320 ms) pede o
+    `Finalize` e fecha pelo prazo da classe da frase mesmo sem pausa local e sem `speech_final`, esperando até 700 ms se o detector local ainda vê voz; (c) pergunta de até 3
+    palavras terminada em palavra interrogativa ("Tem como?") é frase completa; (d) `turn_latency.endBy` diz o que fechou o turno (`pause`, `speech_final`, `quiet`,
+    `utterance_end`, `manual`). Frases abertas (possessivo, conjunção, vírgula, hesitação) esperam o mesmo de antes: o caso "E quais são suas" / "empreitadas" segue coberto.
+    (e) o silêncio de frase aberta caiu de 1.000 para 850 ms e o de hesitação de 1.200 para 1.050 ms: as 5 esperas de frase aberta da ligação foram desnecessárias (ninguém continuou); é uma constante (`TURN_END_SILENCE_MS`) se o corte voltar a aparecer.
+    Replay das 23 falas reais (`replay-fim-de-turno.ts`): pedido adiantado aproveitado 10 de 23 → 17 de 23, descartado 6 → 0, fim de turno p50 795 → 350 ms, p90 1.276 → 850 ms.
+
 ## Consequências e como desligar
 
 - **Ligados por padrão.** Aquecimento, fim de turno pela pausa, especulação e ponte nascem ligados para todo agente em pipeline. O operador desliga a ponte e a

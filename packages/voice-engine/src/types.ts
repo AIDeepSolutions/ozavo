@@ -131,6 +131,8 @@ export interface TurnLatency {
   speculation?: "hit" | "miss";
   /** Quantas conexões de modelo foram refeitas neste turno por demora no primeiro texto. */
   retries?: number;
+  /** O que deu o turno de quem ligou por encerrado: `pause` (pausa local + final), `speech_final`, `quiet` (palavras pararam de chegar), `utterance_end` ou `manual`. */
+  endBy?: "pause" | "speech_final" | "quiet" | "utterance_end" | "manual";
 }
 
 export interface VoiceSessionEvents {
