@@ -317,6 +317,24 @@ describe("sessão do pipeline", () => {
     ]);
   });
 
+  it("a frase dita enquanto a ferramenta roda não entra no histórico entre a chamada e o resultado (o provedor recusava com 400 e a ligação ficava no reserva)", async () => {
+    const t = await setup();
+    callerSays(t, "Tem horário amanhã às cinco?");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "text", delta: "Deixa eu checar a agenda." }, { type: "tool_call", call: { id: "c1", type: "function", function: { name: "agenda_marcar", arguments: "{}" } } });
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    // A ferramenta avisa quem está na linha enquanto consulta (ctx.say), e a pessoa fala por cima.
+    t.session.say("Um instante, estou conferindo a agenda.");
+    callerSays(t, "Tem como?");
+    t.timers.runAll();
+    t.session.sendToolResult("c1", { ok: true, message: "Sem horário." });
+    expect(t.streams).toHaveLength(2);
+    const roles = (t.streams[1]?.messages ?? []).slice(-4).map((m) => m.role);
+    expect(roles).toEqual(["user", "assistant", "tool", "user"]);
+    expect(t.streams[1]?.messages.at(-3)).toMatchObject({ role: "assistant", content: "Deixa eu checar a agenda. Um instante, estou conferindo a agenda.", tool_calls: [expect.objectContaining({ id: "c1" })] });
+  });
+
   it("barge-in: a fala de quem ligou corta o modelo e a síntese, e emite `interrupted`", async () => {
     const t = await setup();
     callerSays(t, "Me explica os planos.");
