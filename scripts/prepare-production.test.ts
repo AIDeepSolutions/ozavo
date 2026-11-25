@@ -64,3 +64,32 @@ it("sem poder passar a chave TLS ao usuário do Asterisk, deixa-a legível para 
     expect((await stat(join(target, "asterisk/generated/tls/server.key"))).mode & 0o777).toBe(0o644);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+it("TEMPORÁRIO: só com temporaryUdpHost a produção publica 5060/udp e grava a lista; sem ele, só TLS", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ozavo-prepare-udp-"));
+  try {
+    const tls = join(dir, "tls"); await mkdir(tls);
+    const key = join(tls, "key.pem"); const cert = join(tls, "cert.pem");
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=ozavo.example", "-addext", "subjectAltName=DNS:ozavo.example", "-keyout", key, "-out", cert], { stdio: "ignore" });
+    const input = { databaseUrl: "postgres://ozavo_app:invented@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+      systemDatabaseUrl: "postgres://ozavo_system:invented@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+      migrationDatabaseUrl: "postgres://owner:invented@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+      publicUrl: "https://ozavo.example", publicIp: "198.51.100.7", tlsCertificate: cert, tlsPrivateKey: key, localMinio: true as const };
+    const uid = process.getuid?.() ?? 0;
+    const tlsOnly = join(dir, "so-tls");
+    await prepareProduction(tlsOnly, input, { asteriskUid: uid });
+    expect(await readFile(join(tlsOnly, "app.env"), "utf8")).toContain("OZAVO_UDP_ONLY_HOSTS=''");
+    expect(await readFile(join(tlsOnly, "asterisk/generated/pjsip.conf"), "utf8")).not.toContain("transport-udp");
+    expect(parse(await readFile(join(tlsOnly, "docker-compose.yml"), "utf8")).services.asterisk.ports).not.toContain("5060:5060/udp");
+
+    const withUdp = join(dir, "com-udp");
+    await prepareProduction(withUdp, { ...input, temporaryUdpHost: "sip.telera.com.br" }, { asteriskUid: uid });
+    expect(await readFile(join(withUdp, "app.env"), "utf8")).toContain("OZAVO_UDP_ONLY_HOSTS='sip.telera.com.br'");
+    const pjsip = await readFile(join(withUdp, "asterisk/generated/pjsip.conf"), "utf8");
+    expect(pjsip).toContain("[transport-udp]"); expect(pjsip).toContain("[transport-tls]");
+    expect(pjsip).toContain("external_media_address=198.51.100.7"); expect(pjsip).not.toContain("${");
+    expect(parse(await readFile(join(withUdp, "docker-compose.yml"), "utf8")).services.asterisk.ports).toContain("5060:5060/udp");
+    expect(productionInput.safeParse({ ...input, temporaryUdpHost: "sip.telera.com.br,evil.example" }).success).toBe(false);
+    expect(productionInput.safeParse({ ...input, temporaryUdpHost: "0.0.0.0/0" }).success).toBe(false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
