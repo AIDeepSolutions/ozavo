@@ -401,6 +401,7 @@ export async function* streamChatResilient(request: ChatRequest): AsyncGenerator
     return queue.shift() as RaceMessage;
   };
   const onAbort = (): void => push({ kind: "aborted" });
+  if (request.signal?.aborted) return;
   request.signal?.addEventListener("abort", onAbort, { once: true });
 
   const attempts: Attempt[] = [];
@@ -463,10 +464,21 @@ export async function* streamChatResilient(request: ChatRequest): AsyncGenerator
   try {
     for (;;) {
       const message = await nextMessage();
-      if (message.kind === "aborted") return;
+      if (message.kind === "aborted") {
+        // Barge-in: corta tudo, mas o extrato estimado de quem respondia (ou da última tentativa) ainda chega ao medidor de custo, como antes.
+        for (const other of attempts) other.controller.abort();
+        const target = winner ?? attempts.at(-1);
+        while (target && !target.ended && !target.failed) {
+          const next = await nextMessage();
+          if (next.kind === "event" && next.attempt === target && next.event.type === "usage") yield next.event;
+          else if (next.kind === "end" && next.attempt === target) target.ended = true;
+          else if (next.kind === "error" && next.attempt === target) target.failed = true;
+        }
+        return;
+      }
       const { attempt } = message;
       if (message.kind === "hedge") {
-        if (winner || attempts.length >= order.length) continue;
+        if (winner || attempt.failed || attempt.ended || attempts.length >= order.length) continue;
         yield { type: "retry", provider: attempt.provider };
         launch();
         continue;
@@ -514,9 +526,12 @@ export async function* streamChatResilient(request: ChatRequest): AsyncGenerator
       if (winner === attempt) throw message.error;
       lastError = message.error;
       if (message.error instanceof LlmHttpError && [401, 402, 403].includes(message.error.status)) throw message.error;
-      circuit?.report(keyOf(attempt.provider), false);
+      // Só demora e falha do provedor abrem o disjuntor: um 400/404/422 é do pedido, não dele.
+      const requestFault = message.error instanceof LlmHttpError && message.error.status >= 400 && message.error.status < 500 && ![408, 429].includes(message.error.status);
+      if (!requestFault) circuit?.report(keyOf(attempt.provider), false);
       attempt.cancelHedge?.();
-      if (attempts.length < order.length) {
+      // Só lança o próximo se não há outra tentativa viva (ela tem o seu próprio prazo).
+      if (attempts.length < order.length && attempts.every((other) => other === attempt || other.failed || other.ended)) {
         yield { type: "retry", provider: attempt.provider };
         launch();
       } else if (attempts.every((other) => other.failed || other.ended)) throw lastError;

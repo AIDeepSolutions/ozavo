@@ -436,4 +436,26 @@ describe("corrida entre provedores e disjuntor (ligação de 25/11: o Together e
     await expect(collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }))).rejects.toBeInstanceOf(LlmHttpError);
     expect(server.requests).toHaveLength(4);
   });
+
+  it("barge-in no meio da corrida: o extrato estimado do pedido cortado ainda chega a quem mede o custo", async () => {
+    const server = await startFakeSse((_request, reply) => reply.write({ provider: "Together", choices: [{ delta: { content: "Oi" }, finish_reason: null }] }));
+    stops.push(() => server.stop());
+    const abort = new AbortController();
+    setTimeout(() => abort.abort(), 80);
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile, signal: abort.signal }));
+    expect(events.filter((event) => event.type === "usage")).toHaveLength(1);
+    expect(events.some((event) => event.type === "retry")).toBe(false);
+  });
+
+  it("um 400 do pedido (não do provedor) não abre o disjuntor", async () => {
+    const server = await startFakeSse((request, reply) => {
+      if (orderOf(request)[0] === "together") reply.status(400, {});
+      else answer("Wafer", reply);
+    });
+    stops.push(() => server.stop());
+    const clock = manualClock();
+    const circuit = createProviderCircuit({ now: () => clock.ms });
+    for (let i = 0; i < 3; i++) await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: { ...profile, firstTokenTimeoutMs: 5000 }, circuit }));
+    expect(circuit.isOpen(`${profile.model}|together`)).toBe(false);
+  });
 });
