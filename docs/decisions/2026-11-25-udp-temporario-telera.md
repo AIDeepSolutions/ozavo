@@ -39,3 +39,10 @@ origem); uma linha só; sem outras exceções.
 A Telera precisa oferecer SIP/TLS (5061 ou outra porta) e SRTP, ou o tráfego passa por um proxy SIP
 com TLS na ponta da Telera (por exemplo, um Kamailio/stunnel só com a Telera por UDP numa rede privada).
 Pendente com a Telera: TLS/SRTP, IPs de origem, limite de canais e CPS, PAI/RCD em E.164.
+
+## Implantação (25/11/2026)
+
+Subida pelo Compose do Coolify (`deploy/docker-compose.coolify-voz.yml`, ver o guia de produção no
+Coolify). Sem acesso ao firewall do provedor, a origem é limitada dentro do Asterisk: `type=acl` no
+`pjsip.conf` permite só o IP atual de `sip.telera.com.br`. A 5060/udp ainda fica alcançável no host
+até o firewall do provedor restringi-la; o Asterisk descarta o que não vem da Telera.
