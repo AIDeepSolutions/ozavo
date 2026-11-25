@@ -305,6 +305,9 @@ export interface Finops {
   answeredCalls: number;
   ttsCharacters: number;
   providerCostUsdCents: number;
+  /** A parte do custo dos provedores que é embedding da base de conhecimento (indexação e busca de teste), em centavos de dólar. */
+  knowledgeCostUsdCents: number;
+  knowledgeTokens: { index: number; search: number };
   margin: {
     revenueCents: number;
     overageRevenueCents: number;

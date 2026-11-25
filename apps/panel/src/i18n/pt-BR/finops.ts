@@ -28,6 +28,8 @@ const finops = {
   revenue: "Receita do ciclo",
   providerCost: "Provedores (transcrição, modelo e síntese)",
   providerCostUsd: "{value} em dólar",
+  knowledgeCost: "Base de conhecimento (embeddings)",
+  knowledgeCostDetail: "{index} tokens indexados e {search} de busca de teste; já está no custo dos provedores",
   telephonyCost: "Telefonia",
   variableCost: "Custo variável",
   grossMargin: "Margem bruta",

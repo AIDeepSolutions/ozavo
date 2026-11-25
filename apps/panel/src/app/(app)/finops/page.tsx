@@ -232,6 +232,9 @@ export default function FinopsPage() {
             <Line label={t.overageRevenue} value={formatBrl(margin.overageRevenueCents, locale)} />
             <Line label={t.revenue} value={formatBrl(margin.revenueCents, locale)} strong />
             <Line label={t.providerCost} value={money(margin.providerCostCents)} hint={fill(t.providerCostUsd, { value: formatMoney(data.providerCostUsdCents, locale) })} />
+            {data.knowledgeCostUsdCents > 0 || data.knowledgeTokens.index > 0 ? (
+              <Line label={t.knowledgeCost} value={formatMoney(data.knowledgeCostUsdCents, locale)} hint={fill(t.knowledgeCostDetail, { index: data.knowledgeTokens.index.toLocaleString(locale), search: data.knowledgeTokens.search.toLocaleString(locale) })} />
+            ) : null}
             <Line label={t.telephonyCost} value={money(margin.telephonyCostCents)} />
             <Line label={t.variableCost} value={money(margin.variableCostCents)} strong />
             <Line
