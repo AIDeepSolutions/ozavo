@@ -52,7 +52,7 @@ const FIELD_OF_SLUG: Record<string, AgendaBookingField> = { name: "name", email:
 /** Lê a recusa `400` do Cal.com e, se ela fala de um dado da pessoa, devolve o dado e se faltou ou veio inválido. */
 export function bookingFieldProblemOf(body: string): AgendaBookingFieldProblem | undefined {
   if (/email_validation_error|email_domain_cannot_receive_mail|valid email/i.test(body)) return new AgendaBookingFieldProblem("email", "invalid");
-  const slug = /Missing required booking field response: (\w+)/.exec(body)?.[1] ?? /responses - \{(\w+)\}error_required_field/.exec(body)?.[1];
+  const slug = /Missing required booking field response: ([\w-]+)/.exec(body)?.[1] ?? /responses - \{([\w-]+)\}error_required_field/.exec(body)?.[1];
   const field = slug === undefined ? undefined : FIELD_OF_SLUG[slug];
   return field === undefined ? undefined : new AgendaBookingFieldProblem(field, "missing");
 }

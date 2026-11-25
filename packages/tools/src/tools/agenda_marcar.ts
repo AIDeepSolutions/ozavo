@@ -27,7 +27,7 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
     personalTextArgs: true,
     description:
       "Marca um horário na agenda, depois que a pessoa confirmou o dia e a hora em voz alta. Chame só depois de ler o dia e a hora e ouvir o sim dela: sem `confirmed: true` nada é gravado. Use o horário exato que agenda_horarios_livres devolveu. " +
-      "ANTES de chamar, colete os dados da pessoa PARA A EQUIPE, perguntando UMA coisa por vez, nesta ordem: o nome, a empresa, o e-mail, o processo que ela quer melhorar e, por fim, o melhor horário. " +
+      "ANTES de chamar, colete os dados da pessoa PARA A EQUIPE, perguntando UMA coisa por vez, nesta ordem: o nome, a empresa, o e-mail, o processo que ela quer melhorar e, por fim, o melhor horário (que você já oferece com os horários livres de agenda_horarios_livres, sem perguntar o horário duas vezes). " +
       "O e-mail tem de ser confirmado: peça que a pessoa soletre, repita de volta letra por letra (\"arroba\", \"ponto\") e só use depois do sim dela; escreva no argumento já em forma de e-mail (fulano@empresa.com.br), nunca por extenso. " +
       "Mande só o que a pessoa disse: se ela não quis dar um dado, deixe o campo de fora, nunca invente nem preencha com palavra solta. Se a agenda exigir um dado que faltou, a resposta diz qual, e você pergunta e chama de novo. " +
       "NÃO use para trocar um horário já marcado (use agenda_remarcar), nem para marcar sem a confirmação da pessoa, nem para um horário que já passou. NÃO chame duas vezes para o mesmo pedido.",
