@@ -35,7 +35,7 @@ export async function getConsolidatedFinops(db: Db, now: Date): Promise<Consolid
   const rows = await withSystem(db, (q) =>
     q.many<{ id: string; name: string; platform: boolean; plan: string | null; price: number | null; minutes: number | null; calls: number; seconds: number; microcents: string }>(
       `select o.id, o.name, o.platform, p.plan, p.monthly_price_cents as price, p.included_minutes as minutes,
-              coalesce(c.calls, 0)::int as calls, coalesce(c.seconds, 0)::int as seconds, coalesce(l.microcents, 0)::text as microcents
+              coalesce(c.calls, 0)::int as calls, coalesce(c.seconds, 0)::int as seconds, (coalesce(l.microcents, 0) + coalesce(k.microcents, 0))::text as microcents
          from organizations o
          left join plan_subscriptions p on p.organization_id = o.id
          left join (select organization_id, count(*) as calls,
@@ -45,6 +45,8 @@ export async function getConsolidatedFinops(db: Db, now: Date): Promise<Consolid
                      group by organization_id) c on c.organization_id = o.id
          left join (select organization_id, sum(cost_microcents) as microcents
                       from usage_ledger where at >= $1 and at < $2 group by organization_id) l on l.organization_id = o.id
+         left join (select organization_id, sum(cost_microcents) as microcents
+                      from knowledge_usage where at >= $1 and at < $2 group by organization_id) k on k.organization_id = o.id
         order by o.platform desc, o.name, o.id`,
       [start, end, now],
     ),
