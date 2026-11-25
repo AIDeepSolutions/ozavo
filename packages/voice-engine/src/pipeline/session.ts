@@ -1,11 +1,13 @@
 import type { Clock } from "@ozavo/core";
 import { SessionEmitter } from "../emitter";
 import { instructionsWithVocabulary } from "../vocabulary";
-import type { AnsweringMachineDetection, ToolSpec, TurnLatency, Usage, VoiceSession, VoiceSessionConfig } from "../types";
+import { CONTEXT_MAX_TOKENS, formatRetrievedContext } from "../knowledge-prompt";
+import type { AnsweringMachineDetection, KnowledgeCallInfo, ToolSpec, TurnLatency, Usage, VoiceSession, VoiceSessionConfig } from "../types";
 import { AnsweringMachineDetector, type AmdOptions } from "./amd";
 import type { CartesiaTts, TtsHandlers } from "./cartesia-tts";
 import type { DeepgramStt, SttHandlers } from "./deepgram-stt";
 import { endpointDelayMs } from "./endpointing";
+import { KnowledgeRetriever, SPECULATE_DEBOUNCE_MS, SPECULATE_MIN_WORDS, wordCount, type EmbeddingResult } from "./knowledge-retrieval";
 import type { ChatMessage, ChatToolCall, LlmEvent } from "./openrouter-llm";
 import { TURN_TARGET_MAX_CHARACTERS, createTurnLimiter } from "./turn-guard";
 import { WRITE_FAILURE_RESPONSES, WRITE_TOOLS, WRITE_UNAVAILABLE, claimsDone, failureCovers, startsAtOfCall, writeKindOf, type WriteFailure } from "./write-guard";
@@ -44,6 +46,25 @@ export interface PipelineSessionDeps {
   bargeInVad?: VadOptions;
   /** `false` desliga a detecção de caixa postal. */
   amd?: AmdOptions | false;
+  /**
+   * Embedding da pergunta (chave do OpenRouter da própria ligação), para a busca por similaridade na base de conhecimento.
+   * Sem ele, a busca é só por palavras. Só vale com `config.knowledge.mode === "rag"` e `config.knowledge.search`.
+   */
+  embedQuestion?(text: string): Promise<EmbeddingResult>;
+}
+
+/** As mensagens do modelo neste turno: a mesma lista, com os trechos da base logo antes da última fala da pessoa. */
+export function withKnowledgeContext(messages: readonly ChatMessage[], context: string | undefined): readonly ChatMessage[] {
+  if (context === undefined) return messages;
+  let index = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === "user") {
+      index = i;
+      break;
+    }
+  }
+  if (index === -1) return messages;
+  return [...messages.slice(0, index), { role: "system", content: context }, ...messages.slice(index)];
 }
 
 const APOLOGY: Record<string, string> = {
@@ -222,11 +243,46 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
    */
   let writeFailure: WriteFailure | undefined;
 
+  /** Custo dos embeddings das perguntas ainda não lançado no extrato (centavos de dólar): vai junto da próxima leitura de uso, que sai a cada segundo de áudio ou fim de fala. */
+  let pendingEmbeddingCents = 0;
   const flushUsage = (llm?: Partial<Usage>): void => {
     const seconds = stt?.drainSeconds() ?? 0;
     const characters = tts?.drainCharacters() ?? 0;
-    if (!llm && seconds === 0 && characters === 0) return;
-    emitter.emit("usage", { seconds, characters, ...llm });
+    if (!llm && seconds === 0 && characters === 0 && pendingEmbeddingCents === 0) return;
+    const embeddingCents = pendingEmbeddingCents;
+    pendingEmbeddingCents = 0;
+    emitter.emit("usage", { seconds, characters, ...llm, ...(embeddingCents > 0 && { providerCostCents: (llm?.providerCostCents ?? 0) + embeddingCents }) });
+  };
+
+  const knowledge = config.knowledge;
+  const retriever =
+    knowledge?.mode === "rag" && knowledge.search
+      ? new KnowledgeRetriever({
+          search: knowledge.search,
+          embed: deps.embedQuestion ?? (() => Promise.reject(new Error("no embedding"))),
+          now,
+          schedule,
+          topK: knowledge.topK,
+          budgetMs: knowledge.budgetMs,
+          // O embedding da pergunta é gasto da ligação: entra no extrato como o do modelo (custo declarado pelo provedor, em centavos).
+          onEmbedded: ({ costMicrocents }) => void (pendingEmbeddingCents += costMicrocents / 1_000_000),
+        })
+      : undefined;
+  /** Os trechos do último turno de quem ligou: valem também para a continuação do turno depois de uma ferramenta. */
+  let knowledgeContext: string | undefined;
+  let cancelSpeculation: (() => void) | undefined;
+  /** A busca especulativa: o texto de quem ligou até agora (finais + parcial), depois de um tempo sem mudar. */
+  const speculate = (delayMs: number): void => {
+    if (!retriever) return;
+    cancelSpeculation?.();
+    cancelSpeculation = undefined;
+    const text = [...finals, ...(partial ? [partial] : [])].join(" ").trim();
+    if (wordCount(text) < SPECULATE_MIN_WORDS) return;
+    if (delayMs <= 0) return retriever.speculate(text, true);
+    cancelSpeculation = schedule(() => {
+      cancelSpeculation = undefined;
+      retriever.speculate(text);
+    }, delayMs);
   };
 
   const agentAudible = (): boolean => now() < playhead || (turn?.synthesizing ?? false) || sayContexts.size > 0;
@@ -271,7 +327,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     session.say(text);
   };
 
-  const respond = async (userEndedAt: number | undefined, endpointDelay: number): Promise<void> => {
+  const respond = async (userEndedAt: number | undefined, endpointDelay: number, question?: string): Promise<void> => {
     const current: AgentTurn = {
       id: ++turnSeq,
       contextId: `turn-${turnSeq}`,
@@ -285,6 +341,14 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       recorded: false,
     };
     turn = current;
+    // Os trechos da base para esta fala (modo de busca): a busca é especulativa e tem orçamento, então a espera é curta e nunca falha.
+    let knowledgeInfo: KnowledgeCallInfo | undefined = knowledge?.mode === "full" ? { mode: "full", hits: [], retrievalMs: 0, speculative: false, usedVector: false, embeddingTokens: 0 } : undefined;
+    if (retriever && question !== undefined) {
+      const retrieved = await retriever.forTurn(question);
+      if (turn !== current || current.abort.signal.aborted) return;
+      knowledgeContext = formatRetrievedContext(retrieved.hits, { language: config.language, only: knowledge?.only === true, maxTokens: CONTEXT_MAX_TOKENS }).text;
+      knowledgeInfo = retrieved.info;
+    }
     let text = "";
     let pending = "";
     // O limitador suave do turno: o que passa do alvo de caracteres não chega à síntese.
@@ -317,7 +381,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       emit(piece, final);
     };
     try {
-      for await (const event of deps.chat(history, config.tools, current.abort.signal)) {
+      for await (const event of deps.chat(withKnowledgeContext(history, knowledgeContext), config.tools, current.abort.signal)) {
         if (event.type === "fallback") {
           emitter.emit("llmCall", { promptTokens: 0, cachedTokens: 0, completionTokens: 0, fallback: true, fallbackStatus: event.status });
           continue;
@@ -333,7 +397,9 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
             cachedTokens,
             cacheWriteTokens: event.usage.cacheWriteTokens,
             completionTokens,
+            ...(knowledgeInfo && { knowledge: knowledgeInfo }),
           });
+          knowledgeInfo = undefined;
           flushUsage({ textInputTokens: Math.max(0, promptTokens - cachedTokens), cachedInputTokens: cachedTokens, textOutputTokens: completionTokens, providerCostCents: costCents });
           continue;
         }
@@ -396,8 +462,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     }
   };
 
-  const startResponse = (endedAt: number | undefined, delay: number): void => {
-    const pending = respond(endedAt, delay);
+  const startResponse = (endedAt: number | undefined, delay: number, question?: string): void => {
+    const pending = respond(endedAt, delay, question);
     activeResponses.add(pending);
     void pending.finally(() => activeResponses.delete(pending));
   };
@@ -405,6 +471,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   const endCallerTurn = (): void => {
     cancelEndpoint?.();
     cancelEndpoint = undefined;
+    cancelSpeculation?.();
+    cancelSpeculation = undefined;
     const text = [...finals, ...(finals.length === 0 && partial ? [partial] : [])].join(" ").trim();
     finals = [];
     partial = "";
@@ -420,7 +488,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     // O modelo ainda pensava no turno anterior: recomeça com tudo o que a pessoa disse.
     if (turn) stopTurn(false);
     history.push({ role: "user", content: text });
-    startResponse(endedAt, delay);
+    startResponse(endedAt, delay, text);
   };
 
   let turnDelay = 0;
@@ -434,7 +502,10 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       emitter.emit("callerActivity", { words: true });
       amd?.pushTranscript(text);
       // Palavra que o agente acabou de dizer é eco do microfone, não pessoa interrompendo.
-      if (!isEchoOf(text, recentAgentText)) bargeIn();
+      if (!isEchoOf(text, recentAgentText)) {
+        bargeIn();
+        speculate(SPECULATE_DEBOUNCE_MS);
+      }
     },
     final(text, speechFinal) {
       if (finished) return;
@@ -444,6 +515,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         lastFinalAt = now();
         emitter.emit("callerActivity", { words: true });
         amd?.pushTranscript(text);
+        // O trecho final é definitivo: a busca sai já, e o prazo de fim de turno que vem a seguir é o que ela usa para chegar.
+        if (!isEchoOf(text, recentAgentText)) speculate(0);
       }
       if (!speechFinal || finals.length === 0) return;
       cancelEndpoint?.();
@@ -595,7 +668,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       queuedUser = [];
       for (const item of waiting) history.push({ role: "user", content: item.text });
       const last = waiting.at(-1);
-      const next = () => startResponse(last?.endedAt, last?.delay ?? 0);
+      const question = waiting.length > 0 ? waiting.map((item) => item.text).join(" ") : undefined;
+      const next = () => startResponse(last?.endedAt, last?.delay ?? 0, question);
       if (turn?.synthesizing) afterSynthesis = next;
       else next();
     },

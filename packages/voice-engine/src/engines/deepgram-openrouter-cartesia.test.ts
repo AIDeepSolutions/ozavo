@@ -28,7 +28,7 @@ const results = (transcript: string, speechFinal: boolean) => ({
   channel: { alternatives: [{ transcript }] },
 });
 
-async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" } = {}) {
+async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" | "d" | "e" } = {}) {
   const deepgram = await startFakeWs();
   const cartesia = await startFakeWs();
   const replies: SseReply[] = [];
@@ -114,7 +114,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
   });
 
   it("o perfil do agente chega ao pedido do modelo: padrão A (Haiku, cache, 1024), B (raciocínio desligado), C (Flash de antes)", async () => {
-    const pedido = async (llmProfile?: "a" | "b" | "c") => {
+    const pedido = async (llmProfile?: "a" | "b" | "c" | "d" | "e") => {
       const t = await setup({ llmProfile });
       t.deepgram.send(results("Quero marcar uma consulta.", true));
       await until(() => t.replies.length === 1);
@@ -130,6 +130,18 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     const c = await pedido("c");
     expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400 });
     expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
+  });
+
+  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together), pelo motor e não só pela montagem do corpo", async () => {
+    const pedido = async (llmProfile: "d" | "e") => {
+      const t = await setup({ llmProfile });
+      t.deepgram.send(results("Quero marcar uma consulta.", true));
+      await until(() => t.replies.length === 1);
+      return t.openrouter.requests[0]?.body as Record<string, unknown>;
+    };
+    expect(await pedido("d")).toMatchObject({ model: "openai/gpt-oss-120b", provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ reasoning: { enabled: false } });
   });
 
   it("cada chamada ao modelo emite `llmCall` com provedor, fim, raciocínio e cache, sem o texto", async () => {
@@ -322,5 +334,54 @@ describe("partes da chave na tela", () => {
     expect([...ids].sort()).toEqual(Object.keys(pipelineCredentials.shape).sort());
     const typed = Object.fromEntries(ids.map((id) => [id, ` ${id}-falsa `]));
     expect(parsePipelineKey(JSON.stringify(typed))).toEqual({ deepgram: "deepgram-falsa", cartesia: "cartesia-falsa", openrouter: "openrouter-falsa" });
+  });
+});
+
+describe("base de conhecimento no motor em pipeline", () => {
+  it("declara que busca na base; o embedding da pergunta vai ao OpenRouter com a chave da ligação e os trechos chegam ao modelo antes da fala", async () => {
+    const deepgram = await startFakeWs();
+    const cartesia = await startFakeWs();
+    const replies: SseReply[] = [];
+    const openrouter = await startFakeSse((_request, reply) => void replies.push(reply));
+    stops.push(() => deepgram.stop(), () => cartesia.stop(), () => openrouter.stop());
+    const embeddingRequests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const fakeFetch = (async (url: unknown, init?: RequestInit): Promise<Response> => {
+      if (!String(url).endsWith("/embeddings")) return fetch(url as string, init);
+      embeddingRequests.push({ url: String(url), authorization: new Headers(init?.headers).get("authorization"), body: JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array<number>(1536).fill(0.01) }], usage: { prompt_tokens: 6, cost: 1.2e-7 } }), { status: 200 });
+    }) as typeof fetch;
+    const searches: Array<{ question: string; embedded: boolean }> = [];
+    const session = await connectPipeline(
+      {
+        instructions: "Você é a recepcionista.",
+        language: "pt-BR",
+        tools: [],
+        knowledge: {
+          mode: "rag",
+          only: false,
+          search: async ({ question, embedding }) => {
+            searches.push({ question, embedded: embedding !== null });
+            return [{ chunkId: "c1", sourceId: "s1", sourceName: "Manual", position: 1, section: "Preços", content: "Limpeza R$ 180,00.", tokenCount: 10, vectorScore: 0.6, lexicalRank: 1, score: 0.03 }];
+          },
+        },
+      },
+      KEY,
+      { urls: { stt: deepgram.url, tts: cartesia.url, llm: openrouter.url }, fetch: fakeFetch },
+    );
+    stops.unshift(() => session.close());
+    expect(engine.retrievesKnowledge).toBe(true);
+    const usages: Array<{ providerCostCents?: number }> = [];
+    session.on("usage", (usage) => usages.push(usage));
+
+    deepgram.send(results("Quanto custa a limpeza dental?", true));
+    await until(() => replies.length === 1);
+    const messages = openrouter.requests[0]?.body.messages as Array<{ role: string; content: unknown }>;
+    expect(messages.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(JSON.stringify(messages[1])).toContain("Limpeza R$ 180,00.");
+    expect(embeddingRequests).toHaveLength(1);
+    expect(embeddingRequests[0]).toMatchObject({ authorization: "Bearer sk-or-falsa", body: { model: "openai/text-embedding-3-small", input: ["Quanto custa a limpeza dental?"] } });
+    expect(searches.map((s) => s.embedded).sort()).toEqual([false, true]);
+    // 1,2e-7 dólar = 1,2e-5 centavo, no extrato como custo do provedor
+    expect(usages.reduce((sum, u) => sum + (u.providerCostCents ?? 0), 0)).toBeGreaterThanOrEqual(1.2e-5 - 1e-12);
   });
 });
