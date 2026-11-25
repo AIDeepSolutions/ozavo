@@ -534,7 +534,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
           // O roteiro da chamada simulada substitui tudo: é o teste de um roteiro, não da empresa.
           instructions:
             overrides?.instructions ??
-            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined }),
+            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined, now: clock.now() }),
           // O aviso vem antes de tudo, e os motores falam a abertura ao conectar: o aviso entra
           // na frente da saudação. Lição do DeskcommCRM: na ligação recebida quem atende fala
           // primeiro; na que nós fazemos, quem atende diz "alô" e o agente responde a isso, então

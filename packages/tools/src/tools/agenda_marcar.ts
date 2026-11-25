@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
+import { agendaFailureDiagnostic, agendaNotWired, agendaUnavailable } from "../agenda-speech";
 import { checkWriteAuthorization } from "../authorization";
 import { defineTool } from "../define-tool";
 import { AgendaBookingFieldProblem, type AgendaBookingField } from "../connectors/agenda";
@@ -112,7 +112,7 @@ export function createAgendaMarcar(deps: ToolDeps = {}) {
         };
       } catch (error) {
         if (error instanceof AgendaBookingFieldProblem) return { ok: false, noEffect: true, message: fieldProblemSpeech(error) };
-        return { ok: false, message: agendaUnavailable("o horário não foi marcado") };
+        return { ok: false, message: agendaUnavailable("o horário não foi marcado"), diagnostic: agendaFailureDiagnostic(error) };
       }
     },
   });

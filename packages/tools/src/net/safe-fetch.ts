@@ -83,7 +83,8 @@ function guardedLookup(lookup: HostLookup): LookupFunction {
   return (hostname, options, callback) => {
     lookup(hostname).then(
       (addresses) => {
-        const safe = addresses.filter(isPublicAddress).map((address) => ({ address, family: isIP(address) }));
+        // IPv4 primeiro: servidor sem rota IPv6 (contêiner) não perde tempo, nem falha, tentando o endereço que não alcança.
+        const safe = addresses.filter(isPublicAddress).map((address) => ({ address, family: isIP(address) })).sort((a, b) => a.family - b.family);
         const first = safe[0];
         if (!first) {
           callback(new UnsafeDestinationError(`Host ${hostname} points to a non-public address`), "", 0);

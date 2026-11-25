@@ -67,3 +67,25 @@ export function speakSlot(startsAt: string, timezone: string): string {
     hour12: false,
   }).format(new Date(startsAt));
 }
+
+/** Pedaços de texto que parecem segredo: chave de API do Cal.com, token Bearer e qualquer sequência longa de letras e números. */
+const SECRETISH = /\bcal_(?:live|test)_[\w-]+|Bearer\s+\S+|[A-Za-z0-9_-]{32,}/g;
+
+/**
+ * O motivo técnico de uma falha da agenda, em uma linha, para o operador ver na linha do tempo (`tool_result.diagnostic`):
+ * a cadeia de erros (tipo, mensagem e código de rede) sem chave nem trecho longo. O modelo nunca recebe isto.
+ */
+export function agendaFailureDiagnostic(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== undefined && current !== null; depth += 1) {
+    if (!(current instanceof Error)) {
+      parts.push(String(current));
+      break;
+    }
+    const code = (current as { code?: unknown }).code;
+    parts.push(`${current.name}: ${current.message}${typeof code === "string" ? ` [${code}]` : ""}`);
+    current = current.cause;
+  }
+  return parts.join(" <- ").replace(SECRETISH, "<oculto>").slice(0, 400);
+}

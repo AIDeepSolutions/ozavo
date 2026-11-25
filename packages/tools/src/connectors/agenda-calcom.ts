@@ -46,6 +46,9 @@ const bookingSchema = z.object({ data: z.object({ uid: z.string().min(1), start:
 
 export class AgendaServiceUnknown extends Error {}
 
+/** O Cal.com respondeu, mas recusou: repetir o mesmo pedido não muda nada. */
+class CalcomHttpError extends Error {}
+
 /** O slug do campo de reserva do Cal.com → o dado que o modelo pode perguntar. Slug que não está aqui não é dado que a ferramenta tenha. */
 const FIELD_OF_SLUG: Record<string, AgendaBookingField> = { name: "name", email: "email", empresa: "company", company: "company", title: "process", processo: "process" };
 
@@ -79,7 +82,7 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
     if (/^\d+$/.test(serviceType.trim())) return Number(serviceType.trim());
     throw new AgendaServiceUnknown(`Unknown service type ${JSON.stringify(serviceType)}`);
   };
-  const call = async (path: string, version: string, method: "GET" | "POST", body?: object): Promise<unknown> => {
+  const callOnce = async (path: string, version: string, method: "GET" | "POST", body?: object): Promise<unknown> => {
     const response = await safeFetch(
       `${base}${path}`,
       {
@@ -93,8 +96,18 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
       const problem = bookingFieldProblemOf(response.body);
       if (problem) throw problem;
     }
-    if (!response.ok || response.truncated) throw new Error(`Cal.com answered HTTP ${response.status}${response.truncated ? " (truncated)" : ""}`);
+    // Na consulta, o começo do corpo explica a recusa (fuso, janela) e vai para o diagnóstico do operador, nunca para o modelo. Nas escritas ele pode repetir dado da pessoa, e fica de fora.
+    if (!response.ok || response.truncated) throw new CalcomHttpError(`Cal.com answered HTTP ${response.status}${response.truncated ? " (truncated)" : ""}${method === "GET" ? `: ${response.body.slice(0, 160)}` : ""}`);
     return JSON.parse(response.body) as unknown;
+  };
+  // A consulta (GET) não grava nada: uma falha de rede (sem resposta) ganha uma segunda tentativa; recusa do Cal.com não.
+  const call = async (path: string, version: string, method: "GET" | "POST", body?: object): Promise<unknown> => {
+    try {
+      return await callOnce(path, version, method, body);
+    } catch (error) {
+      if (method !== "GET" || error instanceof CalcomHttpError) throw error;
+      return callOnce(path, version, method, body);
+    }
   };
 
   return {

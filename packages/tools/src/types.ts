@@ -49,6 +49,11 @@ export interface ToolResult {
   message: string;
   data?: unknown;
   /**
+   * O motivo técnico de uma falha que a própria ferramenta tratou (a agenda não respondeu, o Cal.com recusou). Vai para o
+   * `tool_result` na linha do tempo, para o operador; nunca para o modelo. Sem segredo nem dado da pessoa.
+   */
+  diagnostic?: string;
+  /**
    * `true` com `ok: false`: a ferramenta recusou antes de fazer qualquer efeito (nada foi escrito,
    * enviado nem chamado), e a vaga do teto por ligação volta. Sem ele, a vaga fica gasta, porque o
    * efeito pode ter saído: o webhook que respondeu erro já recebeu o POST.
