@@ -91,5 +91,6 @@ const CONFIRMATION_QUESTION = /(confirm|marc|agend|reserv|cancel|remarc|posso\s|
  */
 export function sensitiveTurn(lastAgentText: string | undefined, hasWriteTools: boolean): boolean {
   if (!hasWriteTools || !lastAgentText) return false;
-  return /[?]\s*$/.test(lastAgentText.trim()) && CONFIRMATION_QUESTION.test(lastAgentText);
+  // Qualquer pergunta da fala vale, não só a última frase ("Posso marcar às 10h? Me confirma.").
+  return (lastAgentText.match(/[^.!?]*\?/g) ?? []).some((question) => CONFIRMATION_QUESTION.test(question));
 }

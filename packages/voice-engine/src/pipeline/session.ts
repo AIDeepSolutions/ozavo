@@ -231,6 +231,8 @@ interface Speculation {
   error?: unknown;
   wake?: () => void;
   firstEventAt?: number;
+  /** O extrato de uso do pedido já foi entregue a um turno (então o custo dele já foi contado). */
+  usageSeen?: boolean;
   startedAt: number;
   /** Os trechos da base que o pedido levou (modo de busca): valem para o turno que o aproveitar. */
   knowledge?: { context: string | undefined; info: KnowledgeCallInfo };
@@ -446,7 +448,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     tts.speak(contextId, missing.text, true);
   };
 
-  const respond = async (userEndedAt: number | undefined, endpointDelay: number, adopted?: Speculation, missed = false, question?: string): Promise<void> => {
+  const respond = async (userEndedAt: number | undefined, endpointDelay: number, adopted?: Speculation, missed = false, question?: string, afterTool = false): Promise<void> => {
     const current: AgentTurn = {
       id: ++turnSeq,
       contextId: `turn-${turnSeq}`,
@@ -463,7 +465,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       recorded: false,
     };
     turn = current;
-    if (userEndedAt !== undefined) scheduleBridge(current);
+    if (userEndedAt !== undefined && !afterTool) scheduleBridge(current);
     // Os trechos da base para esta fala (modo de busca): a busca é especulativa e tem orçamento, então a espera é curta e nunca falha.
     // Um pedido adiantado já trouxe os trechos da fala que ele usou: valem os dele.
     let knowledgeInfo: KnowledgeCallInfo | undefined = knowledge?.mode === "full" ? { mode: "full", hits: [], retrievalMs: 0, speculative: false, usedVector: false, embeddingTokens: 0 } : undefined;
@@ -516,8 +518,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         if (event.type === "retry") {
           // O primeiro provedor demorou e o pedido foi refeito no próximo: o pedido cortado também custou (estimado pelo último extrato).
           current.retries = (current.retries ?? 0) + 1;
-          emitter.emit("llmCall", { purpose: "retry", provider: event.provider, promptTokens: lastPromptTokens, cachedTokens: 0, completionTokens: 0 });
-          flushUsage({ providerCostCents: lastCallCostCents });
+          chargeDiscarded("retry", undefined, event.provider);
           continue;
         }
         if (event.type === "usage") {
@@ -604,38 +605,49 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     }
   };
 
+  /**
+   * Um pedido ao modelo que foi cortado (adiantado e descartado, ou refeito no provedor seguinte) não manda extrato, mas custou: entra na
+   * conta pelo custo da última chamada completa (ou, antes de haver uma, pelo do aquecimento).
+   */
+  const chargeDiscarded = (purpose: "speculative" | "retry", spec?: Speculation, provider?: string): void => {
+    if (spec) spec.usageSeen = true;
+    emitter.emit("llmCall", { purpose, ...(provider && { provider }), promptTokens: lastPromptTokens, cachedTokens: 0, completionTokens: 0 });
+    flushUsage({ providerCostCents: lastCallCostCents });
+  };
+
   /** Entrega, na ordem, os eventos que o pedido adiantado já recebeu e os que ainda vão chegar. */
   async function* replay(spec: Speculation, signal: AbortSignal): AsyncGenerator<LlmEvent> {
     let index = 0;
+    // Um só ouvinte do corte para a espera inteira (um por espera acumulava ouvintes numa resposta de muitos pedaços).
+    const aborted = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
     for (;;) {
       if (signal.aborted) {
         spec.abort.abort();
+        // Cortado (a pessoa falou por cima) antes de o extrato chegar: o pedido custou mesmo assim.
+        if (!spec.usageSeen) chargeDiscarded("speculative", spec);
         return;
       }
       while (index < spec.events.length) {
         const next = spec.events[index++];
+        if (next?.type === "usage") spec.usageSeen = true;
         if (next) yield next;
       }
       if (spec.done) {
         if (spec.error) throw spec.error;
         return;
       }
-      await new Promise<void>((resolve) => {
-        spec.wake = resolve;
-        signal.addEventListener("abort", () => resolve(), { once: true });
-      });
+      await Promise.race([new Promise<void>((resolve) => (spec.wake = resolve)), aborted]);
     }
   }
 
   /** Larga o pedido adiantado (a pessoa continuou, ou o texto mudou). Conta como gasto estimado: o provedor não manda extrato de um pedido cortado. */
-  const dropSpeculation = (): void => {
+  const dropSpeculation = (markMissed = true): void => {
     const spec = speculation;
     if (!spec) return;
     speculation = undefined;
-    speculationMissed = true;
+    if (markMissed) speculationMissed = true;
     spec.abort.abort();
-    emitter.emit("llmCall", { purpose: "speculative", promptTokens: lastPromptTokens, cachedTokens: 0, completionTokens: 0 });
-    flushUsage({ providerCostCents: lastCallCostCents });
+    chargeDiscarded("speculative", spec);
   };
 
   /** Começa o pedido ao modelo com o texto que já temos, sem falar nada, antes de o fim de turno estar decidido. */
@@ -688,8 +700,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     return spec;
   };
 
-  const startResponse = (endedAt: number | undefined, delay: number, adopted?: Speculation, missed = false, question?: string): void => {
-    const pending = respond(endedAt, delay, adopted, missed, question);
+  const startResponse = (endedAt: number | undefined, delay: number, adopted?: Speculation, missed = false, question?: string, afterTool = false): void => {
+    const pending = respond(endedAt, delay, adopted, missed, question, afterTool);
     activeResponses.add(pending);
     void pending.finally(() => activeResponses.delete(pending));
   };
@@ -703,18 +715,19 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     finals = [];
     partial = "";
     if (text === "" || finished) {
-      speculation?.abort.abort();
-      speculation = undefined;
+      dropSpeculation(false);
+      speculationMissed = false;
       return;
     }
     // O fim real da fala (pausa vista no áudio) vale mais que a chegada do último texto, que vem ~0,3 a 0,6 s depois.
     const endedAt = speechEndedAt ?? (lastFinalAt || now());
+    // A pausa vale para este turno só: um valor velho faria o próximo final, no meio de outra fala, fechar o turno.
+    speechEndedAt = undefined;
     const delay = turnDelay;
     emitter.emit("transcript", { speaker: "user", text });
     flushUsage();
     if (awaitingTools.size > 0) {
-      speculation?.abort.abort();
-      speculation = undefined;
+      dropSpeculation(false);
       queuedUser.push({ text, endedAt, delay });
       return;
     }
@@ -898,8 +911,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   const shutdown = async (reason: string): Promise<void> => {
     finished = true;
     warmAbort.abort();
-    speculation?.abort.abort();
-    speculation = undefined;
+    dropSpeculation(false);
     cancelEndpoint?.();
     if (turn) recordAgent(turn);
     turn?.abort.abort();
@@ -969,7 +981,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       for (const item of waiting) history.push({ role: "user", content: item.text });
       const last = waiting.at(-1);
       const question = waiting.length > 0 ? waiting.map((item) => item.text).join(" ") : undefined;
-      const next = () => startResponse(last?.endedAt, last?.delay ?? 0, question);
+      const next = () => startResponse(last?.endedAt, last?.delay ?? 0, undefined, false, question, true);
       if (turn?.synthesizing) afterSynthesis = next;
       else next();
     },
@@ -1019,6 +1031,10 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
             completionTokens,
             ...(firstTokenMs !== undefined && { firstTokenMs }),
           });
+          if (event.usage.provider) {
+            lastCallCostCents = costCents;
+            lastPromptTokens = promptTokens;
+          }
           flushUsage({ textInputTokens: Math.max(0, promptTokens - cachedTokens), cachedInputTokens: cachedTokens, textOutputTokens: completionTokens, providerCostCents: costCents });
         }
       } catch {

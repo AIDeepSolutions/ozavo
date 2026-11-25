@@ -82,6 +82,8 @@ const chunkSchema = z.object({
         delta: z
           .object({
             content: z.string().nullish(),
+            reasoning: z.string().nullish(),
+            reasoning_content: z.string().nullish(),
             tool_calls: z
               .array(
                 z.object({
@@ -256,7 +258,7 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
         for (const choice of chunk.choices ?? []) {
           if (choice.finish_reason) finishReason = choice.finish_reason;
           const content = choice.delta?.content;
-          if (request.markFirst && !firstSeen && (content || (choice.delta?.tool_calls?.length ?? 0) > 0)) {
+          if (request.markFirst && !firstSeen && (content || choice.delta?.reasoning || choice.delta?.reasoning_content || (choice.delta?.tool_calls?.length ?? 0) > 0)) {
             firstSeen = true;
             yield { type: "first" };
           }
