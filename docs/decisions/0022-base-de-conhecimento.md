@@ -12,7 +12,7 @@ O agente só sabia o que cabia nas instruções. Uma empresa com tabela de preç
 FAQ (30 a 40 páginas, ~32 mil tokens) não consegue pôr isso no prompt sem pagar a cada ligação e sem
 perder velocidade. O pedido: o agente consulta a base durante a ligação, sem somar latência perceptível.
 
-Medidas que decidiram o desenho (bancada de 25/11/2026, `~/agent-state/entregas/ozavo-bench-prompt-pesado-25nov/`
+Medidas que decidiram o desenho (bancada de 25/11/2026, benchmark de prompt pesado
 e esta implementação):
 
 - A extensão `vector` (pgvector 0.8.2) está disponível no Supabase de produção (conferido em
