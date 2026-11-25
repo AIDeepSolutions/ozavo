@@ -176,7 +176,15 @@ export function createGoogleAgenda(config: GoogleAgendaConfig, net: SafeFetchOpt
       const who = [input.attendeeName, input.attendeePhone].filter(Boolean).join(" · ");
       const body = {
         summary: who ? `${input.serviceType} — ${who}` : input.serviceType,
-        description: `Marcado por telefone pelo agente do Ozavo (ligação ${input.callId}).`,
+        description: [
+          `Marcado por telefone pelo agente do Ozavo (ligação ${input.callId}).`,
+          input.attendeeEmail && `E-mail: ${input.attendeeEmail}`,
+          input.company && `Empresa: ${input.company}`,
+          input.process && `Processo a melhorar: ${input.process}`,
+          input.notes && `Observações: ${input.notes}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
         start: { dateTime: startsAt.toISOString(), timeZone: config.timezone },
         end: { dateTime: endsAt.toISOString(), timeZone: config.timezone },
       };

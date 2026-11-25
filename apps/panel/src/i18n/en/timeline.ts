@@ -182,7 +182,7 @@ const timeline: TimelineDictionary = {
     follow_up_closed_by: "By {name}",
     follow_up_gone: "Follow-up deleted by the retention period.",
     follow_up_link: "See in Follow-ups",
-    tool_args_omitted: "The data sent is text about the caller and is not kept on the timeline. What matters is in the follow-up.",
+    tool_args_omitted: "The data sent is text about the caller and is not kept on the timeline. What matters is where the tool saved it: in the follow-up or in the calendar.",
     outcome_not_classified: "Outcome not classified",
     outcome_not_classified_body: {
       cost_ceiling: "The call had already reached the agent's cost ceiling, and classifying would cost more. Nothing was sent to the provider.",
