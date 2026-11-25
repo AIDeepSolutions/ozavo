@@ -48,3 +48,7 @@ export * from "./asaas-client";
 export * from "./webhook-events";
 export * from "./webhooks";
 export * from "./webhook-url";
+
+export * from "./embeddings";
+export * from "./knowledge";
+export * from "./knowledge-chunking";

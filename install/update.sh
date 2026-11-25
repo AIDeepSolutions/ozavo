@@ -288,6 +288,9 @@ ensure_agent_token || true
 step "Aplicando as mudanças no banco"
 # shellcheck disable=SC2086
 dc stop $APP_SERVICES >/dev/null 2>&1 || true
+# O banco sobe com a imagem da versão nova antes das migrations: a imagem de agora traz a extensão
+# pgvector, que a migration da base de conhecimento liga. Sem mudança de imagem, nada é recriado.
+dc up --detach postgres >/dev/null 2>&1 || roll_back "O banco da versão $target não subiu."
 dc run --rm migrate || roll_back "As migrations da versão $target falharam."
 ok "Banco atualizado"
 

@@ -118,7 +118,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+        image: pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ozavo_test
@@ -177,7 +177,7 @@ jobs:
     # A chamada simulada grava eventos, aprovação e tarefas: precisa de Postgres de verdade.
     services:
       postgres:
-        image: postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
+        image: pgvector/pgvector:0.8.2-pg17-bookworm@sha256:feb68f4f15446397d8cac7f4fe48fe4586de83160d1fc48b46283312d1a33966
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ozavo_test
