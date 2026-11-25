@@ -157,7 +157,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
       return t.openrouter.requests[0]?.body as Record<string, unknown>;
     };
     expect(await pedido("d")).toMatchObject({ model: "openai/gpt-oss-120b", provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
-    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together", "wafer", "reka"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together", "wafer", "parasail", "reka"], allow_fallbacks: true } });
     expect(await pedido("e")).toMatchObject({ reasoning: { enabled: false } });
   });
 

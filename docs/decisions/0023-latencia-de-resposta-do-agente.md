@@ -64,6 +64,11 @@ Os WebSockets da Deepgram e da Cartesia já são abertos na conexão, antes de o
    HTTP 400 `invalid_tool_messages` (reproduzido em 25/11, 6 de 6); o OpenRouter então cai para outro provedor (Baidu 1,2 a 2,5 s), o prazo de 800 ms cortava e o
    pedido ia ao Wafer, e todo pedido seguinte da ligação (o histórico fica inválido) repetia o caminho: `modelMs` ~1,2 s em vez de ~0,28 s. Corrigido na origem (a fala vira
    continuação da mensagem da chamada) e com `repairToolOrder` no corpo de todo pedido.
+10. **Corrida em vez de corte, e disjuntor (25/11, depois da ligação do dono).** No prazo o pedido sai TAMBÉM para o próximo provedor e ganha o primeiro
+   conteúdo; o que ficou para trás segue até o primeiro conteúdo dele (esquenta o cache) e só então é cortado. Um erro HTTP antes do conteúdo passa o pedido
+   ao próximo na hora (menos 401/402/403). Duas demoras seguidas de um provedor o tiram da ordem por 45 s (disjuntor do processo, por modelo e provedor),
+   e a primeira tentativa depois disso é a prova de que voltou. A ordem do DeepSeek ganhou o Parasail (sonda de 25/11: 430 a 590 ms; Reka 395 a 805, Cohere
+   510 a 1.300). Não há prazo por tamanho de prompt: com a corrida o prazo só decide quando o segundo pedido sai, não corta o primeiro.
 
 ### Números (detalhe e limites no [relatório](../reports/2026-11-25-latencia-de-resposta.md))
 
