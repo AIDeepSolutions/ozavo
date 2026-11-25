@@ -7,8 +7,8 @@ no seguinte.
 ## Voz, base de conhecimento e latência (25/11/2026)
 
 - **Em produção** (Coolify: painel, rotinas e `ozavo-voz` com o Asterisk, todos na `main` em `5dead6c`): o agente de voz lê a base de conhecimento na ligação (PR #35: base inteira no prompt ou busca por fala), custo do embedding no FinOps e importação por linha de comando (PR #41), latência do pipeline (PR #36: fim de turno pela pausa, aquecimento, frase de ponte, pedido adiantado, ordem de provedores com nova tentativa) e as chaves por agente da ponte e do pedido adiantado (PR #37).
-- **Banco:** 43 migrations aplicadas, iguais aos 43 arquivos. A última, `20261125T190000_agents_latency_toggles.sql`, foi aplicada às 20:4x UTC com backup antes (`~/agent-state/backups-ozavo/ozavo-prod-20261125T204159Z-antes-latencia-tela.dump`).
-- **Nico ADS (deepseek):** a base da AI Deep Solutions sai do prompt e vem da base de conhecimento (modo base inteira, 2 fontes ligadas). Reverter: `~/agent-state/entregas/ozavo-nico-ads-25nov/reverter.sh`.
+- **Banco:** 43 migrations aplicadas, iguais aos 43 arquivos. A última, `20261125T190000_agents_latency_toggles.sql`, foi aplicada às 20:4x UTC com backup antes (dump de 20:41 UTC, conferido com `pg_restore --list`).
+- **Nico ADS (deepseek):** a base da AI Deep Solutions sai do prompt e vem da base de conhecimento (modo base inteira, 2 fontes ligadas). Há script de reversão fora do repositório, com o estado anterior do agente.
 - **Medido** (bancada de texto, TTS simulado a 265 ms): tempo percebido p50 464 ms, p90 497 ms com tudo ligado, contra 1,3 a 1,5 s do fim real da fala antes. Relatório: `docs/reports/2026-11-25-latencia-de-resposta.md`; teto de gasto da base: `docs/guides/base-de-conhecimento.md`.
 - **Falta:** uma ligação real curta para conferir `knowledge_loaded` e `turn_latency` na linha do tempo e ouvir as frases de ponte (ninguém ouviu o áudio delas).
 
