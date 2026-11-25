@@ -30,6 +30,8 @@ const finops: FinopsDictionary = {
   revenue: "Ingreso del ciclo",
   providerCost: "Proveedores (transcripción, modelo y síntesis)",
   providerCostUsd: "{value} en dólares",
+  knowledgeCost: "Base de conocimiento (embeddings)",
+  knowledgeCostDetail: "{index} tokens indexados y {search} de búsqueda de prueba; ya está en el costo de los proveedores",
   telephonyCost: "Telefonía",
   variableCost: "Costo variable",
   grossMargin: "Margen bruto",

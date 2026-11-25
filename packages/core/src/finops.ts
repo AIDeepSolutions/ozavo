@@ -80,8 +80,12 @@ export interface FinopsSummary {
   overageSeconds: number;
   answeredCalls: number;
   ttsCharacters: number;
-  /** Custo dos provedores no extrato do período, em centavos de dólar. */
+  /** Custo dos provedores no período (extrato das ligações mais o embedding da base de conhecimento), em centavos de dólar. */
   providerCostUsdCents: number;
+  /** A parte do custo dos provedores que é embedding da base de conhecimento (indexação e busca de teste), em centavos de dólar. */
+  knowledgeCostUsdCents: number;
+  /** Tokens de embedding do período: indexados e buscados na tela. */
+  knowledgeTokens: { index: number; search: number };
   margin: Margin;
   costTargetCentsPerMinute: number;
   settings: OperationSettings;
@@ -117,6 +121,14 @@ export async function getFinopsSummary(q: OrgQuery, now: Date): Promise<FinopsSu
       group by 1 order by 1`,
     range,
   );
+  // O embedding da base de conhecimento não tem ligação: indexar e testar a busca é custo da empresa, e entra no custo dos provedores.
+  const knowledge = await q.many<{ kind: "index" | "search"; tokens: string; microcents: string }>(
+    `select kind, coalesce(sum(tokens), 0)::text as tokens, coalesce(sum(cost_microcents), 0)::text as microcents
+       from knowledge_usage
+      where organization_id = $1 and (at at time zone $2::text)::date >= $3::date and (at at time zone $2::text)::date < $4::date
+      group by kind`,
+    range,
+  );
   const alerts = await q.many<{ threshold: number; at: Date }>("select threshold, at from usage_alerts where organization_id = $1 and period_start = $2::date order by threshold", [
     q.organizationId,
     period.start,
@@ -134,7 +146,8 @@ export async function getFinopsSummary(q: OrgQuery, now: Date): Promise<FinopsSu
   for (const row of ledger) Object.assign(dayOf(row.day), { ttsCharacters: row.characters, providerCostUsdCents: Math.round(Number(row.microcents) / MICROCENTS_PER_CENT) });
 
   const consumedSeconds = calls.reduce((sum, row) => sum + row.seconds, 0);
-  const providerCostUsdMicrocents = ledger.reduce((sum, row) => sum + Number(row.microcents), 0);
+  const knowledgeMicrocents = knowledge.reduce((sum, row) => sum + Number(row.microcents), 0);
+  const providerCostUsdMicrocents = ledger.reduce((sum, row) => sum + Number(row.microcents), 0) + knowledgeMicrocents;
   const settings = await getOperationSettings(q);
   const subscription = usage?.subscription ?? null;
   const includedSeconds = usage?.includedSeconds ?? null;
@@ -148,6 +161,8 @@ export async function getFinopsSummary(q: OrgQuery, now: Date): Promise<FinopsSu
     answeredCalls: calls.reduce((sum, row) => sum + row.calls, 0),
     ttsCharacters: ledger.reduce((sum, row) => sum + row.characters, 0),
     providerCostUsdCents: Math.round(providerCostUsdMicrocents / MICROCENTS_PER_CENT),
+    knowledgeCostUsdCents: Math.round(knowledgeMicrocents / MICROCENTS_PER_CENT),
+    knowledgeTokens: { index: Number(knowledge.find((row) => row.kind === "index")?.tokens ?? 0), search: Number(knowledge.find((row) => row.kind === "search")?.tokens ?? 0) },
     margin: computeMargin({
       monthlyPriceCents: subscription?.monthlyPriceCents ?? 0,
       overageRule: subscription?.overageRule ?? "pause_outbound",
