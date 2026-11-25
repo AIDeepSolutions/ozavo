@@ -9,11 +9,11 @@ import type { ListeningEnvironment } from "../types";
  * frase fechada responde logo, frase que termina em conjunção ou hesitação espera mais.
  *
  * A Deepgram já espera o próprio `endpointing` antes de mandar `speech_final`: este prazo é o que
- * se soma a ele. Os valores são ponto de partida, não medidos numa ligação real.
+ * se soma a ele. Os valores são ponto de partida, não medidos numa ligação real. O `endpointing` da Deepgram subiu de 100 para 250 ms (100 cortava a frase em duas no primeiro respiro) e o prazo daqui desceu na mesma medida: a pausa total de uma frase fechada fica em ~290 ms.
  */
 
-export const ENDPOINT_CLOSED_MS = 120;
-export const ENDPOINT_DEFAULT_MS = 350;
+export const ENDPOINT_CLOSED_MS = 40;
+export const ENDPOINT_DEFAULT_MS = 250;
 export const ENDPOINT_OPEN_MS = 900;
 /** Ruído de fundo atrasa o fim real da fala que o provedor vê: um pouco mais de folga. */
 export const ENDPOINT_NOISY_EXTRA_MS = 200;
