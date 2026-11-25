@@ -11,6 +11,9 @@ import esCommon from "../../../../i18n/es/common";
 import { fill } from "../../../../i18n/locales";
 import ptBR from "../../../../i18n/pt-BR/agents";
 import ptBRCommon from "../../../../i18n/pt-BR/common";
+import enKnowledge from "../../../../i18n/en/knowledge";
+import esKnowledge from "../../../../i18n/es/knowledge";
+import ptBRKnowledge from "../../../../i18n/pt-BR/knowledge";
 import { useDict } from "../../../../i18n/provider";
 import { api, useApi } from "../../../../ui/api";
 import { ActionStatus, ReadOnlyNotice, useAction, useErrorText } from "../../../../ui/errors";
@@ -18,6 +21,7 @@ import { formatPhone } from "../../../../ui/format";
 import { Button, Field, Notice, Panel, Select, Skeleton, Switch, TextArea, TextInput } from "../../../../ui/kit";
 import { useCanConfigure } from "../../../../ui/me";
 import type { Agent, Engine, ListeningEnvironment, LlmProfile, Person, Setting, ToolInfo } from "../../../../ui/types";
+import { AgentKnowledgePanel } from "./knowledge-panel";
 
 interface Draft {
   name: string;
@@ -69,6 +73,7 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
   const isNew = id === "new";
   const t = useDict(ptBR, en, es);
   const common = useDict(ptBRCommon, enCommon, esCommon);
+  const knowledgeText = useDict(ptBRKnowledge, enKnowledge, esKnowledge).agent;
   const router = useRouter();
   const errorText = useErrorText();
   const canConfigure = useCanConfigure();
@@ -301,6 +306,14 @@ export default function AgentPage({ params }: { params: Promise<{ id: string }> 
             })}
           </ul>
         </Panel>
+
+        {isNew ? (
+          <Panel title={knowledgeText.title} description={knowledgeText.lead}>
+            <p className="text-muted">{knowledgeText.saveFirst}</p>
+          </Panel>
+        ) : (
+          <AgentKnowledgePanel agentId={id} />
+        )}
 
         <div className="grid gap-6 md:grid-cols-2">
           <Panel title={t.transfer}>
