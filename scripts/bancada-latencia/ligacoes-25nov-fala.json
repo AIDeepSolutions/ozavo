@@ -1,0 +1,353 @@
+[
+ {
+  "call": "e72a3218",
+  "turn": 1,
+  "user": "Fala meu tudo bem?",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 992,
+  "modelMs": 388,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 2,
+  "user": "Tudo bem.",
+  "endpointMs": 1276,
+  "speculation": "miss",
+  "rttMs": 1860,
+  "modelMs": 293,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 3,
+  "user": "Ah, já tenho um pouquinho sobre o que você fazem, que eu gostaria de, marcar uma conversa para amanhã, às sim, das 5 até às 5 e meia, tem como?",
+  "endpointMs": 1001,
+  "speculation": null,
+  "rttMs": 1102,
+  "modelMs": 455,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 4,
+  "user": "Meu nome completo é Fulano.",
+  "endpointMs": 349,
+  "speculation": "hit",
+  "rttMs": 450,
+  "modelMs": 284,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 5,
+  "user": "Fulano, com p h.",
+  "endpointMs": 1256,
+  "speculation": "miss",
+  "rttMs": 1357,
+  "modelMs": 278,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 6,
+  "user": "Não, é uma, n a t h EUS.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 899,
+  "modelMs": 267,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 7,
+  "user": "Sim.",
+  "endpointMs": 300,
+  "speculation": "hit",
+  "rttMs": 402,
+  "modelMs": 257,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 8,
+  "user": "Fulano Indústria, de Carro, LTDA.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 283,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 9,
+  "user": "Fulano arroba e-mail ponto com.",
+  "endpointMs": 1253,
+  "speculation": null,
+  "rttMs": 1778,
+  "modelMs": 297,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 10,
+  "user": "Está certo.",
+  "endpointMs": 1257,
+  "speculation": "miss",
+  "rttMs": 1358,
+  "modelMs": 281,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 11,
+  "user": "Ah eu tenho alguma, planilhas, que eu preciso otimizar, sabe?",
+  "endpointMs": 352,
+  "speculation": "hit",
+  "rttMs": 454,
+  "modelMs": 220,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 12,
+  "user": "E também tem algumas automações eu quero fazer, algumas",
+  "endpointMs": 499,
+  "speculation": "hit",
+  "rttMs": 823,
+  "modelMs": 79,
+  "depois": "aberta-sem-continuacao"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 13,
+  "user": "Não então, queria marcar para amanhã, 5.",
+  "endpointMs": 40,
+  "speculation": null,
+  "rttMs": 140,
+  "modelMs": 297,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 14,
+  "user": "Tem como?",
+  "endpointMs": 1189,
+  "speculation": null,
+  "rttMs": 2817,
+  "modelMs": 1280,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 15,
+  "user": "Não, eu acho que pode ser no mesmo dia, tem algum horário mais cedo?",
+  "endpointMs": 349,
+  "speculation": "hit",
+  "rttMs": 450,
+  "modelMs": 1166,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 17,
+  "user": "Hum, 10 da manhã.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 452,
+  "modelMs": 1155,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 19,
+  "user": "Coisa eu consigo marcar com você aqui,",
+  "endpointMs": 1000,
+  "speculation": null,
+  "rttMs": 1101,
+  "modelMs": 737,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 21,
+  "user": "Pode sim senhor.",
+  "endpointMs": 1256,
+  "speculation": "miss",
+  "rttMs": 3018,
+  "modelMs": 1286,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 25,
+  "user": "Eu queria entender, sobre o você, fazem em relação, relacionado, a",
+  "endpointMs": 279,
+  "speculation": null,
+  "rttMs": 380,
+  "modelMs": 1298,
+  "depois": "continuou"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 26,
+  "user": "Eu queria entender o que você fazem",
+  "endpointMs": 862,
+  "speculation": "miss",
+  "rttMs": 963,
+  "modelMs": 732,
+  "depois": "continuou"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 27,
+  "user": "relacionado a,",
+  "endpointMs": 1236,
+  "speculation": null,
+  "rttMs": 1336,
+  "modelMs": 1260,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 30,
+  "user": "Vocês fizeram já?",
+  "endpointMs": 775,
+  "speculation": "miss",
+  "rttMs": 875,
+  "modelMs": 1305,
+  "depois": "completa"
+ },
+ {
+  "call": "e72a3218",
+  "turn": 31,
+  "user": "Achei interessante, consegue me contar mais um pouquinho resumidamente?",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 1165,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 1,
+  "user": "O",
+  "endpointMs": 852,
+  "endBy": "pause",
+  "speculation": null,
+  "rttMs": 1411,
+  "modelMs": 288,
+  "depois": "aberta-sem-continuacao"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 2,
+  "user": "Oi, Nico, tudo bem? Eu gostaria de fazer",
+  "endpointMs": 1009,
+  "endBy": "quiet",
+  "speculation": null,
+  "rttMs": 1110,
+  "modelMs": 301,
+  "depois": "continuou"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 3,
+  "user": "agendamento,",
+  "endpointMs": 851,
+  "endBy": "pause",
+  "speculation": null,
+  "rttMs": 952,
+  "modelMs": 339,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 4,
+  "user": "Meu nome é",
+  "endpointMs": 1076,
+  "endBy": "quiet",
+  "speculation": null,
+  "rttMs": 1176,
+  "modelMs": 422,
+  "depois": "continuou"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 5,
+  "user": "Mateus.",
+  "endpointMs": 351,
+  "endBy": "pause",
+  "speculation": null,
+  "rttMs": 451,
+  "modelMs": 338,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 6,
+  "user": "Matheus Performance.",
+  "endpointMs": 350,
+  "endBy": "quiet",
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 236,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 8,
+  "user": "Performance arroba e-mail ponto com.",
+  "endpointMs": 851,
+  "endBy": "pause",
+  "speculation": null,
+  "rttMs": 952,
+  "modelMs": 402,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 9,
+  "user": "Certinho.",
+  "endpointMs": 363,
+  "endBy": "pause",
+  "speculation": null,
+  "rttMs": 463,
+  "modelMs": 471,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 11,
+  "user": "Gostaria de automatizar alguma planilhas que eu tenho aqui no meu",
+  "endpointMs": 1019,
+  "endBy": "quiet",
+  "speculation": null,
+  "rttMs": 1119,
+  "modelMs": 293,
+  "depois": "aberta-sem-continuacao"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 14,
+  "user": "Até às 9 e meia.",
+  "endpointMs": 350,
+  "endBy": "pause",
+  "speculation": "hit",
+  "rttMs": 450,
+  "modelMs": 251,
+  "depois": "completa"
+ },
+ {
+  "call": "ce9d9383",
+  "turn": 17,
+  "user": "Até um momento só isso, obrigado.",
+  "endpointMs": 351,
+  "endBy": "quiet",
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 328,
+  "depois": "completa"
+ }
+]

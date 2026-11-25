@@ -82,6 +82,33 @@ describe("assessTurnEnd: fim de turno pela pausa", () => {
     expect(assessTurnEnd("sexta de manhã").silenceMs).toBeGreaterThan(assessTurnEnd("Pode ser.").silenceMs);
   });
 
+  it("ligação de validação de 25/11: o que a pessoa disse em pedaços não fecha antes da hora, e o e-mail ditado fecha", () => {
+    // Faltava o objeto / o substantivo.
+    expect(kind("Oi, Nico, tudo bem? Eu gostaria de fazer")).toBe("open");
+    expect(kind("Gostaria de automatizar alguma")).toBe("open");
+    expect(kind("Eu quero marcar")).toBe("open");
+    expect(kind("Meu nome é")).toBe("open");
+    expect(kind("planilhas que eu tenho aqui no meu")).toBe("open");
+    // Com ponto final a Deepgram já disse que fechou: vale o ponto.
+    expect(kind("Eu gostaria de fazer.")).toBe("closed");
+    expect(kind("Gostaria de automatizar alguma.")).toBe("closed");
+    // Verbo no fim sem verbo de intenção antes é frase comum.
+    expect(kind("Pretendo ir amanhã de manhã")).toBe("default");
+    // "ponto com" termina em "com", mas o e-mail acabou ali.
+    expect(kind("Mateus arroba e-mail ponto com.")).toBe("default");
+    expect(kind("meu e-mail é fulano@empresa.com.br.")).toBe("default");
+    // Sem pontuação final o "ponto br" ainda pode vir: segue aberto.
+    expect(kind("Mateus arroba e-mail ponto com")).toBe("open");
+    expect(kind("Ela não está")).toBe("default");
+    // Verbo sem relação de intenção, ou que não pede objeto, não abre a frase.
+    expect(kind("Vou pensar")).toBe("default");
+    expect(kind("Quero sair")).toBe("default");
+    // Domínio com ponto e vírgula depois ainda é frase aberta.
+    expect(kind("fulano ponto com,")).toBe("open");
+    // "com" fora do e-mail continua abrindo a frase.
+    expect(kind("Quero falar com")).toBe("open");
+  });
+
   it("ambiente barulhento soma folga a todas as classes", () => {
     expect(assessTurnEnd("Pode ser.", "noisy").silenceMs).toBe(assessTurnEnd("Pode ser.").silenceMs + ENDPOINT_NOISY_EXTRA_MS);
   });

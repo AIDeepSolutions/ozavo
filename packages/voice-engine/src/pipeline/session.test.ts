@@ -531,6 +531,7 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
         modelMs: LLM_FIRST_TOKEN_MS,
         firstSentenceMs: 0,
         endBy: "speech_final",
+        endKind: "closed",
       },
     ]);
     // A mesma medida sai como evento da sessão, que a conversa grava na linha do tempo.
@@ -1049,6 +1050,124 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
     t.time.advance(100);
     t.timers.runAll();
     expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Pode ser." });
+  });
+
+  it("voz presa por ruído e frase completa: o Finalize sai junto com o limite (não depois dele) e o turno fecha sem esperar o limite cheio", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("Quero marcar para sexta de manhã.");
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    // O detector local ainda "vê fala": o texto pendente já foi pedido, mas o turno não fechou.
+    expect(t.finalizes()).toBe(1);
+    expect(t.streams).toHaveLength(0);
+    // O final pedido chega (confirma as mesmas palavras): não conta como palavra nova, e o limite da frase completa já passou.
+    t.time.advance(150);
+    t.ports.stt.final("Quero marcar para sexta de manhã.", true);
+    t.time.advance(100);
+    t.timers.runAll();
+    t.timers.runAll();
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Quero marcar para sexta de manhã." });
+    expect(t.streams).toHaveLength(1);
+    t.ports.tts.firstAudio("turn-1", 80);
+    t.streams[0]?.push({ type: "text", delta: "Certo, vou ver a agenda." });
+    await until(() => t.spoken.length === 1);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]).toMatchObject({ endBy: "quiet", endKind: "closed" });
+    expect(t.metrics[0]?.endpointMs).toBeLessThan(WORDS_QUIET_STUCK_MS);
+  });
+
+  it("voz presa por ruído e frase aberta (\"Eu gostaria de fazer\"): o speech_final do provedor não fecha por cima da classe; espera o prazo de frase aberta", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("Oi, Nico, tudo bem? Eu gostaria de fazer");
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    // Cedo demais para pedir o texto (fatiaria a fala contínua): só perto do limite da classe.
+    expect(t.finalizes()).toBe(0);
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.finalizes()).toBe(1);
+    t.time.advance(150);
+    // O Finalize pedido devolve speech_final: com a tabela antiga isto fechava em ~250 ms e cortava a continuação.
+    t.ports.stt.final("Oi, Nico, tudo bem? Eu gostaria de fazer", true);
+    t.time.advance(300);
+    expect(t.streams).toHaveLength(0);
+    // Nenhum prazo curto de fechamento armado: só o laço de 100 ms que espera o limite da frase aberta.
+    expect(t.timers.pending().filter((delay) => delay > 100 && delay < 400)).toEqual([]);
+    t.ports.stt.partial("agendamento");
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(0);
+  });
+
+  it("voz presa e frase aberta: o pedido de texto não deixa o turno sem prazo nenhum (o ruído reabre a pausa local e o final só confirma o parcial)", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("Eu gostaria de fazer");
+    t.time.advance(WORDS_QUIET_MS + 100);
+    t.timers.runAll();
+    t.time.advance(150);
+    t.ports.stt.final("Eu gostaria de fazer", true);
+    // Mesmo com o final já entregue, algum prazo segue armado para decidir.
+    expect(t.timers.pending().length).toBeGreaterThan(0);
+    for (let i = 0; i < 12; i++) {
+      t.time.advance(100);
+      t.timers.runAll();
+    }
+    expect(t.streams).toHaveLength(1);
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Eu gostaria de fazer" });
+  });
+
+  it("o final trazido pelo nosso Finalize, com speech_final, não fecha o turno se a pessoa seguiu falando (palavras novas antes de o final voltar)", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("eu queria saber se vocês atendem");
+    t.time.advance(WORDS_QUIET_MS + 100);
+    t.timers.runAll();
+    expect(t.finalizes()).toBe(1);
+    // A pessoa continua: parcial novo antes de o final pedido voltar.
+    t.time.advance(50);
+    t.session.sendAudio(speech(10));
+    t.ports.stt.partial("eu queria saber se vocês atendem no sábado");
+    t.time.advance(100);
+    t.ports.stt.final("eu queria saber se vocês atendem", true);
+    t.time.advance(400);
+    expect(t.streams).toHaveLength(0);
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([]);
+  });
+
+  it("fala contínua com voz local ativa e parciais espaçados não é fatiada em vários turnos", async () => {
+    const t = await setup();
+    for (const text of ["eu", "eu queria saber", "eu queria saber se vocês", "eu queria saber se vocês atendem"]) {
+      t.session.sendAudio(speech(25));
+      t.ports.stt.partial(text);
+      t.time.advance(500);
+      t.timers.runAll();
+    }
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([]);
+    expect(t.streams).toHaveLength(0);
+  });
+
+  it("a pessoa que volta a falar logo depois do fim de turno vira resumedAfterMs na medida do turno seguinte, com a classe que fechou o anterior", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(150);
+    t.ports.stt.final("Meu nome é", true);
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(1);
+    t.time.advance(400);
+    t.ports.stt.partial("Mateus");
+    t.ports.stt.final("Mateus.", true);
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.streams.length).toBeGreaterThanOrEqual(2);
+    t.ports.tts.firstAudio("turn-2", 80);
+    t.streams.at(-1)?.push({ type: "text", delta: "Prazer, Mateus." });
+    await until(() => t.spoken.length >= 1);
+    t.ports.tts.audio("turn-2", Buffer.alloc(320));
+    expect(t.metrics.at(-1)?.resumedAfterMs).toBeGreaterThanOrEqual(400);
+    expect(t.metrics.at(-1)?.resumedAfterMs).toBeLessThanOrEqual(600);
   });
 
   it("palavra nova desarma o silêncio de palavras, e eco do agente não o arma", async () => {
