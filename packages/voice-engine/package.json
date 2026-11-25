@@ -9,6 +9,7 @@
     "./types": "./src/types.ts",
     "./pricing": "./src/pricing.ts",
     "./llm-profile": "./src/pipeline/llm-profile.ts",
+    "./pipeline-credentials": "./src/pipeline/credentials.ts",
     "./transcription": "./src/transcription.ts"
   },
   "dependencies": {
