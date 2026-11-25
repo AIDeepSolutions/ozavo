@@ -341,6 +341,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   /** Quando o último turno de quem ligou foi dado por encerrado, e quanto depois dele a pessoa voltou a falar (`resumedAfterMs`: o que a bancada precisa para saber se um prazo cortou alguém). */
   let lastCommitAt: number | undefined;
   let lastClosedText = "";
+  /** Um `Finalize` pedido pelo silêncio de palavras ainda não voltou: o `speech_final` do final que ele traz não é a Deepgram dizendo que a pessoa parou (fala contínua com palavras novas no meio). */
+  let quietFinalizeInFlight = false;
   let resumedAfterMs: number | undefined;
   let resumedOfResponse: number | undefined;
   const awaitingTools = new Map<string, ChatToolCall>();
@@ -836,6 +838,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       // Só depois de um tempo de voz presa sem palavras: pedir cedo demais fatia a fala contínua de quem alonga uma palavra.
       if (pendingEndBy !== "quiet" && partial !== "" && silentMs >= stuckLimitMs() - FINALIZE_LEAD_MS) {
         pendingEndBy = "quiet";
+        quietFinalizeInFlight = true;
         stt?.finalize();
       }
       cancelQuiet = schedule(onQuiet, 100);
@@ -844,6 +847,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     speechEndedAt ??= lastWordsAt - latency.pauseMs;
     if (partial !== "") {
       pendingEndBy = "quiet";
+      quietFinalizeInFlight = true;
       // Palavras ainda não finais: o `Finalize` as entrega e o final que chegar fecha o turno pelo caminho da pausa.
       stt?.finalize();
       return;
@@ -882,8 +886,12 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         speculateKnowledge(SPECULATE_DEBOUNCE_MS);
       }
     },
-    final(text, speechFinal) {
+    final(text, speechFinalFromProvider) {
       if (finished) return;
+      const fromQuietFinalize = quietFinalizeInFlight && text !== "";
+      if (fromQuietFinalize) quietFinalizeInFlight = false;
+      // O final trazido pelo nosso próprio `Finalize` só vale como "a pessoa parou" pela pausa/classe, nunca pelo speech_final dele.
+      const speechFinal = speechFinalFromProvider && !fromQuietFinalize;
       if (text !== "") {
         // O final que só confirma as palavras que o parcial já tinha mostrado não é palavra nova: o silêncio de palavras continua contando
         // de quando elas chegaram (o `Finalize` demora ~0,3 s, e esse tempo não é fala).
@@ -906,7 +914,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (pendingEndBy === "quiet" && latency.fastEndpoint && speechEndedAt === undefined && now() - lastWordsAt >= stuckLimitMs()) speechEndedAt = lastWordsAt - latency.pauseMs;
       const paused = latency.fastEndpoint && speechEndedAt !== undefined;
       // Ainda preso e o limite da classe não passou: quem decide é o silêncio de palavras (`onQuiet`), não o `speech_final` do provedor (que nesta ligação ruidosa vem tarde).
-      if (pendingEndBy === "quiet" && !paused) {
+      if ((pendingEndBy === "quiet" || fromQuietFinalize) && !paused) {
         // Garante que o silêncio de palavras volta a decidir (uma pausa local que reabriu com ruído não deixa o turno sem prazo nenhum).
         cancelQuiet ??= schedule(onQuiet, 100);
         return;

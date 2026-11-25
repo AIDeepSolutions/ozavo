@@ -1118,6 +1118,24 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
     expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Eu gostaria de fazer" });
   });
 
+  it("o final trazido pelo nosso Finalize, com speech_final, não fecha o turno se a pessoa seguiu falando (palavras novas antes de o final voltar)", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("eu queria saber se vocês atendem");
+    t.time.advance(WORDS_QUIET_MS + 100);
+    t.timers.runAll();
+    expect(t.finalizes()).toBe(1);
+    // A pessoa continua: parcial novo antes de o final pedido voltar.
+    t.time.advance(50);
+    t.session.sendAudio(speech(10));
+    t.ports.stt.partial("eu queria saber se vocês atendem no sábado");
+    t.time.advance(100);
+    t.ports.stt.final("eu queria saber se vocês atendem", true);
+    t.time.advance(400);
+    expect(t.streams).toHaveLength(0);
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([]);
+  });
+
   it("fala contínua com voz local ativa e parciais espaçados não é fatiada em vários turnos", async () => {
     const t = await setup();
     for (const text of ["eu", "eu queria saber", "eu queria saber se vocês", "eu queria saber se vocês atendem"]) {
