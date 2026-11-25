@@ -272,7 +272,7 @@ async function runConfig(input: {
   const key = encodePipelineKey({ deepgram: "dg-simulada", cartesia: "ct-simulada", openrouter: apiKey });
   const session: VoiceSession = await connectPipeline(
     {
-      instructions: composeCallInstructions({ basePrompt: "", agentInstructions: AGENT_INSTRUCTIONS, knowledgeSection: knowledge.section }),
+      instructions: composeCallInstructions({ basePrompt: "", agentInstructions: AGENT_INSTRUCTIONS, now: new Date(), knowledgeSection: knowledge.section }),
       language: "pt-BR",
       tools: [],
       llmProfile: config.profile,
