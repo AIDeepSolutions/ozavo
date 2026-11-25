@@ -382,6 +382,6 @@ describe("base de conhecimento no motor em pipeline", () => {
     expect(embeddingRequests[0]).toMatchObject({ authorization: "Bearer sk-or-falsa", body: { model: "openai/text-embedding-3-small", input: ["Quanto custa a limpeza dental?"] } });
     expect(searches.map((s) => s.embedded).sort()).toEqual([false, true]);
     // 1,2e-7 dólar = 1,2e-5 centavo, no extrato como custo do provedor
-    expect(usages.some((u) => u.providerCostCents !== undefined && Math.abs(u.providerCostCents - 1.2e-5) < 1e-12)).toBe(true);
+    expect(usages.reduce((sum, u) => sum + (u.providerCostCents ?? 0), 0)).toBeGreaterThanOrEqual(1.2e-5 - 1e-12);
   });
 });

@@ -243,11 +243,15 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
    */
   let writeFailure: WriteFailure | undefined;
 
+  /** Custo dos embeddings das perguntas ainda não lançado no extrato (centavos de dólar): vai junto da próxima leitura de uso, que sai a cada segundo de áudio ou fim de fala. */
+  let pendingEmbeddingCents = 0;
   const flushUsage = (llm?: Partial<Usage>): void => {
     const seconds = stt?.drainSeconds() ?? 0;
     const characters = tts?.drainCharacters() ?? 0;
-    if (!llm && seconds === 0 && characters === 0) return;
-    emitter.emit("usage", { seconds, characters, ...llm });
+    if (!llm && seconds === 0 && characters === 0 && pendingEmbeddingCents === 0) return;
+    const embeddingCents = pendingEmbeddingCents;
+    pendingEmbeddingCents = 0;
+    emitter.emit("usage", { seconds, characters, ...llm, ...(embeddingCents > 0 && { providerCostCents: (llm?.providerCostCents ?? 0) + embeddingCents }) });
   };
 
   const knowledge = config.knowledge;
@@ -261,7 +265,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
           topK: knowledge.topK,
           budgetMs: knowledge.budgetMs,
           // O embedding da pergunta é gasto da ligação: entra no extrato como o do modelo (custo declarado pelo provedor, em centavos).
-          onEmbedded: ({ costMicrocents }) => flushUsage({ providerCostCents: costMicrocents / 1_000_000 }),
+          onEmbedded: ({ costMicrocents }) => void (pendingEmbeddingCents += costMicrocents / 1_000_000),
         })
       : undefined;
   /** Os trechos do último turno de quem ligou: valem também para a continuação do turno depois de uma ferramenta. */
@@ -512,7 +516,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         emitter.emit("callerActivity", { words: true });
         amd?.pushTranscript(text);
         // O trecho final é definitivo: a busca sai já, e o prazo de fim de turno que vem a seguir é o que ela usa para chegar.
-        speculate(0);
+        if (!isEchoOf(text, recentAgentText)) speculate(0);
       }
       if (!speechFinal || finals.length === 0) return;
       cancelEndpoint?.();
