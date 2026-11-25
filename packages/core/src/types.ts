@@ -93,7 +93,10 @@ export const PLAN_EVENT_KINDS = ["plan_changed", "plan_usage_alert", "cadence_re
  */
 export const WEBHOOK_EVENT_KINDS = ["webhook_subscription_created", "webhook_subscription_changed", "webhook_subscription_removed", "webhook_secret_rotated", "webhook_delivered", "webhook_failed", "webhook_queue_failed", "inbound_hook_received"] as const;
 
-export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS, ...WEBHOOK_EVENT_KINDS, "asaas_subscription_changed", "asaas_config_changed"] as const;
+/** A base de conhecimento: o que a empresa faz com as fontes (criar, trocar o conteúdo ou o nome, indexar de novo, apagar). */
+export const KNOWLEDGE_EVENT_KINDS = ["knowledge_source_created", "knowledge_source_changed", "knowledge_source_reindexed", "knowledge_source_removed"] as const;
+
+export const ORG_EVENT_KINDS = [...PRIVACY_EVENT_KINDS, ...ACCESS_EVENT_KINDS, ...PLAN_EVENT_KINDS, ...WEBHOOK_EVENT_KINDS, ...KNOWLEDGE_EVENT_KINDS, "asaas_subscription_changed", "asaas_config_changed"] as const;
 
 export type OrgEventKind = (typeof ORG_EVENT_KINDS)[number];
 

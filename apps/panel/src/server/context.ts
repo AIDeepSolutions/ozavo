@@ -188,6 +188,8 @@ export interface RouteContext {
 }
 
 interface Base<B> {
+  /** O pedido, para a rota que lê o corpo por conta própria (envio de arquivo). Com `body`, ele já foi lido. */
+  request: Request;
   session: Session;
   params: Record<string, string>;
   body: B;
@@ -237,7 +239,7 @@ export function handle<S extends ZodType = ZodType<undefined>, R = unknown>(
       const params = (await context.params) ?? {};
       // Id malformado nunca chega ao banco: para quem chama, é só um registro que não existe.
       if (params.id !== undefined && !UUID.test(params.id)) throw new ApiError(404, "not_found", "Not found.");
-      const base: Base<z.output<S>> = { session, params, body: await parseBody(request, options.body), url: new URL(request.url), deps };
+      const base: Base<z.output<S>> = { request, session, params, body: await parseBody(request, options.body), url: new URL(request.url), deps };
       if (options.before) await options.before(base);
       const org = <T>(run: (q: OrgQuery) => Promise<T>): Promise<T> => withOrg(deps.db, session.organizationId, run);
       const result = await org(async (q) => {

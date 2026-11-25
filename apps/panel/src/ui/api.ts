@@ -58,3 +58,21 @@ export function useApi<T>(path: string | null): Loaded<T> {
   const reload = useCallback(() => setVersion((value) => value + 1), []);
   return { data: state.path === path ? state.data : undefined, error: state.path === path ? state.error : undefined, reload };
 }
+
+/**
+ * Envia um formulário com arquivo (`multipart/form-data`). O navegador escolhe o cabeçalho com a fronteira,
+ * então não se define `content-type` aqui. A falha segue o mesmo caminho de `api`.
+ */
+export async function apiForm<T>(path: string, form: FormData, method = "POST"): Promise<T> {
+  let response: Response;
+  let envelope: Envelope<T>;
+  try {
+    response = await fetch(`/api/v1${path}`, { method, body: form });
+    envelope = (await response.json()) as Envelope<T>;
+  } catch (error) {
+    throw new ApiFailure("network", error instanceof Error ? error.message : String(error), 0);
+  }
+  if (envelope.ok) return envelope.data;
+  if (response.status === 401) window.location.assign("/login");
+  throw new ApiFailure(envelope.error.code, envelope.error.message, response.status);
+}

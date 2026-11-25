@@ -12,6 +12,7 @@ export const SYSTEM_ACCESS_ALLOWLIST: Record<string, string> = {
   "apps/panel/src/app/api/v1/system/health/route.ts": "rota pública de saúde: não há sessão para abrir uma organização",
   "apps/panel/src/server/update.ts": "a atualização é da instalação: ouvir o agente e vencer pedido parado atravessam organizações",
   "apps/panel/scripts/seed-demo.ts": "semente da demonstração: cria a organização",
+  "apps/panel/scripts/seed-knowledge-demo.ts": "semente da demonstração: acha a organização da demonstração pelo e-mail do usuário, antes de abrir a organização",
   "apps/routines/src/cli/create-owner.ts": "cria a organização e o primeiro usuário",
   "apps/routines/src/cli/reset-password.ts": "acha o usuário pelo e-mail, rodando só de dentro da VPS",
   "apps/routines/src/cli/migrate.ts": "define a senha dos papéis do banco com a conexão do dono",
