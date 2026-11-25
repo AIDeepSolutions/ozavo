@@ -26,6 +26,10 @@ export const productionInput = z.object({
   // O MinIO da composição é um espelho não oficial (a imagem oficial não é mais pública: 16/11/2026).
   // Sem `s3`, ele só entra com o pedido explícito, e é para bancada: em produção, S3 gerenciado.
   localMinio: z.literal(true).optional(),
+  // TEMPORÁRIO (Telera, 25/11/2026): servidor de operadora que só fala SIP por UDP. Só a linha
+  // cadastrada para ele pode ficar sem TLS; abre 5060/udp. Sem este campo a produção é só TLS.
+  // Ver docs/decisions/2026-11-25-udp-temporario-telera.md.
+  temporaryUdpHost: z.string().regex(/^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/, "must be one server name").optional(),
 }).refine(value => value.s3 !== undefined || value.localMinio === true, { message: "Inform s3 (managed storage), or localMinio: true to accept the unofficial MinIO mirror", path: ["s3"] });
 const hex = () => randomBytes(32).toString("hex");
 function envText(values: Record<string, string>): string {
@@ -66,6 +70,8 @@ export async function prepareProduction(target: string, input: unknown, options:
     OZAVO_SECRET_KEY: data.secretKey ?? hex(), PUBLIC_URL: data.publicUrl,
     ARI_PASSWORD: ari, INTERNAL_TOKEN: hex(), PUBLIC_IP: data.publicIp,
     VOICE_INTERNAL_URL: "http://voice:8090", RECORDINGS_DIR: "/recordings",
+    // Vazio = só TLS. Com valor, só a linha desse servidor pode ficar sem TLS (temporário).
+    OZAVO_UDP_ONLY_HOSTS: data.temporaryUdpHost ?? "",
   });
   await writeEnv("migrate.env", { MIGRATION_DATABASE_URL: data.migrationDatabaseUrl });
   await writeEnv("archive.env", { S3_ENDPOINT: data.s3?.endpoint ?? "http://minio:9000",
@@ -78,7 +84,8 @@ export async function prepareProduction(target: string, input: unknown, options:
   for (const [template, name] of [["extensions.conf", "extensions.conf"], ["http.conf", "http.conf"], ["ari.conf.tmpl", "ari.conf"], ["rtp.conf.tmpl", "rtp.conf"], ["pjsip.production.conf.base", "pjsip.conf"]]) {
     const source = await readFile(join(root, "deploy/asterisk", template ?? ""), "utf8");
     const file = join(generated, name ?? "");
-    await writeFile(file, source.replace(/\$\{([A-Z_]+)\}/g, (original: string, key: string) => replacements[key] ?? original), { mode: 0o644 });
+    const udpPart = template === "pjsip.production.conf.base" && data.temporaryUdpHost !== undefined ? await readFile(join(root, "deploy/asterisk/pjsip.production.udp-temporario.part"), "utf8") : "";
+    await writeFile(file, (source + udpPart).replace(/\$\{([A-Z_]+)\}/g, (original: string, key: string) => replacements[key] ?? original), { mode: 0o644 });
     await chmod(file, 0o644);
   }
   // O certificado é público. A chave privada só o Asterisk lê: 0600 com o dono do contêiner. Sem
@@ -100,8 +107,10 @@ export async function prepareProduction(target: string, input: unknown, options:
   }
   await chmod(generated, 0o700);
   await copyFile(join(root, "deploy/Caddyfile"), join(target, "Caddyfile"));
-  const compose = parse(await readFile(join(root, "deploy/docker-compose.supabase.yml"), "utf8"), { merge: true }) as { services: Record<string, { build?: { context: string } }> };
+  const compose = parse(await readFile(join(root, "deploy/docker-compose.supabase.yml"), "utf8"), { merge: true }) as { services: Record<string, { build?: { context: string }; ports?: string[] }> };
   for (const service of Object.values(compose.services)) if (service.build) service.build.context = root;
+  // TEMPORÁRIO: a 5060/udp só é publicada com a exceção pedida. Limite a origem no firewall do provedor.
+  if (data.temporaryUdpHost !== undefined) compose.services.asterisk?.ports?.push("5060:5060/udp");
   await writeFile(join(target, "docker-compose.yml"), stringify(compose));
   return warnings;
 }

@@ -1,0 +1,15 @@
+
+; ===== TEMPORÁRIO: UDP sem cifra, só para a linha da Telera (decisão de 25/11/2026) =====
+; Só entra quando o preparo de produção recebe `temporaryUdpHost`. O processo de voz só escreve uma
+; linha sem TLS para esse servidor (`OZAVO_UDP_ONLY_HOSTS`); qualquer outra linha continua TLS.
+; Voltar ao TLS: refazer o preparo sem `temporaryUdpHost`.
+; Docs: docs/decisions/2026-11-25-udp-temporario-telera.md
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+external_media_address=${PUBLIC_IP}
+external_signaling_address=${PUBLIC_IP}
+local_net=172.16.0.0/12
+local_net=10.0.0.0/8
+local_net=192.168.0.0/16

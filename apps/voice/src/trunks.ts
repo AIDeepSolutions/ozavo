@@ -189,6 +189,29 @@ function renderTrunk(trunk: TrunkConfig, inbound: Inbound, identify: boolean): s
   return lines.join("\n");
 }
 
+/**
+ * TEMPORÁRIO (Telera, 25/11/2026): na produção, a linha sem TLS só é escrita se o servidor dela
+ * estiver na lista `OZAVO_UDP_ONLY_HOSTS`, que o preparo de produção grava (vazia por padrão: só
+ * TLS). `null` é a instalação comunitária, onde UDP vale para qualquer linha. Para voltar ao TLS
+ * puro, ver docs/decisions/2026-11-25-udp-temporario-telera.md.
+ */
+export const UDP_NOT_ALLOWED_REASON =
+  "this installation only accepts a line without TLS for the provider addresses allowed as an exception; turn on TLS for this line, or ask the administrator";
+
+/** Servidor da linha sem a porta: `sip.telera.com.br:5060` vira `sip.telera.com.br`. */
+const hostOnly = (host: string): string => host.trim().toLowerCase().replace(/^\[(.+)\](?::\d+)?$/, "$1").replace(/:\d+$/, "");
+
+export function udpAllowed(trunk: TrunkConfig, udpOnlyHosts: string[] | null): boolean {
+  if (trunk.sipTls !== false || udpOnlyHosts === null) return true;
+  return udpOnlyHosts.map(hostOnly).includes(hostOnly(trunk.host));
+}
+
+/** Lê `OZAVO_UDP_ONLY_HOSTS` (nomes separados por vírgula). Ausente: `null`, sem restrição. */
+export function parseUdpOnlyHosts(raw: string | undefined): string[] | null {
+  if (raw === undefined) return null;
+  return raw.split(",").map((part) => part.trim()).filter((part) => part !== "");
+}
+
 // Não diz de quem é a outra linha, nem qual é o endereço: pode ser de outra organização.
 export const SHARED_HOST_REASON =
   "this provider address is already used by another line of this installation, and a line recognized only by its address cannot share it; change this line to registration (user and password) to fix it";
@@ -248,12 +271,12 @@ const overlap = (a: Inbound, b: Inbound): boolean => a.hosts.some((mine) => b.ho
  * Em qualquer grupo, linha em modo `register` sai normalmente, reconhecida pelo `line` do registro.
  * Linha inválida por outro motivo não entra em grupo nenhum.
  */
-export function renderTrunksConf(trunks: TrunkConfig[]): { conf: string; skipped: Array<{ id: string; reason: string }>; emitted: string[] } {
+export function renderTrunksConf(trunks: TrunkConfig[], udpOnlyHosts: string[] | null = null): { conf: string; skipped: Array<{ id: string; reason: string }>; emitted: string[] } {
   const skipped: Array<{ id: string; reason: string }> = [];
   const valid: Array<{ trunk: TrunkConfig; inbound: Inbound; group: number }> = [];
   for (const trunk of [...trunks].sort((a, b) => a.id.localeCompare(b.id))) {
     const host = parseTrunkHost(trunk.host);
-    const reason = trunkProblem(trunk);
+    const reason = trunkProblem(trunk) ?? (udpAllowed(trunk, udpOnlyHosts) ? null : UDP_NOT_ALLOWED_REASON);
     if (reason !== null || !host) skipped.push({ id: trunk.id, reason: reason ?? "the host cannot be read" });
     else valid.push({ trunk, inbound: readInbound(trunk, host), group: valid.length });
   }
@@ -343,6 +366,8 @@ export interface TrunksDeps {
   /** Usuário do Asterisk dentro do contêiner dele: o dono do arquivo de troncos. */
   owner?: FileOwner;
   schedule?: Schedule;
+  /** Servidores que podem ter linha sem TLS (produção; ver `UDP_NOT_ALLOWED_REASON`). `null`: sem restrição. */
+  udpOnlyHosts?: string[] | null;
   log: Logger;
 }
 
@@ -412,7 +437,7 @@ export async function applyTrunks(deps: TrunksDeps): Promise<{ applied: boolean;
       unreadable.push({ id: row.id, reason: `the saved password cannot be read (${messageOf(error)})` });
     }
   }
-  const { conf, skipped: invalid, emitted } = renderTrunksConf(trunks);
+  const { conf, skipped: invalid, emitted } = renderTrunksConf(trunks, deps.udpOnlyHosts ?? null);
   const skipped = [...unreadable, ...invalid];
   const written = await writeFileAtomic(deps.file, conf, deps.owner);
   if (written.chownError !== undefined) {

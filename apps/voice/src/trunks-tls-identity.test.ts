@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderTrunksConf, type TrunkConfig } from "./trunks";
+import { parseUdpOnlyHosts, renderTrunksConf, type TrunkConfig } from "./trunks";
 
 /**
  * Linha TLS: a porta 5060 é a do SIP sem cifra (auditoria A16), e o domínio do PAI é o da
@@ -37,5 +37,38 @@ describe("linha TLS", () => {
   it("sem TLS, a linha continua com o IP público no from_domain", () => {
     const { conf } = renderTrunksConf([{ ...base, sipTls: false }]);
     expect(lineOf(conf, "from_domain")).toEqual(["from_domain=203.0.113.10"]);
+  });
+});
+
+/** TEMPORÁRIO (Telera, 25/11/2026): na produção só o servidor listado pode ter linha sem TLS. */
+describe("exceção temporária de UDP na produção", () => {
+  const telera: TrunkConfig = { ...base, host: "sip.telera.com.br", sipTls: false };
+  const other: TrunkConfig = { ...base, id: "0a000000-0000-4000-8000-000000000002", host: "sip.outra.example", sipTls: false };
+
+  it("escreve a linha sem TLS do servidor listado, por UDP, e recusa a de outro servidor", () => {
+    const { conf, skipped, emitted } = renderTrunksConf([telera, other], ["sip.telera.com.br"]);
+    expect(emitted).toEqual([ID]);
+    expect(lineOf(conf, "transport")).toEqual(["transport=transport-udp", "transport=transport-udp"]);
+    expect(skipped).toEqual([{ id: other.id, reason: expect.stringContaining("without TLS") }]);
+  });
+
+  it("lista vazia (padrão da produção): nenhuma linha sem TLS; a linha TLS segue normal", () => {
+    const { skipped, emitted } = renderTrunksConf([telera, { ...base, id: other.id }], []);
+    expect(skipped.map((s) => s.id)).toEqual([ID]);
+    expect(emitted).toEqual([other.id]);
+  });
+
+  it("ignora porta e caixa do endereço ao comparar", () => {
+    expect(renderTrunksConf([{ ...telera, host: "SIP.Telera.com.br:5060" }], ["sip.telera.com.br"]).emitted).toEqual([ID]);
+  });
+
+  it("sem restrição (instalação comunitária), UDP vale para qualquer linha", () => {
+    expect(renderTrunksConf([telera, other]).emitted).toEqual([ID, other.id]);
+  });
+
+  it("lê a variável: ausente é sem restrição; vazia é só TLS", () => {
+    expect(parseUdpOnlyHosts(undefined)).toBeNull();
+    expect(parseUdpOnlyHosts("")).toEqual([]);
+    expect(parseUdpOnlyHosts(" a.example , b.example ")).toEqual(["a.example", "b.example"]);
   });
 });

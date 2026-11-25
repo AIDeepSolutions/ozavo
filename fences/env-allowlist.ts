@@ -52,6 +52,8 @@ export const ENV_ALLOWLIST: Record<string, "generated" | "default"> = {
   // Porta do WebSocket da chamada pelo navegador (8091), só na rede interna; o Caddy do Ozavo a entrega em /voice-ws.
   VOICE_WEB_PORT: "default",
   ASTERISK_TRUNKS_FILE: "default",
+  // TEMPORÁRIO (Telera, 25/11/2026): na produção, servidores cuja linha pode ficar sem TLS. O preparo de produção grava (vazio = só TLS); ausente = instalação comunitária, sem restrição. Ver docs/decisions/2026-11-25-udp-temporario-telera.md.
+  OZAVO_UDP_ONLY_HOSTS: "generated",
   // Pasta das gravações de chamada (/recordings): a voz grava, o painel lê e as rotinas apagam pelo prazo de guarda.
   RECORDINGS_DIR: "default",
   // Usuário e grupo do Asterisk dentro do contêiner dele (1000): dono do arquivo de troncos.
