@@ -68,12 +68,12 @@ services:
       coolify: { aliases: [ozavo-voice] }
     # "Falar com o agente": o áudio do navegador chega por /voice-ws no domínio do painel. Aqui não há
     # Caddy (ele é do compose de instalação); no Coolify quem separa esse caminho é o Traefik, que
-    # manda só /voice-ws para a porta 8091 da voz e deixa o resto com o painel. PANEL_HOST é o
-    # domínio do painel, sem https://.
+    # manda só /voice-ws para a porta 8091 da voz e deixa o resto com o painel. A regra é só de
+    # caminho porque o Coolify não substitui variáveis dentro de labels (ele as escreve literais).
     labels:
       - traefik.enable=true
       - traefik.docker.network=coolify
-      - traefik.http.routers.ozavo-voice-ws.rule=Host(`${PANEL_HOST}`) && PathPrefix(`/voice-ws`)
+      - traefik.http.routers.ozavo-voice-ws.rule=PathPrefix(`/voice-ws`)
       - traefik.http.routers.ozavo-voice-ws.entryPoints=https
       - traefik.http.routers.ozavo-voice-ws.priority=100
       - traefik.http.routers.ozavo-voice-ws.tls=true
