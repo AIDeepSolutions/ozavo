@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fakeFetch, fakeLookup } from "../../test/helpers";
-import { isPublicAddress, safeFetch, UnsafeDestinationError } from "./safe-fetch";
+import { isPublicAddress, safeFetch, UnsafeDestinationError, USER_AGENT } from "./safe-fetch";
 
 const neverFetch: typeof fetch = async () => {
   throw new Error("fetch must not be called for a blocked destination");
@@ -66,7 +66,15 @@ describe("safeFetch", () => {
       { fetch, lookup: fakeLookup() },
     );
     expect(response).toEqual({ status: 201, ok: true, body: '{"received":true}', truncated: false });
-    expect(requests).toEqual([{ url: "https://hooks.example.com/in", method: "POST", headers: { authorization: "Bearer s3cret", "content-type": "application/json" }, body: { a: 1 } }]);
+    expect(requests).toEqual([{ url: "https://hooks.example.com/in", method: "POST", headers: { "user-agent": USER_AGENT, authorization: "Bearer s3cret", "content-type": "application/json" }, body: { a: 1 } }]);
+  });
+
+  it("sempre se identifica com User-Agent (a Cloudflare do Cal.com barrava o pedido sem ele), mas respeita o de quem chama", async () => {
+    const { fetch, requests } = fakeFetch(() => new Response("ok"));
+    await safeFetch("https://hooks.example.com/a", {}, { fetch, lookup: fakeLookup() });
+    await safeFetch("https://hooks.example.com/b", { headers: { "user-agent": "Outro/2" } }, { fetch, lookup: fakeLookup() });
+    expect(requests.map((request) => request.headers["user-agent"])).toEqual([USER_AGENT, "Outro/2"]);
+    expect(USER_AGENT).toMatch(/^Ozavo\/\d/);
   });
 
   it("aceita IP público literal sem consultar DNS", async () => {
@@ -84,7 +92,7 @@ describe("safeFetch", () => {
     );
     const response = await safeFetch("https://a.example.com/start", { method: "POST", headers: { Authorization: "Bearer s3cret" }, body: "{}" }, { fetch, lookup: fakeLookup() });
     expect(response.body).toBe("done");
-    expect(requests[1]).toEqual({ url: "https://b.example.com/end", method: "GET", headers: {}, body: undefined });
+    expect(requests[1]).toEqual({ url: "https://b.example.com/end", method: "GET", headers: { "user-agent": USER_AGENT }, body: undefined });
   });
 
   it("desiste depois de três redirecionamentos", async () => {

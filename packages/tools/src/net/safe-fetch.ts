@@ -34,6 +34,12 @@ export class UnsafeDestinationError extends Error {
   override name = "UnsafeDestinationError";
 }
 
+/**
+ * Quem somos, para o servidor do outro lado. Sem este cabeçalho o `fetch` do `undici` não manda User-Agent, e a Cloudflare do Cal.com
+ * respondeu 403 ("Just a moment...") ao servidor de produção (medido em 25/11/2026: com `Ozavo/0.1` ou com User-Agent de navegador, 200).
+ */
+export const USER_AGENT = "Ozavo/1.0 (+https://github.com/AIDeepSolutions/ozavo)";
+
 const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 16 * 1024;
 const MAX_REDIRECTS = 3;
@@ -131,6 +137,7 @@ async function follow(target: string, request: SafeRequest, doFetch: Fetch, look
   const signal = AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS);
   let url = target;
   let { method = "GET", headers = {}, body } = request;
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) headers = { "User-Agent": USER_AGENT, ...headers };
 
   for (let hop = 0; ; hop++) {
     await assertPublicDestination(url, lookup);
