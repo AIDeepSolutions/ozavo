@@ -149,7 +149,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
   });
 
-  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together), pelo motor e não só pela montagem do corpo", async () => {
+  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together, com os da fila depois), pelo motor e não só pela montagem do corpo", async () => {
     const pedido = async (llmProfile: "d" | "e") => {
       const t = await setup({ llmProfile });
       t.deepgram.send(results("Quero marcar uma consulta.", true));
@@ -157,7 +157,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
       return t.openrouter.requests[0]?.body as Record<string, unknown>;
     };
     expect(await pedido("d")).toMatchObject({ model: "openai/gpt-oss-120b", provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
-    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together", "wafer", "reka"], allow_fallbacks: true } });
     expect(await pedido("e")).toMatchObject({ reasoning: { enabled: false } });
   });
 
@@ -373,6 +373,7 @@ describe("base de conhecimento no motor em pipeline", () => {
         instructions: "Você é a recepcionista.",
         language: "pt-BR",
         tools: [],
+        latency: { warmup: false },
         knowledge: {
           mode: "rag",
           only: false,

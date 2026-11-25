@@ -229,7 +229,7 @@ describe("OpenRouter, Chat Completions em streaming", () => {
 });
 
 describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo provedor (ADR 0023)", () => {
-  const profile = { ...LLM_PROFILES.e, firstTokenTimeoutMs: 60 };
+  const profile = { ...LLM_PROFILES.e, firstTokenTimeoutMs: 250 };
   const messages = [{ role: "user" as const, content: "oi" }];
 
   it("provedor que não entrega nada no prazo é largado, e o pedido sai de novo com os provedores que sobraram", async () => {
@@ -278,7 +278,7 @@ describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo pro
     const server = await startFakeSse(async (_request, reply) => {
       calls++;
       if (calls < 3) return; // os dois primeiros não respondem
-      await new Promise((resolve) => setTimeout(resolve, 150)); // o último demora mais que o limite e ainda assim vale
+      await new Promise((resolve) => setTimeout(resolve, 400)); // o último demora mais que o limite e ainda assim vale
       reply.write({ choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
       reply.end();
     });
