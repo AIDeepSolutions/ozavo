@@ -22,7 +22,7 @@ describe("conector HTTP", () => {
     expect(request?.url).toBe(DESKCOMM.url);
     expect(request?.method).toBe("POST");
     expect(request?.body).toEqual(message);
-    expect(request?.headers).toMatchObject({ authorization: `Bearer ${TOKEN}`, "content-type": "application/json" });
+    expect(request?.headers).toEqual({ authorization: `Bearer ${TOKEN}`, "content-type": "application/json" });
   });
 
   it("manda Idempotency-Key quando o aviso tem id, e não manda quando não tem", async () => {
