@@ -49,7 +49,7 @@ export const LLM_PROFILES: Readonly<Record<LlmProfileId, LlmProfile>> = {
   b: { id: "b", model: "anthropic/claude-haiku-5.5", maxTokens: 400, cacheSystemPrompt: true, reasoning: "off", groupSlotsByDay: true },
   c: { id: "c", model: "google/gemini-2.5-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "default", groupSlotsByDay: false },
   d: { id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"], firstTokenTimeoutMs: 800 },
-  e: { id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together", "wafer", "reka"], firstTokenTimeoutMs: 800 },
+  e: { id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together", "wafer", "parasail", "reka"], firstTokenTimeoutMs: 800 },
 };
 
 /** O perfil de quem não escolheu: o A (qualidade primeiro). */

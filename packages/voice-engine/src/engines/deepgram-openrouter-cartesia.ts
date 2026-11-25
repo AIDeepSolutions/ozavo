@@ -35,7 +35,7 @@ import { CARTESIA_API_URL, CARTESIA_MODEL, CARTESIA_VERSION, openCartesiaTts } f
 import { InvalidPipelineKeyError, parsePipelineKey, type PipelineCredentials } from "../pipeline/credentials";
 import { DEEPGRAM_API_URL, DEEPGRAM_MODEL, openDeepgramStt } from "../pipeline/deepgram-stt";
 import { llmProfileOf } from "../pipeline/llm-profile";
-import { OPENROUTER_API_URL, OPENROUTER_MODEL, streamChatResilient } from "../pipeline/openrouter-llm";
+import { OPENROUTER_API_URL, OPENROUTER_MODEL, createProviderCircuit, streamChatResilient, type ProviderCircuit } from "../pipeline/openrouter-llm";
 import { createPipelineSession, type TurnMetrics } from "../pipeline/session";
 import type { AmdOptions } from "../pipeline/amd";
 import type { ConnectOptions, KeyCheck, KeyCheckOptions, KeyCheckResult, VoiceEngine, VoiceSession, VoiceSessionConfig } from "../types";
@@ -50,6 +50,8 @@ export interface PipelineConnectOptions extends ConnectOptions {
   /** Endereços de cada provedor (testes apontam para servidores falsos). */
   urls?: { stt?: string; tts?: string; llm?: string };
   clock?: Clock;
+  /** Disjuntor de provedores do modelo (testes passam o seu; produção usa o do processo, que todas as ligações dividem). */
+  circuit?: ProviderCircuit;
   fetch?: typeof fetch;
   onMetrics?(metrics: TurnMetrics): void;
   /** `false` desliga a detecção de caixa postal. */
@@ -62,6 +64,9 @@ export class InvalidVoiceError extends Error {
   }
 }
 
+/** A saúde dos provedores do modelo vale para o processo todo: se um provedor está fora, a ligação seguinte já não paga o prazo dele. */
+let processCircuit: ProviderCircuit | undefined;
+
 export async function connectPipeline(config: VoiceSessionConfig, apiKey: string, options: PipelineConnectOptions = {}): Promise<VoiceSession> {
   const keys: PipelineCredentials = parsePipelineKey(apiKey);
   // A voz é do agente (cada organização escolhe a sua); sem escolha, a padrão do motor.
@@ -69,6 +74,9 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
   if (!/^[A-Za-z0-9-]{8,64}$/.test(voiceId)) throw new InvalidVoiceError();
   const clock = options.clock ?? systemClock;
   const timeout = { readyTimeoutMs: options.readyTimeoutMs, schedule: options.schedule };
+  const circuit =
+    options.circuit ??
+    (clock === systemClock ? (processCircuit ??= createProviderCircuit({ now: () => systemClock.now().getTime() })) : createProviderCircuit({ now: () => clock.now().getTime() }));
   // O perfil é do agente (tela de configuração); `options.model` (testes) troca só o modelo. Sem ele, o pedido NÃO leva `model`
   // próprio: o perfil manda o modelo e a ordem de provedores (D e E fixam o provedor; com `model` preenchido o corpo omitia `provider`).
   const profile = llmProfileOf(config.llmProfile);
@@ -104,7 +112,7 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
       openCartesiaTts({ apiKey: keys.cartesia, voiceId, language: config.language, clock, url: options.urls?.tts, timeout }, handlers),
     chat: async function* (messages, tools, signal) {
       // Depois do primeiro 4xx por reasoning/cache_control, o resto da ligação já pede sem eles (uma repetição só, não a cada turno).
-      for await (const event of streamChatResilient({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
+      for await (const event of streamChatResilient({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, circuit, baseUrl: options.urls?.llm, fetch: options.fetch })) {
         if (event.type === "fallback") plain = true;
         yield event;
       }

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeSse, textChunk, toolChunk, usageChunk } from "../testing/fake-pipeline";
 import type { ToolSpec } from "../types";
 import { LLM_PROFILES } from "./llm-profile";
-import { FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, chatBody, streamChat, streamChatResilient, type LlmEvent } from "./openrouter-llm";
+import { manualClock } from "../testing/fake-pipeline";
+import { CIRCUIT_OPEN_MS, FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, chatBody, createProviderCircuit, streamChat, streamChatResilient, type LlmEvent } from "./openrouter-llm";
 
 const stops: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -59,7 +60,7 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     expect(JSON.stringify(d)).not.toContain("cache_control");
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.d, plain: true })).not.toHaveProperty("reasoning");
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.b })).not.toHaveProperty("provider");
-    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e })).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", reasoning: { enabled: false }, provider: { order: ["together", "wafer", "reka"], allow_fallbacks: true } });
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e })).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", reasoning: { enabled: false }, provider: { order: ["together", "wafer", "parasail", "reka"], allow_fallbacks: true } });
     // Um modelo trocado à mão (teste) não herda o roteamento do perfil; o do próprio perfil, sim.
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e, model: "outro/modelo" })).not.toHaveProperty("provider");
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e, model: LLM_PROFILES.e.model })).toHaveProperty("provider");
@@ -245,7 +246,7 @@ describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo pro
     const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
     expect(events.map((event) => event.type)).toEqual(["retry", "text", "usage"]);
     expect(events[0]).toEqual({ type: "retry", provider: "together" });
-    expect(server.requests.map((request) => (request.body.provider as { order: string[] }).order)).toEqual([["together", "wafer", "reka"], ["wafer", "reka"]]);
+    expect(server.requests.map((request) => (request.body.provider as { order: string[] }).order)).toEqual([["together", "wafer", "parasail", "reka"], ["wafer", "parasail", "reka"]]);
     expect(events.find((event) => event.type === "usage")).toMatchObject({ usage: { provider: "Wafer" } });
   });
 
@@ -283,7 +284,7 @@ describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo pro
       reply.end();
     });
     stops.push(() => server.stop());
-    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: { ...profile, providerOrder: ["together", "wafer", "reka"] } }));
     expect(events.filter((event) => event.type === "retry")).toHaveLength(2);
     expect(events.some((event) => event.type === "text")).toBe(true);
     const plain = await startFakeSse((_request, reply) => reply.end());
@@ -299,5 +300,140 @@ describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo pro
     setTimeout(() => abort.abort(), 20);
     const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile, signal: abort.signal }));
     expect(events.some((event) => event.type === "retry")).toBe(false);
+  });
+});
+
+describe("corrida entre provedores e disjuntor (ligação de 25/11: o Together estourou o prazo e a ligação inteira ficou no reserva)", () => {
+  const profile = { ...LLM_PROFILES.e, firstTokenTimeoutMs: 120 };
+  const messages = [{ role: "user" as const, content: "oi" }];
+  const answer = (provider: string, reply: { write(data: unknown): void; end(): void }): void => {
+    reply.write({ provider, choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+    reply.write({ provider, choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, cost: 0.0001 } });
+    reply.end();
+  };
+  const orderOf = (request: { body: Record<string, unknown> }): string[] => (request.body.provider as { order: string[] }).order;
+
+  it("o provedor lento que responde antes do reserva ganha, e o pedido do reserva (que saiu no prazo) é descartado sem virar resposta", async () => {
+    let calls = 0;
+    const server = await startFakeSse(async (_request, reply) => {
+      const mine = ++calls;
+      if (mine === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300)); // passou do prazo de 200 ms, mas responde antes do segundo prazo
+        answer("Together", reply);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // o reserva é mais lento ainda
+      answer("Wafer", reply);
+    });
+    stops.push(() => server.stop());
+    const clock = manualClock();
+    const circuit = createProviderCircuit({ now: () => clock.ms });
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: { ...profile, firstTokenTimeoutMs: 200 }, circuit }));
+    expect(events.map((event) => event.type)).toEqual(["retry", "text", "usage"]);
+    expect(events.find((event) => event.type === "usage")).toMatchObject({ usage: { provider: "Together" } });
+    expect(events.filter((event) => event.type === "text")).toHaveLength(1);
+    // Together respondeu, mesmo depois do prazo: não conta como falha.
+    expect(circuit.isOpen(`${profile.model}|together`)).toBe(false);
+  });
+
+  it("o reserva responde primeiro: ele ganha, e o lento NÃO é cortado até o primeiro conteúdo (para o cache do provedor terminar de se formar)", async () => {
+    let calls = 0;
+    const aborted: number[] = [];
+    const server = await startFakeSse(async (_request, reply) => {
+      const mine = ++calls;
+      reply.raw.on("close", () => {
+        if (!reply.raw.writableEnded) aborted.push(mine);
+      });
+      if (mine === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 700)); // lento
+        reply.write({ provider: "Together", choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+        return;
+      }
+      answer("Wafer", reply);
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
+    expect(events.find((event) => event.type === "usage")).toMatchObject({ usage: { provider: "Wafer" } });
+    // A resposta já terminou e o primeiro pedido ainda está vivo: só será cortado quando o primeiro conteúdo dele chegar.
+    expect(aborted).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(aborted).toEqual([1]);
+  });
+
+  it("duas demoras seguidas abrem o disjuntor: o provedor sai da ordem por 45 s, e uma nova tentativa depois do prazo volta a incluí-lo", async () => {
+    const server = await startFakeSse(async (request, reply) => {
+      if (orderOf(request)[0] === "together") {
+        await new Promise((resolve) => setTimeout(resolve, 600)); // sempre lento
+        reply.write({ provider: "Together", choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+        return;
+      }
+      answer("Wafer", reply);
+    });
+    stops.push(() => server.stop());
+    const clock = manualClock();
+    const circuit = createProviderCircuit({ now: () => clock.ms });
+    const run = (): Promise<LlmEvent[]> => collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile, circuit }));
+    await run();
+    await run();
+    const before = server.requests.length;
+    const third = await run();
+    // Disjuntor aberto: o terceiro pedido nem tenta o Together, então não há retry nem espera do prazo.
+    expect(third.some((event) => event.type === "retry")).toBe(false);
+    expect(server.requests.slice(before).map(orderOf)).toEqual([["wafer", "parasail", "reka"]]);
+    clock.advance(CIRCUIT_OPEN_MS + 1);
+    const fourth = await run();
+    expect(fourth.some((event) => event.type === "retry")).toBe(true);
+    expect(orderOf(server.requests[before + 1] as { body: Record<string, unknown> })).toEqual(["together", "wafer", "parasail", "reka"]);
+  });
+
+  it("um provedor que responde no prazo zera a contagem: falhas só valem se forem seguidas", () => {
+    const clock = manualClock();
+    const circuit = createProviderCircuit({ now: () => clock.ms });
+    circuit.report("m|together", false);
+    circuit.report("m|together", true);
+    circuit.report("m|together", false);
+    expect(circuit.isOpen("m|together")).toBe(false);
+    circuit.report("m|together", false);
+    expect(circuit.isOpen("m|together")).toBe(true);
+    clock.advance(CIRCUIT_OPEN_MS + 1);
+    expect(circuit.isOpen("m|together")).toBe(false);
+    // Vencido, uma falha só já reabre (a prova de que voltou).
+    circuit.report("m|together", false);
+    expect(circuit.isOpen("m|together")).toBe(true);
+  });
+
+  it("todos fora pelo disjuntor: vale a ordem inteira, nunca um pedido sem provedor", async () => {
+    const server = await startFakeSse((_request, reply) => answer("Together", reply));
+    stops.push(() => server.stop());
+    const circuit = { isOpen: () => true, report: () => undefined };
+    await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile, circuit }));
+    expect(orderOf(server.requests[0] as { body: Record<string, unknown> })).toEqual(["together", "wafer", "parasail", "reka"]);
+  });
+
+  it("erro HTTP do provedor antes do primeiro conteúdo passa o pedido ao próximo na hora, sem esperar o prazo", async () => {
+    const server = await startFakeSse((request, reply) => {
+      if (orderOf(request)[0] === "together") reply.status(503, {});
+      else answer("Wafer", reply);
+    });
+    stops.push(() => server.stop());
+    const slow = { ...profile, firstTokenTimeoutMs: 5000 };
+    const startedAt = performance.now();
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile: slow }));
+    expect(performance.now() - startedAt).toBeLessThan(2000);
+    expect(events.map((event) => event.type)).toEqual(["retry", "text", "usage"]);
+  });
+
+  it("401, 402 e 403 não passam ao próximo provedor (a chave é a mesma): viram erro", async () => {
+    const server = await startFakeSse((_request, reply) => reply.status(402, {}));
+    stops.push(() => server.stop());
+    await expect(collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }))).rejects.toThrow("HTTP 402");
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it("todos os provedores falham: o erro do último chega a quem chamou", async () => {
+    const server = await startFakeSse((_request, reply) => reply.status(500, {}));
+    stops.push(() => server.stop());
+    await expect(collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }))).rejects.toBeInstanceOf(LlmHttpError);
+    expect(server.requests).toHaveLength(4);
   });
 });

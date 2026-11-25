@@ -124,6 +124,8 @@ export interface ChatRequest {
   maxTokens?: number;
   /** Ordem de provedores desta chamada, no lugar da do perfil (a nova tentativa tira o que demorou). */
   providerOrder?: readonly string[];
+  /** Disjuntor de provedores (`createProviderCircuit`), compartilhado pelo processo: tira da ordem quem falhou duas vezes seguidas. */
+  circuit?: ProviderCircuit;
   /** Interno do `streamChatResilient`: emite `first` quando o primeiro conteúdo chega. */
   markFirst?: boolean;
   /** Pedido sem `reasoning` nem `cache_control`: a sessão que já caiu no fallback segue assim, sem tentar de novo a cada turno. */
@@ -296,48 +298,230 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
 }
 
 /**
+ * Disjuntor por provedor (ADR 0023, ajuste de 25/11): quem demora no primeiro conteúdo duas vezes seguidas fica de fora da
+ * ordem por um tempo e volta a ser tentado depois (a primeira tentativa depois do prazo é a prova). O estado vale para o processo
+ * inteiro (todas as ligações dividem a saúde do provedor) e cada pedido continua decidindo sozinho: nada fica "colado" numa ligação.
+ */
+export interface ProviderCircuit {
+  /** O provedor está de fora da ordem agora? */
+  isOpen(provider: string): boolean;
+  /** Registra o resultado de uma tentativa: `false` é demora ou falha antes do primeiro conteúdo; `true` é conteúdo no prazo. */
+  report(provider: string, ok: boolean): void;
+}
+
+export const CIRCUIT_FAILURES_TO_OPEN = 2;
+export const CIRCUIT_OPEN_MS = 45_000;
+
+export function createProviderCircuit(options: { now: () => number; failuresToOpen?: number; openMs?: number }): ProviderCircuit {
+  const failuresToOpen = options.failuresToOpen ?? CIRCUIT_FAILURES_TO_OPEN;
+  const openMs = options.openMs ?? CIRCUIT_OPEN_MS;
+  const state = new Map<string, { failures: number; openUntil: number }>();
+  return {
+    isOpen: (provider) => (state.get(provider)?.openUntil ?? 0) > options.now(),
+    report(provider, ok) {
+      if (ok) {
+        state.delete(provider);
+        return;
+      }
+      const failures = (state.get(provider)?.failures ?? 0) + 1;
+      // Depois de aberto e vencido, uma única falha reabre: a tentativa seguinte ao prazo é a prova de que ele voltou.
+      state.set(provider, { failures, openUntil: failures >= failuresToOpen ? options.now() + openMs : 0 });
+    },
+  };
+}
+
+/** Quanto tempo um pedido que perdeu a corrida segue vivo, só para o provedor terminar de ler o prompt (esquenta o cache dele). */
+const LOSER_DRAIN_MS = 4000;
+
+interface Attempt {
+  index: number;
+  provider: string;
+  controller: AbortController;
+  /** O que chegou antes de alguém ganhar a corrida (um `fallback`, por exemplo). */
+  buffered: LlmEvent[];
+  ended: boolean;
+  failed: boolean;
+  /** Já saiu da corrida (ganhou outra tentativa): os eventos dela são descartados. */
+  loser: boolean;
+  cancelHedge?: () => void;
+  cancelDrain?: () => void;
+}
+
+type RaceMessage =
+  | { kind: "event"; attempt: Attempt; event: LlmEvent }
+  | { kind: "end"; attempt: Attempt }
+  | { kind: "error"; attempt: Attempt; error: unknown }
+  | { kind: "hedge"; attempt: Attempt }
+  | { kind: "aborted" };
+
+/**
  * `streamChat` com tempo limite no PRIMEIRO conteúdo (ADR 0023): se o provedor da vez não entrega nada em
- * `profile.firstTokenTimeoutMs`, o pedido é cortado e refeito no próximo da ordem do perfil, até o último, que não tem limite. O
- * roteamento do OpenRouter só troca de provedor quando ele falha; um provedor lento mas vivo segurava a cauda (p90) inteira.
- * A estimativa de custo do pedido cortado fica com quem consome (`retry`): o provedor não manda extrato de um pedido cortado.
+ * `profile.firstTokenTimeoutMs`, o pedido sai TAMBÉM para o próximo da ordem do perfil (até o último, que não tem limite), e ganha o
+ * primeiro que entregar conteúdo. O roteamento do OpenRouter só troca de provedor quando ele falha; um provedor lento mas vivo
+ * segurava a cauda (p90) inteira.
+ *
+ * O pedido que fica para trás NÃO é cortado na hora (era assim, e foi o defeito da ligação de 25/11): cortar antes de o provedor
+ * terminar de ler o prompt de ~13 mil tokens impede que ele o guarde no cache, o pedido seguinte chega a frio, estoura o prazo de
+ * novo, e a ligação inteira rodava no reserva, ~0,8 s mais lenta por turno. Agora ele segue até o primeiro conteúdo (no máximo
+ * `LOSER_DRAIN_MS`) e só então é cortado. O disjuntor (`request.circuit`) tira da ordem o provedor que falhou duas vezes seguidas
+ * por 45 s, para não pagar o prazo em todo turno enquanto ele estiver fora.
+ *
+ * Um erro HTTP de um provedor, antes do primeiro conteúdo, passa o pedido ao próximo na hora (exceto 401/402/403, que a troca de
+ * provedor não resolve). A estimativa de custo do pedido que ficou para trás fica com quem consome (`retry`): o provedor não manda
+ * extrato de um pedido cortado.
  */
 export async function* streamChatResilient(request: ChatRequest): AsyncGenerator<LlmEvent> {
   const profile = request.profile ?? llmProfileOf(undefined);
   const timeoutMs = profile.firstTokenTimeoutMs;
-  const order = providerOrderOf(request);
-  if (!timeoutMs || !order || order.length < 2) {
+  const fullOrder = providerOrderOf(request);
+  if (!timeoutMs || !fullOrder || fullOrder.length < 2) {
     yield* streamChat(request);
     return;
   }
-  for (let attempt = 0; attempt < order.length; attempt++) {
-    const remaining = order.slice(attempt);
-    const last = attempt === order.length - 1;
-    const controller = new AbortController();
-    const signal = request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
-    let timedOut = false;
-    const timer = last
-      ? undefined
-      : setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-        }, timeoutMs);
-    try {
-      for await (const event of streamChat({ ...request, signal, providerOrder: remaining, markFirst: true })) {
-        if (event.type === "first") {
-          if (timer) clearTimeout(timer);
+  const model = request.model ?? profile.model;
+  const keyOf = (provider: string): string => `${model}|${provider}`;
+  const circuit = request.circuit;
+  // Quem está de fora pelo disjuntor sai da ordem deste pedido (se todos estiverem, vale a ordem inteira).
+  const open = circuit ? fullOrder.filter((provider) => circuit.isOpen(keyOf(provider))) : [];
+  const order = open.length > 0 && open.length < fullOrder.length ? fullOrder.filter((provider) => !open.includes(provider)) : fullOrder;
+  if (order.length < 2) {
+    yield* streamChat({ ...request, providerOrder: order });
+    return;
+  }
+
+  const queue: RaceMessage[] = [];
+  let wake: (() => void) | undefined;
+  const push = (message: RaceMessage): void => {
+    queue.push(message);
+    wake?.();
+    wake = undefined;
+  };
+  const nextMessage = async (): Promise<RaceMessage> => {
+    while (queue.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+    return queue.shift() as RaceMessage;
+  };
+  const onAbort = (): void => push({ kind: "aborted" });
+  request.signal?.addEventListener("abort", onAbort, { once: true });
+
+  const attempts: Attempt[] = [];
+  const launch = (): Attempt => {
+    const index = attempts.length;
+    const attempt: Attempt = { index, provider: order[index] ?? "", controller: new AbortController(), buffered: [], ended: false, failed: false, loser: false };
+    attempts.push(attempt);
+    if (index < order.length - 1) {
+      const timer = setTimeout(() => push({ kind: "hedge", attempt }), timeoutMs);
+      attempt.cancelHedge = () => clearTimeout(timer);
+    }
+    void (async () => {
+      try {
+        for await (const event of streamChat({ ...request, signal: attempt.controller.signal, providerOrder: order.slice(index), markFirst: true })) {
+          // O perdedor se corta aqui mesmo (e não pelo laço principal, que pode já ter terminado): o prompt dele já foi lido e guardado.
+          if (attempt.loser && event.type === "first") {
+            attempt.cancelDrain?.();
+            attempt.controller.abort();
+          }
+          push({ kind: "event", attempt, event });
+        }
+        push({ kind: "end", attempt });
+      } catch (error) {
+        push({ kind: "error", attempt, error });
+      }
+    })();
+    return attempt;
+  };
+
+  let winner: Attempt | undefined;
+  const settle = (won: Attempt): void => {
+    winner = won;
+    for (const attempt of attempts) {
+      attempt.cancelHedge?.();
+      if (attempt === won) continue;
+      attempt.loser = true;
+      // Quem foi deixado para trás pela corrida falhou em ser rápido; quem ganhou é a prova de que o provedor responde.
+      if (circuit && attempt.index < won.index && !attempt.failed) circuit.report(keyOf(attempt.provider), false);
+      if (!attempt.ended && !attempt.failed) {
+        const drain = setTimeout(() => attempt.controller.abort(), LOSER_DRAIN_MS);
+        attempt.cancelDrain = () => clearTimeout(drain);
+      }
+    }
+    circuit?.report(keyOf(won.provider), true);
+  };
+  let natural = false;
+  const stopAll = (): void => {
+    request.signal?.removeEventListener("abort", onAbort);
+    for (const attempt of attempts) {
+      attempt.cancelHedge?.();
+      // Fim normal: quem perdeu a corrida segue até o primeiro conteúdo (esquentando o cache do provedor) e se corta sozinho.
+      if (natural && attempt !== winner) continue;
+      attempt.cancelDrain?.();
+      attempt.controller.abort();
+    }
+  };
+
+  launch();
+  let lastError: unknown;
+  try {
+    for (;;) {
+      const message = await nextMessage();
+      if (message.kind === "aborted") return;
+      const { attempt } = message;
+      if (message.kind === "hedge") {
+        if (winner || attempts.length >= order.length) continue;
+        yield { type: "retry", provider: attempt.provider };
+        launch();
+        continue;
+      }
+      if (message.kind === "event") {
+        const { event } = message;
+        if (attempt.loser) {
+          // O perdedor só segue até o primeiro conteúdo (o prompt já foi lido e guardado no cache dele): daí em diante é gasto à toa.
+          if (event.type === "first") {
+            attempt.cancelDrain?.();
+            attempt.controller.abort();
+          }
           continue;
         }
-        // O extrato estimado de um pedido que nós mesmos cortamos não vale como uma chamada.
-        if (timedOut && event.type === "usage") continue;
-        yield event;
+        if (event.type === "first") {
+          if (!winner) {
+            settle(attempt);
+            for (const buffered of attempt.buffered.splice(0)) yield buffered;
+          }
+          continue;
+        }
+        if (winner === attempt) yield event;
+        else if (!winner) attempt.buffered.push(event);
+        continue;
       }
-    } catch (error) {
-      // Cortado por nós (prazo) ou pela pessoa (barge-in): a `fetch` rejeita antes de haver resposta; não é erro do provedor.
-      if (!timedOut && !request.signal?.aborted) throw error;
-    } finally {
-      if (timer) clearTimeout(timer);
+      if (message.kind === "end") {
+        attempt.ended = true;
+        if (attempt.loser) continue;
+        if (winner === attempt) {
+          natural = true;
+          return;
+        }
+        // Terminou sem nenhum conteúdo (resposta vazia): se não há mais ninguém em andamento, é a resposta.
+        if (!winner && attempts.every((other) => other.ended || other.failed)) {
+          for (const buffered of attempt.buffered.splice(0)) yield buffered;
+          natural = true;
+          return;
+        }
+        continue;
+      }
+      // erro
+      attempt.failed = true;
+      if (attempt.loser) continue;
+      if (request.signal?.aborted) return;
+      if (winner === attempt) throw message.error;
+      lastError = message.error;
+      if (message.error instanceof LlmHttpError && [401, 402, 403].includes(message.error.status)) throw message.error;
+      circuit?.report(keyOf(attempt.provider), false);
+      attempt.cancelHedge?.();
+      if (attempts.length < order.length) {
+        yield { type: "retry", provider: attempt.provider };
+        launch();
+      } else if (attempts.every((other) => other.failed || other.ended)) throw lastError;
     }
-    if (!timedOut || request.signal?.aborted) return;
-    yield { type: "retry", provider: remaining[0] ?? "" };
+  } finally {
+    stopAll();
   }
 }
