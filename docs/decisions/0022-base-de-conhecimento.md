@@ -64,7 +64,51 @@ e esta implementação):
     durante a ligação soma no extrato da própria ligação (`usage_ledger`), para o custo por minuto já
     incluí-lo.
 
+11. **Uso na ligação** (medido ponta a ponta com a sessão real do motor, transcrição e síntese simuladas, base de 32 mil
+    tokens com embeddings reais, 40 perguntas): no modo de busca, a cada fala de quem ligou saem **juntas** a busca por palavras
+    (10 a 12 ms no banco) e o embedding da pergunta (479 ms de mediana). A busca é **especulativa**: dispara no texto parcial da
+    transcrição (3 palavras ou mais, parado 120 ms, no máximo 8 por turno), e no fim do turno reaproveita o resultado se o texto
+    final tem ao menos 80% das palavras do parcial. O turno espera no máximo **100 ms** pela busca; passou disso, segue só com as
+    palavras (ou sem trechos), e o motivo vai para a linha do tempo. Resultado: espera de 0 a 13 ms na mediana e ~100 ms no p90; o
+    vetor chegou a tempo em 78 a 83% dos turnos.
+12. **Onde os trechos entram.** Os trechos do turno (até ~1.500 tokens, com fonte e seção) vão numa mensagem de sistema logo antes
+    da última fala, fora do prefixo e sem ficar no histórico: o prefixo fixo continua idêntico entre turnos e entre ligações do
+    agente, e o cache de prompt do Haiku acerta (10.705 de 10.776 tokens lidos do cache com os trechos no meio). No modo de base
+    inteira, os documentos entram numa seção fixa do prompt de sistema, em ordem determinística.
+13. **O classificador barato ("Jev") não entra.** Medido contra 40 perguntas e 10 falas curtas: custa de 20 a 100 vezes o embedding
+    (US$ 1,2e-5 a 7,3e-5 contra 6,5e-7 por pergunta), soma 280 a 675 ms de latência e deixaria sem a base de 2 a 7 de 40 perguntas
+    que precisavam dela. A heurística local (`needsKnowledge`: só confirmação, saudação, despedida, hesitação ou número não
+    busca) errou 0 de 40 e pegou as 10 falas curtas, sem custo.
+14. **Auditoria.** O evento `llm_call` ganha o bloco `knowledge` (modo, trechos com id, fonte, posição, seção e pontuação, espera,
+    se foi especulativa, se usou o vetor, tokens de embedding e o motivo do fallback), sem texto da conversa nem dos trechos; o evento
+    `knowledge_loaded` registra o carregamento no começo da ligação. O custo do embedding da pergunta soma ao extrato da ligação.
+15. **Perfis D e E fixam o provedor.** A medição achou que o motor mandava `model` e, por isso, deixava de mandar a ordem de provedores:
+    os perfis D (Cerebras) e E (Together) respondiam por qualquer provedor, com primeiro token de até 11 s. Corrigido no mesmo lançamento.
+
+### Números da medição (resumo)
+
+| Configuração | Acerto (n = 36) | Busca + modelo p50 | Dentro de 0,5 s | US$ por turno |
+|---|---|---|---|---|
+| Busca · Haiku 5.5 (B) | 35 | 606 ms | 0 de 40 | 0,00043 |
+| Busca · DeepSeek V4.1 Flash, Together (E) | 33 | 285 ms | 36 de 40 | 0,00049 |
+| Busca · gpt-oss-120b, Cerebras (D) | 32 | 479 ms | 24 de 40 | 0,00099 |
+| Base inteira · Haiku 5.5 (B) | 33 | 674 ms | 0 de 40 | 0,00065 |
+| Base inteira · DeepSeek (E) | 33 | 370 ms | 32 de 40 | 0,00026 |
+| Base inteira · gpt-oss-120b (D) | 34 | 767 ms | 0 de 40 | 0,01003 |
+
+Diferença de 1 a 3 perguntas em 36 é ruído. A meta de 0,5 s (busca mais modelo) só o perfil E fecha; o Haiku fica em 0,57 a 0,67 s de
+modelo em qualquer modo. A base inteira não acerta mais que a busca com 32 mil tokens, e custa até 10 vezes mais no perfil D, o que
+sustenta o limite de 6.000 tokens do modo automático.
+
 ## Limitações conhecidas
+
+- **Fora da base**: com "responder só pela base", 1 a 4 de 4 perguntas fora da base foram tratadas certo conforme o perfil, e o DeepSeek
+  chegou a inventar um preço. A instrução ajuda e não elimina; antes de prometer isso a um operador, vale uma rodada de ajuste do texto.
+- Perguntas que exigem juntar duas seções ("tenho esse convênio e a limpeza, tem carência?") falham em boa parte das configurações,
+  inclusive com a base inteira.
+- O primeiro turno frio do Haiku com a base inteira (46 mil tokens) leva 1,25 s e custa US$ 0,0058 (escrita do cache); depois, 0,5 a 0,9 s
+  e US$ 0,0005. Aquecer o cache no começo da ligação ficou de fora.
+- Nada foi medido com áudio e Deepgram reais: a transcrição e a síntese da medição são simuladas.
 
 - Sem OCR: um PDF só de imagem falha com `scanned_pdf`.
 - A busca por palavras usa o dicionário `portuguese`; base em inglês ou espanhol depende mais da busca por
