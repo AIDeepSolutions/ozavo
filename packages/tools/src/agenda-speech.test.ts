@@ -17,6 +17,12 @@ describe("agendaFailureDiagnostic", () => {
     expect(texto).toContain("<oculto>");
   });
 
+  it("nunca deixa passar e-mail nem telefone", () => {
+    const texto = agendaFailureDiagnostic(new Error("recusou fulano.teste@mailinator.com com +55 11 96493-9976"));
+
+    expect(texto).not.toMatch(/mailinator|96493/);
+  });
+
   it("limita o tamanho e aceita o que não é Error", () => {
     expect(agendaFailureDiagnostic("falhou").length).toBeGreaterThan(0);
     expect(agendaFailureDiagnostic(new Error("x".repeat(2000))).length).toBeLessThanOrEqual(400);

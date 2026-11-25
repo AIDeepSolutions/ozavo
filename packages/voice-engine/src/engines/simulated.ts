@@ -52,8 +52,8 @@ export function setSimulatedScript(script: SimulatedScript | undefined): void {
 function resolveScript(config: VoiceSessionConfig): SimulatedScript {
   let script: SimulatedScript;
   if (config.instructions.startsWith(SIMULATED_PREFIX)) {
-    // O roteiro é a primeira linha (JSON de uma linha só); o que a central acrescenta depois, como o momento da ligação, não é roteiro.
-    script = scriptSchema.parse(JSON.parse((config.instructions.slice(SIMULATED_PREFIX.length).split("\n")[0]) ?? ""));
+    // O roteiro é o primeiro bloco (até a primeira linha em branco); o que a central acrescenta depois, como o momento da ligação, não é roteiro.
+    script = scriptSchema.parse(JSON.parse((config.instructions.slice(SIMULATED_PREFIX.length).split("\n\n")[0]) ?? ""));
   } else {
     script = globalScript ?? [
       { expectUserAudio: 1000, text: "(fala de quem ligou)" },

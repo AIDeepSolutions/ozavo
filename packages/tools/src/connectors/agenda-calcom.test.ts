@@ -117,11 +117,11 @@ describe("agenda pelo Cal.com", () => {
     await expect(agenda.freeSlots({ serviceType: "Exame", from: "2026-11-17T00:00:00Z", to: "2026-11-18T00:00:00Z", callId: "c1" })).rejects.toThrow(/Unknown service/);
   });
 
-  it("a consulta que falha por rede tem uma segunda tentativa; a recusa do Cal.com não, e o corpo dela vai para o diagnóstico", async () => {
+  it("a consulta que falha na conexão tem uma segunda tentativa; a recusa do Cal.com não, e o corpo dela vai para o diagnóstico", async () => {
     let calls = 0;
     const fetch = (async () => {
       calls += 1;
-      if (calls === 1) throw new TypeError("fetch failed");
+      if (calls === 1) throw new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
       return new Response(JSON.stringify({ status: "success", data: { "2026-11-26": [{ start: "2026-11-26T09:00:00.000-03:00" }] } }), { status: 200 });
     }) as unknown as typeof globalThis.fetch;
     const agenda = createCalcomAgenda(config, { fetch, lookup: async () => ["93.184.216.34"] });

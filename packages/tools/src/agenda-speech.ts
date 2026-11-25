@@ -68,8 +68,8 @@ export function speakSlot(startsAt: string, timezone: string): string {
   }).format(new Date(startsAt));
 }
 
-/** Pedaços de texto que parecem segredo: chave de API do Cal.com, token Bearer e qualquer sequência longa de letras e números. */
-const SECRETISH = /\bcal_(?:live|test)_[\w-]+|Bearer\s+\S+|[A-Za-z0-9_-]{32,}/g;
+/** Pedaços de texto que parecem segredo ou dado da pessoa: chave de API do Cal.com, token Bearer, sequência longa de letras e números, e-mail e telefone. */
+const SECRETISH = /\bcal_(?:live|test)_[\w-]+|Bearer\s+\S+|[A-Za-z0-9_-]{32,}|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\+?\d[\d\s().-]{8,}\d/g;
 
 /**
  * O motivo técnico de uma falha da agenda, em uma linha, para o operador ver na linha do tempo (`tool_result.diagnostic`):

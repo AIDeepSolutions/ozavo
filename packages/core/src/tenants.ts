@@ -114,9 +114,9 @@ export function callMoment(now: Date, timeZone: string): string {
  * na ligação pedida por um sistema de fora, o contexto que veio no pedido. O contexto vai marcado
  * como dado: quem pede a ligação não escreve instrução para o agente.
  */
-export function composeCallInstructions(input: { basePrompt: string; agentInstructions: string; requestContext?: unknown; now?: Date; timeZone?: string }): string {
+export function composeCallInstructions(input: { basePrompt: string; agentInstructions: string; requestContext?: unknown; now: Date; timeZone?: string }): string {
   const parts = [input.basePrompt.trim(), input.agentInstructions.trim()].filter((part) => part !== "");
-  if (input.now !== undefined) parts.push(callMoment(input.now, input.timeZone ?? DEFAULT_CALL_TIME_ZONE));
+  parts.push(callMoment(input.now, input.timeZone ?? DEFAULT_CALL_TIME_ZONE));
   if (input.requestContext !== undefined && input.requestContext !== null) {
     parts.push(
       [

@@ -49,6 +49,17 @@ export class AgendaServiceUnknown extends Error {}
 /** O Cal.com respondeu, mas recusou: repetir o mesmo pedido não muda nada. */
 class CalcomHttpError extends Error {}
 
+/** Falhas de conexão que aparecem na hora (rota, recusa, DNS, queda); tempo esgotado não entra, para a pessoa na linha não esperar o dobro. */
+const QUICK_CONNECTION_FAILURES = new Set(["ECONNRESET", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "EAI_AGAIN", "UND_ERR_SOCKET"]);
+
+function isQuickConnectionFailure(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current instanceof Error && depth < 4; current = current.cause, depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && QUICK_CONNECTION_FAILURES.has(code)) return true;
+  }
+  return false;
+}
+
 /** O slug do campo de reserva do Cal.com → o dado que o modelo pode perguntar. Slug que não está aqui não é dado que a ferramenta tenha. */
 const FIELD_OF_SLUG: Record<string, AgendaBookingField> = { name: "name", email: "email", empresa: "company", company: "company", title: "process", processo: "process" };
 
@@ -100,12 +111,12 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
     if (!response.ok || response.truncated) throw new CalcomHttpError(`Cal.com answered HTTP ${response.status}${response.truncated ? " (truncated)" : ""}${method === "GET" ? `: ${response.body.slice(0, 160)}` : ""}`);
     return JSON.parse(response.body) as unknown;
   };
-  // A consulta (GET) não grava nada: uma falha de rede (sem resposta) ganha uma segunda tentativa; recusa do Cal.com não.
+  // A consulta (GET) não grava nada: uma falha de conexão rápida ganha uma segunda tentativa; recusa do Cal.com, tempo esgotado e destino proibido não.
   const call = async (path: string, version: string, method: "GET" | "POST", body?: object): Promise<unknown> => {
     try {
       return await callOnce(path, version, method, body);
     } catch (error) {
-      if (method !== "GET" || error instanceof CalcomHttpError) throw error;
+      if (method !== "GET" || !isQuickConnectionFailure(error)) throw error;
       return callOnce(path, version, method, body);
     }
   };

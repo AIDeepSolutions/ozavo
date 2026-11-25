@@ -49,8 +49,8 @@ export interface ToolResult {
   message: string;
   data?: unknown;
   /**
-   * O motivo técnico de uma falha que a própria ferramenta tratou (a agenda não respondeu, o Cal.com recusou). Vai para o
-   * `tool_result` na linha do tempo, para o operador; nunca para o modelo. Sem segredo nem dado da pessoa.
+   * O motivo técnico de uma falha que a própria ferramenta tratou (a agenda não respondeu, o Cal.com recusou). Vai para o campo
+   * `error` do `tool_result` na linha do tempo, para o operador; `runTool` o tira do resultado, e ele nunca chega ao modelo. Sem segredo nem dado da pessoa.
    */
   diagnostic?: string;
   /**
