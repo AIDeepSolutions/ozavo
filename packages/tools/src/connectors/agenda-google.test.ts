@@ -42,9 +42,13 @@ describe("cliente do Google Agenda", () => {
     expect(new URLSearchParams(seen[0]?.body)).toEqual(new URLSearchParams({ client_id: "cid", client_secret: "csecret", refresh_token: "rt", grant_type: "refresh_token" }));
     expect(seen[1]).toMatchObject({ url: "https://www.googleapis.com/calendar/v3/freeBusy", headers: { Authorization: "Bearer ya29.teste" } });
 
-    expect(await agenda.book({ serviceType: "avaliação", startsAt: "2026-11-18T12:30:00Z", callId: "c1", attendeePhone: "+5511988887777" })).toEqual({ id: "ev1", startsAt: "2026-11-18T12:30:00Z" });
+    expect(await agenda.book({ serviceType: "avaliação", startsAt: "2026-11-18T12:30:00Z", callId: "c1", attendeePhone: "+5511988887777", attendeeName: "Ana Souza", attendeeEmail: "ana@paoquente.com.br", company: "Padaria Pão Quente", process: "Cobrança" })).toEqual({ id: "ev1", startsAt: "2026-11-18T12:30:00Z" });
     expect(seen[2]?.url).toBe("https://www.googleapis.com/calendar/v3/calendars/primary/events");
-    expect(JSON.parse(seen[2]?.body ?? "{}")).toMatchObject({ summary: "avaliação — +5511988887777", end: { dateTime: "2026-11-18T13:30:00.000Z" } });
+    expect(JSON.parse(seen[2]?.body ?? "{}")).toMatchObject({
+      summary: "avaliação — Ana Souza · +5511988887777",
+      description: expect.stringContaining("E-mail: ana@paoquente.com.br\nEmpresa: Padaria Pão Quente\nProcesso a melhorar: Cobrança"),
+      end: { dateTime: "2026-11-18T13:30:00.000Z" },
+    });
   });
 
   it("cancela apagando o evento e avisando os convidados; a resposta sem corpo é sucesso", async () => {

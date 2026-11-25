@@ -183,7 +183,7 @@ const timeline = {
     follow_up_closed_by: "Por {name}",
     follow_up_gone: "Pendência apagada pelo prazo de guarda.",
     follow_up_link: "Ver em Pendências",
-    tool_args_omitted: "Os dados enviados são texto sobre quem ligou e não ficam na linha do tempo. O que importa está na pendência.",
+    tool_args_omitted: "Os dados enviados são texto sobre quem ligou e não ficam na linha do tempo. O que importa fica onde a ferramenta gravou: na pendência ou na agenda.",
     outcome_not_classified: "Desfecho não classificado",
     outcome_not_classified_body: {
       cost_ceiling: "A ligação já tinha atingido o teto de custo do agente, e a classificação custaria mais. Nada foi enviado ao provedor.",

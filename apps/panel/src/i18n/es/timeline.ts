@@ -182,7 +182,7 @@ const timeline: TimelineDictionary = {
     follow_up_closed_by: "Por {name}",
     follow_up_gone: "Pendiente borrado por el plazo de conservación.",
     follow_up_link: "Ver en Pendientes",
-    tool_args_omitted: "Los datos enviados son texto sobre quien llamó y no quedan en la línea de tiempo. Lo importante está en el pendiente.",
+    tool_args_omitted: "Los datos enviados son texto sobre quien llamó y no quedan en la línea de tiempo. Lo importante queda donde la herramienta lo guardó: en el pendiente o en la agenda.",
     outcome_not_classified: "Desenlace no clasificado",
     outcome_not_classified_body: {
       cost_ceiling: "La llamada ya había alcanzado el tope de costo del agente, y clasificar costaría más. No se envió nada al proveedor.",

@@ -60,8 +60,33 @@ export interface BookRequest {
   callId: string;
   /** O nome que a pessoa disse, quando disse. A agenda que exige nome recebe um genérico sem ele. */
   attendeeName?: string;
+  /** O e-mail que a pessoa soletrou e confirmou, já validado pela ferramenta. */
+  attendeeEmail?: string;
   /** O telefone da ligação, em E.164. Nunca vem do modelo. */
   attendeePhone?: string;
+  /** A empresa da pessoa, como ela disse. */
+  company?: string;
+  /** O processo que a pessoa quer melhorar, como ela disse. */
+  process?: string;
+  /** Observação livre que a pessoa pediu para registrar. */
+  notes?: string;
+}
+
+/** Um dado da reserva que a agenda exige e que o modelo pode perguntar à pessoa. */
+export type AgendaBookingField = "name" | "email" | "company" | "process";
+
+/**
+ * A agenda recusou a reserva por causa de um dado da pessoa: faltou (`missing`, o tipo de atendimento o
+ * exige) ou veio num formato que ela não aceita (`invalid`, e-mail que não recebe mensagem). Nada foi marcado;
+ * a ferramenta devolve ao modelo o que perguntar de novo, em vez de dizer que a agenda não respondeu.
+ */
+export class AgendaBookingFieldProblem extends Error {
+  constructor(
+    readonly field: AgendaBookingField,
+    readonly kind: "missing" | "invalid",
+  ) {
+    super(`The agenda refused the booking: ${field} is ${kind}`);
+  }
 }
 
 /** Um tipo de atendimento que a agenda conhece, para o agente usar o nome certo. */

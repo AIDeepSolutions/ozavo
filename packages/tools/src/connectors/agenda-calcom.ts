@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { safeFetch, type SafeFetchOptions } from "../net/safe-fetch";
-import type { AgendaClient, AgendaService } from "./agenda";
+import { AgendaBookingFieldProblem, type AgendaBookingField, type AgendaClient, type AgendaService, type BookRequest } from "./agenda";
 
 /**
  * A agenda pelo Cal.com (API v2, autenticada por chave de API da conta).
@@ -9,9 +9,17 @@ import type { AgendaClient, AgendaService } from "./agenda";
  * - `GET /v2/slots?eventTypeId=&start=&end=&timeZone=&format=range`, header `cal-api-version: 2024-09-04`,
  *   devolve `{ status, data: { "<dia>": [{ start, end }] } }`
  *   (https://cal.com/docs/api-reference/v2/slots/get-available-time-slots-for-an-event-type).
- * - `POST /v2/bookings` com `{ start, eventTypeId, attendee: { name, timeZone, phoneNumber? } }`,
- *   header `cal-api-version: 2026-02-25`, devolve `201` com `data.uid` e `data.start`
- *   (https://cal.com/docs/api-reference/v2/bookings/create-a-booking). O e-mail do convidado é opcional.
+ * - `POST /v2/bookings` com `{ start, eventTypeId, attendee: { name, email?, timeZone, language, phoneNumber? },
+ *   bookingFieldsResponses? }`, header `cal-api-version: 2026-02-25`, devolve `201` com `data.uid` e `data.start`
+ *   (https://cal.com/docs/api-reference/v2/bookings/create-a-booking). Medido na conta da ADS em 2026-11-25:
+ *   - o e-mail só vale se o campo `email` do tipo de evento estiver visível; escondido, o Cal troca por
+ *     `<telefone>@sms.cal.com` sem avisar;
+ *   - os campos extras vão em `bookingFieldsResponses` pelo `slug` do campo de reserva: aqui `empresa` (campo de texto
+ *     da conta) e `title` (o campo de sistema "sobre o que é a reunião", que a ADS rotulou "Qual processo você quer
+ *     melhorar?"). Chave que o tipo de evento não tem é aceita e guardada sem aparecer na tela;
+ *   - campo exigido que não veio dá `400`: `Missing required booking field response: <slug>` ou
+ *     `responses - {<slug>}error_required_field`; e-mail inválido dá `responses - {email}email_validation_error`, e
+ *     domínio que não recebe e-mail dá `email_domain_cannot_receive_mail`.
  * - `POST /v2/bookings/{uid}/reschedule` com `{ start }`, mesma versão, devolve a reserva nova em `data`
  *   (https://cal.com/docs/api-reference/v2/bookings/reschedule-a-booking).
  * - `POST /v2/bookings/{uid}/cancel` com `{ cancellationReason }`, mesma versão, devolve `200` com
@@ -38,6 +46,30 @@ const bookingSchema = z.object({ data: z.object({ uid: z.string().min(1), start:
 
 export class AgendaServiceUnknown extends Error {}
 
+/** O slug do campo de reserva do Cal.com → o dado que o modelo pode perguntar. Slug que não está aqui não é dado que a ferramenta tenha. */
+const FIELD_OF_SLUG: Record<string, AgendaBookingField> = { name: "name", email: "email", empresa: "company", company: "company", title: "process", processo: "process" };
+
+/** Lê a recusa `400` do Cal.com e, se ela fala de um dado da pessoa, devolve o dado e se faltou ou veio inválido. */
+export function bookingFieldProblemOf(body: string): AgendaBookingFieldProblem | undefined {
+  if (/email_validation_error|email_domain_cannot_receive_mail|valid email/i.test(body)) return new AgendaBookingFieldProblem("email", "invalid");
+  const slug = /Missing required booking field response: ([\w-]+)/.exec(body)?.[1] ?? /responses - \{([\w-]+)\}error_required_field/.exec(body)?.[1];
+  const field = slug === undefined ? undefined : FIELD_OF_SLUG[slug];
+  return field === undefined ? undefined : new AgendaBookingFieldProblem(field, "missing");
+}
+
+/** Só os dados que a pessoa deu entram; o telefone da ligação e o fuso vêm do sistema. */
+function bookingBody(request: BookRequest, timezone: string, eventTypeId: number): object {
+  const attendee = {
+    name: request.attendeeName ?? "Contato por telefone",
+    timeZone: timezone,
+    language: "pt",
+    ...(request.attendeeEmail && { email: request.attendeeEmail }),
+    ...(request.attendeePhone && { phoneNumber: request.attendeePhone }),
+  };
+  const fields = { ...(request.company && { empresa: request.company }), ...(request.process && { title: request.process }), ...(request.notes && { notes: request.notes }) };
+  return { start: new Date(request.startsAt).toISOString(), eventTypeId, attendee, ...(Object.keys(fields).length > 0 && { bookingFieldsResponses: fields }) };
+}
+
 export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions = {}): AgendaClient {
   const base = config.baseUrl ?? CALCOM_API_URL;
   const eventTypeOf = (serviceType: string): number => {
@@ -57,6 +89,10 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
       },
       { ...net, maxBytes: MAX_BYTES },
     );
+    if (response.status === 400 && method === "POST" && path === "/v2/bookings") {
+      const problem = bookingFieldProblemOf(response.body);
+      if (problem) throw problem;
+    }
     if (!response.ok || response.truncated) throw new Error(`Cal.com answered HTTP ${response.status}${response.truncated ? " (truncated)" : ""}`);
     return JSON.parse(response.body) as unknown;
   };
@@ -75,8 +111,7 @@ export function createCalcomAgenda(config: CalcomConfig, net: SafeFetchOptions =
       return { timezone: config.timezone, slots };
     },
     async book(request) {
-      const attendee = { name: request.attendeeName ?? "Contato por telefone", timeZone: config.timezone, language: "pt", ...(request.attendeePhone && { phoneNumber: request.attendeePhone }) };
-      const parsed = bookingSchema.parse(await call("/v2/bookings", BOOKINGS_VERSION, "POST", { start: new Date(request.startsAt).toISOString(), eventTypeId: eventTypeOf(request.serviceType), attendee }));
+      const parsed = bookingSchema.parse(await call("/v2/bookings", BOOKINGS_VERSION, "POST", bookingBody(request, config.timezone, eventTypeOf(request.serviceType))));
       return { id: parsed.data.uid, startsAt: parsed.data.start };
     },
     async reschedule(request) {
