@@ -14,6 +14,8 @@ export interface ProviderSocket {
   send(message: object): void;
   /** Quadro binário (áudio cru), para o provedor que recebe áudio fora do JSON (a Deepgram). */
   sendBinary(data: Buffer): void;
+  /** Quadro de ping do protocolo WebSocket: mantém viva a conexão que ficou parada (proxy e provedor fecham a ociosa). */
+  ping(): void;
   close(): Promise<void>;
 }
 
@@ -63,6 +65,9 @@ export function openProviderSocket(options: ProviderSocketOptions): Promise<Prov
       },
       sendBinary(data) {
         if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      },
+      ping() {
+        if (ws.readyState === WebSocket.OPEN) ws.ping();
       },
       close() {
         if (!closedByClient) {

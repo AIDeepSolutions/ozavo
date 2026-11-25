@@ -22,11 +22,11 @@ describe("perfil do modelo de texto", () => {
   });
 
   it("D é o gpt-oss-120b: raciocínio baixo, sem cache, sem lista agrupada, Cerebras > Groq > BaseTen", () => {
-    expect(LLM_PROFILES.d).toEqual({ id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"] });
+    expect(LLM_PROFILES.d).toEqual({ id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"], firstTokenTimeoutMs: 800 });
   });
 
-  it("E é o DeepSeek V4.1 Flash: raciocínio desligado, sem marca de cache, Together primeiro", () => {
-    expect(LLM_PROFILES.e).toEqual({ id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together"] });
+  it("E é o DeepSeek V4.1 Flash: raciocínio desligado, sem marca de cache, Together, Wafer, Reka", () => {
+    expect(LLM_PROFILES.e).toEqual({ id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together", "wafer", "reka"], firstTokenTimeoutMs: 800 });
   });
 
   it("com o raciocínio ligado o teto é 1024 (o de 400 cortava a resposta)", () => {

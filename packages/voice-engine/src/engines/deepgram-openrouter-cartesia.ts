@@ -35,7 +35,7 @@ import { CARTESIA_API_URL, CARTESIA_MODEL, CARTESIA_VERSION, openCartesiaTts } f
 import { InvalidPipelineKeyError, parsePipelineKey, type PipelineCredentials } from "../pipeline/credentials";
 import { DEEPGRAM_API_URL, DEEPGRAM_MODEL, openDeepgramStt } from "../pipeline/deepgram-stt";
 import { llmProfileOf } from "../pipeline/llm-profile";
-import { OPENROUTER_API_URL, OPENROUTER_MODEL, streamChat } from "../pipeline/openrouter-llm";
+import { OPENROUTER_API_URL, OPENROUTER_MODEL, streamChatResilient } from "../pipeline/openrouter-llm";
 import { createPipelineSession, type TurnMetrics } from "../pipeline/session";
 import type { AmdOptions } from "../pipeline/amd";
 import type { ConnectOptions, KeyCheck, KeyCheckOptions, KeyCheckResult, VoiceEngine, VoiceSession, VoiceSessionConfig } from "../types";
@@ -104,11 +104,13 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
       openCartesiaTts({ apiKey: keys.cartesia, voiceId, language: config.language, clock, url: options.urls?.tts, timeout }, handlers),
     chat: async function* (messages, tools, signal) {
       // Depois do primeiro 4xx por reasoning/cache_control, o resto da ligação já pede sem eles (uma repetição só, não a cada turno).
-      for await (const event of streamChat({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
+      for await (const event of streamChatResilient({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, baseUrl: options.urls?.llm, fetch: options.fetch })) {
         if (event.type === "fallback") plain = true;
         yield event;
       }
     },
+    // O aquecimento pede só uns tokens; um 4xx dele não muda o `plain` da ligação (o primeiro turno de verdade decide).
+    warm: (messages, tools, signal) => streamChatResilient({ apiKey: keys.openrouter, messages, tools, signal, model: options.model, profile, plain, maxTokens: 4, baseUrl: options.urls?.llm, fetch: options.fetch }),
   });
 }
 

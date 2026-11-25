@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { silence, speech } from "../testing/audio";
 import { manualClock, until } from "../testing/fake-pipeline";
 import type { KnowledgeConfig, KnowledgeSearchHit, LlmCallInfo, Usage, VoiceSessionConfig } from "../types";
 import type { TtsHandlers } from "./cartesia-tts";
@@ -24,6 +25,13 @@ function jobsByDelay() {
     fire(delayMs: number): void {
       for (const job of jobs) {
         if (job.delayMs !== delayMs || job.cancelled || job.done) continue;
+        job.done = true;
+        job.fn();
+      }
+    },
+    fireAll(): void {
+      for (const job of jobs) {
+        if (job.cancelled || job.done) continue;
         job.done = true;
         job.fn();
       }
@@ -195,6 +203,28 @@ describe("sessão com base de conhecimento: busca especulativa", () => {
     await until(() => t.llmCalls.length === 1);
     expect(t.llmCalls[0]?.knowledge).toMatchObject({ speculative: true, usedVector: true, retrievalMs: 0 });
     expect(t.calls[0]?.[1]?.content).toContain("Conteúdo secreto 1.");
+  });
+
+  it("o pedido adiantado ao modelo leva os trechos da base e, aproveitado, o turno os registra sem buscar de novo", async () => {
+    const searches: Array<{ question: string; embedding: readonly number[] | null }> = [];
+    const t = await setup({ knowledge: ragConfig(searchWith([hit(1)], searches)) });
+    // A pessoa fala e para; o final chega com a pausa vista no áudio: o pedido ao modelo sai antes de o fim do turno estar decidido.
+    t.session.sendAudio(speech(30));
+    t.session.sendAudio(silence(6));
+    t.time.advance(260);
+    t.ports.stt.final("Quanto custa a limpeza dental", false);
+    await until(() => t.calls.length === 1);
+    expect(t.calls[0]?.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(t.calls[0]?.[1]?.content).toContain("Conteúdo secreto 1.");
+    const searchesBefore = searches.length;
+    // O fim do turno aproveita o pedido: nenhum pedido novo, nenhuma busca nova, e o registro traz os trechos.
+    t.time.advance(150);
+    t.timers.fireAll();
+    await until(() => t.llmCalls.some((call) => call.knowledge !== undefined));
+    expect(t.calls).toHaveLength(1);
+    expect(searches).toHaveLength(searchesBefore);
+    expect(t.llmCalls.find((call) => call.knowledge)?.knowledge).toMatchObject({ mode: "rag", hits: [{ chunkId: "c1" }] });
+    expect(JSON.stringify(t.llmCalls)).not.toContain("Conteúdo secreto");
   });
 
   it("parcial curto (menos de 3 palavras) ou ainda mudando não dispara a busca", async () => {

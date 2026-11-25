@@ -28,7 +28,7 @@ const results = (transcript: string, speechFinal: boolean) => ({
   channel: { alternatives: [{ transcript }] },
 });
 
-async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" | "d" | "e" } = {}) {
+async function setup(options: { greeting?: string; voiceId?: string; llmProfile?: "a" | "b" | "c" | "d" | "e"; warmup?: boolean } = {}) {
   const deepgram = await startFakeWs();
   const cartesia = await startFakeWs();
   const replies: SseReply[] = [];
@@ -37,7 +37,7 @@ async function setup(options: { greeting?: string; voiceId?: string; llmProfile?
   const time = manualClock();
   const metrics: TurnMetrics[] = [];
   const session = await connectPipeline(
-    { instructions: "Você é a recepcionista.", language: "pt-BR", tools: TOOLS, greeting: options.greeting, voiceId: options.voiceId, llmProfile: options.llmProfile },
+    { instructions: "Você é a recepcionista.", language: "pt-BR", tools: TOOLS, greeting: options.greeting, voiceId: options.voiceId, llmProfile: options.llmProfile, latency: { warmup: options.warmup ?? false } },
     KEY,
     { urls: { stt: deepgram.url, tts: cartesia.url, llm: openrouter.url }, clock: time.clock, onMetrics: (m) => metrics.push(m) },
   );
@@ -77,6 +77,23 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
       model_id: "sonic-3.6",
       output_format: { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 },
     });
+  });
+
+  it("com o aquecimento ligado, a abertura manda ao modelo o MESMO prefixo do primeiro turno, com poucos tokens de saída", async () => {
+    const t = await setup({ warmup: true });
+    await until(() => t.replies.length === 1);
+    const warm = t.openrouter.requests[0]?.body;
+    expect(warm).toMatchObject({ max_tokens: 4, messages: [{ role: "system" }, { role: "user", content: "Oi." }] });
+    expect((warm?.tools as unknown[]).length).toBe(4);
+    t.replies[0]?.write(textChunk("Olá"));
+    t.replies[0]?.write(usageChunk(7000, 1, 0.0002));
+    t.replies[0]?.end();
+    t.deepgram.send(results("Quero marcar uma consulta.", true));
+    await until(() => t.replies.length === 2);
+    const turn = t.openrouter.requests[1]?.body;
+    // O prefixo (instrução + ferramentas) é byte a byte o do aquecimento.
+    expect((turn?.messages as unknown[])[0]).toEqual((warm?.messages as unknown[])[0]);
+    expect(turn?.tools).toEqual(warm?.tools);
   });
 
   it("sem voz escolhida, usa a padrão do motor; voz que não é id é recusada", async () => {
@@ -132,7 +149,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     expect(JSON.stringify(c["messages"])).not.toContain("cache_control");
   });
 
-  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together), pelo motor e não só pela montagem do corpo", async () => {
+  it("os perfis D e E levam ao pedido a ordem de provedores (Cerebras e Together, com os da fila depois), pelo motor e não só pela montagem do corpo", async () => {
     const pedido = async (llmProfile: "d" | "e") => {
       const t = await setup({ llmProfile });
       t.deepgram.send(results("Quero marcar uma consulta.", true));
@@ -140,7 +157,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
       return t.openrouter.requests[0]?.body as Record<string, unknown>;
     };
     expect(await pedido("d")).toMatchObject({ model: "openai/gpt-oss-120b", provider: { order: ["cerebras", "groq", "baseten"], allow_fallbacks: true } });
-    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together"], allow_fallbacks: true } });
+    expect(await pedido("e")).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", provider: { order: ["together", "wafer", "reka"], allow_fallbacks: true } });
     expect(await pedido("e")).toMatchObject({ reasoning: { enabled: false } });
   });
 
@@ -356,6 +373,7 @@ describe("base de conhecimento no motor em pipeline", () => {
         instructions: "Você é a recepcionista.",
         language: "pt-BR",
         tools: [],
+        latency: { warmup: false },
         knowledge: {
           mode: "rag",
           only: false,

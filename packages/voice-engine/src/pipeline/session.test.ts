@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import engine from "../engines/deepgram-openrouter-cartesia";
 import { estimateCostMicrocents } from "../pricing";
+import { BRIDGE_TEXTS, BridgeStore, pickBridge, sensitiveTurn } from "./bridge";
 import { silence, speech } from "../testing/audio";
 import { manualClock, manualScheduler, until } from "../testing/fake-pipeline";
 import type { AnsweringMachineDetection, ToolSpec, Usage, VoiceSessionConfig } from "../types";
@@ -8,7 +9,7 @@ import type { TtsHandlers } from "./cartesia-tts";
 import type { SttHandlers } from "./deepgram-stt";
 import { ENDPOINT_CLOSED_MS } from "./endpointing";
 import type { ChatMessage, LlmEvent } from "./openrouter-llm";
-import { createPipelineSession, isEchoOf, speakable, splitPoint, type TurnMetrics } from "./session";
+import { createPipelineSession, isEchoOf, speakable, splitPoint, type PipelineSessionDeps, type TurnMetrics } from "./session";
 
 /** Um pedido ao modelo que o teste controla: empurra eventos, termina ou falha quando quiser. */
 class ScriptedStream {
@@ -60,7 +61,7 @@ const TOOLS: ToolSpec[] = ["agenda_marcar", "agenda_remarcar", "agenda_cancelar"
   parameters: { type: "object", properties: {} },
 }));
 
-async function setup(config: Partial<VoiceSessionConfig> = {}, options: { amd?: false } = {}) {
+async function setup(config: Partial<VoiceSessionConfig> = {}, options: { amd?: false; warm?: PipelineSessionDeps["warm"]; bridgeStore?: BridgeStore } = {}) {
   const time = manualClock();
   const timers = manualScheduler();
   const streams: ScriptedStream[] = [];
@@ -76,11 +77,14 @@ async function setup(config: Partial<VoiceSessionConfig> = {}, options: { amd?: 
   const metrics: TurnMetrics[] = [];
   const emittedMetrics: TurnMetrics[] = [];
   const session = await createPipelineSession({
-    config: { instructions: "Você é a recepcionista da Clínica Exemplo.", language: "pt-BR", tools: TOOLS, ...config },
+    config: { instructions: "Você é a recepcionista da Clínica Exemplo.", language: "pt-BR", tools: TOOLS, ...config, latency: { bridge: false, ...config.latency } },
+    bridgeStore: options.bridgeStore ?? new BridgeStore(),
+    random: () => 0,
     clock: time.clock,
     schedule: timers.schedule,
     onMetrics: (m) => metrics.push(m),
     amd: options.amd,
+    warm: options.warm,
     openStt: async (handlers) => {
       stt = handlers;
       return {
@@ -496,7 +500,17 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
     t.streams[0]?.end();
     await until(() => t.spoken.some((s) => s.final));
     expect(t.metrics).toEqual([
-      { turn: 1, endpointDelayMs: ENDPOINT_CLOSED_MS, llmFirstTokenMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS, ttfbMs: TTS_TTFB_MS, rttMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS + TTS_TTFB_MS },
+      {
+        turn: 1,
+        endpointDelayMs: ENDPOINT_CLOSED_MS,
+        llmFirstTokenMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS,
+        ttfbMs: TTS_TTFB_MS,
+        rttMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS + TTS_TTFB_MS,
+        answerMs: ENDPOINT_CLOSED_MS + LLM_FIRST_TOKEN_MS + TTS_TTFB_MS,
+        endpointMs: ENDPOINT_CLOSED_MS,
+        modelMs: LLM_FIRST_TOKEN_MS,
+        firstSentenceMs: 0,
+      },
     ]);
     // A mesma medida sai como evento da sessão, que a conversa grava na linha do tempo.
     expect(t.emittedMetrics).toEqual(t.metrics);
@@ -660,5 +674,458 @@ describe("eco e leitura", () => {
   });
   it("speakable deixa texto comum como está", () => {
     expect(speakable("Claro, posso ajudar com isso.")).toBe("Claro, posso ajudar com isso.");
+  });
+});
+
+describe("aquecimento da chamada e medida a partir do fim real da fala", () => {
+  const warmStream = (): NonNullable<PipelineSessionDeps["warm"]> =>
+    async function* () {
+      yield { type: "text", delta: "Olá" };
+      yield { type: "usage", usage: { promptTokens: 7200, cachedTokens: 0, completionTokens: 2, costCents: 0.2, model: "deepseek/deepseek-v4.1-flash", provider: "Together" } };
+    };
+
+  it("esquenta o modelo com o prefixo da conversa ao abrir, e o custo entra na conta", async () => {
+    const calls: Array<{ messages: readonly ChatMessage[]; tools: readonly ToolSpec[] }> = [];
+    const t = await setup({ greeting: "Bom dia." }, {
+      warm: (messages, tools, signal) => {
+        calls.push({ messages: [...messages], tools });
+        return warmStream()(messages, tools, signal);
+      },
+    });
+    const llmCalls: unknown[] = [];
+    t.session.on("llmCall", (call) => llmCalls.push(call));
+    await until(() => t.usages.some((usage) => usage.providerCostCents === 0.2));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.messages[0]).toMatchObject({ role: "system" });
+    expect(calls[0]?.messages.at(-1)).toEqual({ role: "user", content: "Oi." });
+    expect(calls[0]?.tools).toEqual(TOOLS);
+    // O aquecimento usa o prefixo da conversa: a mensagem de sistema é a mesma que o primeiro turno vai mandar.
+    callerSays(t, "Qual o horário?");
+    t.timers.runAll();
+    expect(t.streams[0]?.messages[0]).toEqual(calls[0]?.messages[0]);
+  });
+
+  it("registra o aquecimento na linha do tempo como chamada de aquecimento, sem texto", async () => {
+    const time = manualClock();
+    const llmCalls: Array<Record<string, unknown>> = [];
+    const session = await createPipelineSession({
+      config: { instructions: "Atenda.", language: "pt-BR", tools: [] },
+      clock: time.clock,
+      warm: warmStream(),
+      openStt: async () => ({ sendAudio: () => undefined, finalize: () => undefined, drainSeconds: () => 0, close: async () => undefined }),
+      openTts: async () => ({ speak: () => undefined, cancel: () => undefined, drainCharacters: () => 0, close: async () => undefined }),
+      chat: async function* () { yield* []; },
+    });
+    session.on("llmCall", (call) => llmCalls.push({ ...call }));
+    await session.close();
+    // Quem registra se inscreve depois da criação: o aquecimento já pode ter terminado. O que importa é nunca levar texto da conversa.
+    for (const call of llmCalls) expect(JSON.stringify(call)).not.toContain("Oi.");
+  });
+
+  it("aquecimento que falha não derruba a ligação e aparece como chamada sem tokens", async () => {
+    const llmCalls: Array<Record<string, unknown>> = [];
+    const time = manualClock();
+    const events: string[] = [];
+    const session = await createPipelineSession({
+      config: { instructions: "Atenda.", language: "pt-BR", tools: [] },
+      clock: time.clock,
+      warm: async function* () {
+        yield* [];
+        throw new Error("fora do ar");
+      },
+      openStt: async () => ({ sendAudio: () => undefined, finalize: () => undefined, drainSeconds: () => 0, close: async () => undefined }),
+      openTts: async () => ({ speak: () => undefined, cancel: () => undefined, drainCharacters: () => 0, close: async () => undefined }),
+      chat: async function* () { yield* []; },
+    });
+    session.on("llmCall", (call) => llmCalls.push({ ...call }));
+    session.on("error", (error) => events.push(error.message));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(events).toEqual([]);
+    await session.close();
+  });
+
+  it("com o aquecimento desligado (latency.warmup=false) ou sem porta de aquecimento, não aquece", async () => {
+    let calls = 0;
+    await setup({ latency: { warmup: false } }, { warm: warmStream() });
+    await setup({}, { warm: () => { calls++; return warmStream()([], [], new AbortController().signal); } });
+    expect(calls).toBe(1);
+    let off = 0;
+    await setup({ latency: { warmup: false } }, { warm: () => { off++; return warmStream()([], [], new AbortController().signal); } });
+    expect(off).toBe(0);
+  });
+
+  it("a latência conta do FIM REAL da fala (a pausa vista no áudio), não da chegada do último texto", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.time.advance(100);
+    t.session.sendAudio(silence(8));
+    const pausedAt = t.time.ms;
+    const speechEnd = pausedAt - 100;
+    // O texto final só chega 450 ms depois do fim da fala.
+    t.time.advance(350);
+    callerSays(t, "Qual o horário de vocês?");
+    t.timers.runAll();
+    t.time.advance(180);
+    t.streams[0]?.push({ type: "text", delta: "Atendemos das oito às dezoito." });
+    await until(() => t.spoken.length === 1);
+    t.time.advance(60);
+    t.ports.tts.firstAudio("turn-1", 60);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    const measured = t.metrics[0];
+    expect(measured?.rttMs).toBe(t.time.ms - speechEnd);
+    expect(measured?.endpointMs).toBeGreaterThanOrEqual(350 + 100);
+    expect(measured?.modelMs).toBe(180);
+  });
+});
+
+describe("fim de turno pela pausa e pedido adiantado ao modelo (ADR 0023)", () => {
+  /** A pessoa fala e para: o detector local vê a pausa de 100 ms depois do último quadro com voz. */
+  function pause(t: Awaited<ReturnType<typeof setup>>, speechFrames = 30): void {
+    t.session.sendAudio(speech(speechFrames));
+    t.session.sendAudio(silence(6));
+  }
+
+  it("ao ver a pausa pede ao provedor o texto do que foi dito (Finalize), sem esperar o speech_final dele", async () => {
+    const t = await setup();
+    pause(t);
+    expect(t.finalizes()).toBe(1);
+  });
+
+  it("frase fechada: o final que chega durante a pausa fecha o turno na hora, e a latência conta do fim real da fala", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(260);
+    t.ports.stt.final("Quanto custa um projeto?", false);
+    expect(t.streams).toHaveLength(1);
+    expect(t.timers.pending()).toEqual([]);
+    expect(t.metrics).toEqual([]);
+    t.streams[0]?.push({ type: "text", delta: "Depende do escopo." });
+    await until(() => t.spoken.length === 1);
+    t.time.advance(100);
+    t.ports.tts.firstAudio("turn-1", 100);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]?.endpointMs).toBeLessThan(400);
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Quanto custa um projeto?" });
+  });
+
+  it("regressão da chamada do dono: 'E quais são suas' / 'empreitadas aí nessa empresa?' é UM turno, não dois", async () => {
+    const t = await setup();
+    pause(t, 20);
+    t.time.advance(260);
+    // A Deepgram até pontua o pedaço: a palavra que sobra no fim (possessivo) o mantém aberto.
+    t.ports.stt.final("E quais são suas?", false);
+    expect(t.streams).toHaveLength(0);
+    expect(t.timers.pending().length).toBe(1);
+    expect(t.timers.pending()[0]).toBeGreaterThan(500);
+    // A pessoa continua: o prazo do fim de turno cai.
+    t.time.advance(250);
+    t.session.sendAudio(speech(20));
+    t.ports.stt.partial("empreitadas aí");
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(0);
+    t.session.sendAudio(silence(6));
+    t.time.advance(260);
+    t.ports.stt.final("empreitadas aí nessa empresa?", false);
+    expect(t.streams).toHaveLength(1);
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([{ speaker: "user", text: "E quais são suas? empreitadas aí nessa empresa?" }]);
+    expect(t.streams[0]?.messages.filter((m) => m.role === "user").map((m) => m.content)).toEqual(["E quais são suas? empreitadas aí nessa empresa?"]);
+  });
+
+  it("um parcial que só repete o que já veio como final (chega depois do Finalize) não cancela o fim de turno", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(260);
+    t.ports.stt.final("sexta de manhã", false);
+    expect(t.timers.pending().length).toBe(1);
+    t.ports.stt.partial("sexta de manhã");
+    expect(t.timers.pending().length).toBe(1);
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(1);
+  });
+
+  it("sem fim de turno por pausa (fastEndpoint=false), o turno só fecha no speech_final, como antes, e não manda Finalize", async () => {
+    const t = await setup({ latency: { fastEndpoint: false } });
+    pause(t);
+    expect(t.finalizes()).toBe(0);
+    t.ports.stt.final("Quanto custa um projeto?", false);
+    expect(t.streams).toHaveLength(0);
+    t.ports.stt.final("", true);
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(1);
+  });
+
+  it("frase provavelmente fechada, mas ainda no prazo de segurança: o pedido ao modelo sai já, e a resposta é aproveitada se o texto não muda", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(260);
+    t.ports.stt.final("sexta de manhã", false);
+    // Antes de o turno fechar, o modelo já recebeu o pedido (sem nada ter ido à síntese).
+    expect(t.streams).toHaveLength(1);
+    expect(t.streams[0]?.messages.at(-1)).toEqual({ role: "user", content: "sexta de manhã" });
+    t.streams[0]?.push({ type: "text", delta: "Pode ser sexta às nove." });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(t.spoken).toEqual([]);
+    t.time.advance(150);
+    t.timers.runAll();
+    await until(() => t.spoken.length === 1);
+    expect(t.streams).toHaveLength(1);
+    expect(t.spoken[0]?.text).toBe("Pode ser sexta às nove.");
+    t.time.advance(80);
+    t.ports.tts.firstAudio("turn-1", 80);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]).toMatchObject({ speculation: "hit", modelMs: 0 });
+  });
+
+  it("a pessoa continua depois do pedido adiantado: o pedido é descartado (e contado como gasto), e o turno refaz com o texto inteiro", async () => {
+    const t = await setup();
+    const llmCalls: Array<Record<string, unknown>> = [];
+    t.session.on("llmCall", (call) => llmCalls.push({ ...call }));
+    pause(t);
+    t.time.advance(260);
+    t.ports.stt.final("sexta de manhã", false);
+    expect(t.streams).toHaveLength(1);
+    t.time.advance(120);
+    t.session.sendAudio(speech(20));
+    expect(t.streams[0]?.signal.aborted).toBe(true);
+    expect(llmCalls).toEqual([expect.objectContaining({ purpose: "speculative" })]);
+    pause(t, 10);
+    t.time.advance(260);
+    t.ports.stt.final("às nove horas.", false);
+    expect(t.streams).toHaveLength(2);
+    expect(t.streams[1]?.messages.at(-1)).toEqual({ role: "user", content: "sexta de manhã às nove horas." });
+    t.streams[1]?.push({ type: "text", delta: "Combinado, sexta às nove." });
+    await until(() => t.spoken.length === 1);
+    t.time.advance(80);
+    t.ports.tts.firstAudio("turn-1", 80);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]).toMatchObject({ speculation: "miss" });
+  });
+
+  it("frase aberta não gasta pedido adiantado, e com a especulação desligada nenhum sai", async () => {
+    const open = await setup();
+    pause(open);
+    open.time.advance(260);
+    open.ports.stt.final("Quero marcar para", false);
+    expect(open.streams).toHaveLength(0);
+    const off = await setup({ latency: { speculation: false } });
+    pause(off);
+    off.time.advance(260);
+    off.ports.stt.final("sexta de manhã", false);
+    expect(off.streams).toHaveLength(0);
+    off.timers.runAll();
+    expect(off.streams).toHaveLength(1);
+  });
+});
+
+describe("frase de ponte (ADR 0023)", () => {
+  const VOICE = "voz-de-teste-1";
+  const SHORT = 3200; // 200 ms
+  const LONG = 9600; // 600 ms
+  const fullStore = (): BridgeStore => {
+    const store = new BridgeStore();
+    const key = BridgeStore.keyOf(VOICE, "pt");
+    for (const text of BRIDGE_TEXTS.pt?.short ?? []) store.put(key, { text, tier: "short", pcm: Buffer.alloc(SHORT, 1) });
+    for (const text of BRIDGE_TEXTS.pt?.long ?? []) store.put(key, { text, tier: "long", pcm: Buffer.alloc(LONG, 2) });
+    return store;
+  };
+  /** O turno de quem ligou fecha (a pessoa falou e o prazo passou) e o pedido ao modelo sai. */
+  const commit = (t: Awaited<ReturnType<typeof setup>>, text = "Qual o horário de vocês?"): void => {
+    callerSays(t, text);
+    t.timers.runAll();
+  };
+  const bridgeAudio = (t: Awaited<ReturnType<typeof setup>>): Buffer[] => t.audio.filter((chunk) => chunk.length === SHORT || chunk.length === LONG);
+
+  it("sem frase pronta, sintetiza uma de cada vez com a voz do agente, só depois da saudação", async () => {
+    const store = new BridgeStore();
+    const t = await setup({ voiceId: VOICE, greeting: "Bom dia.", latency: { bridge: true } }, { bridgeStore: store });
+    expect(t.spoken.map((piece) => piece.contextId)).toEqual(["say-1"]);
+    t.ports.tts.done("say-1");
+    expect(t.spoken.at(-1)).toEqual(expect.objectContaining({ contextId: "bridge-1", text: "Certo.", final: true }));
+    // Só uma por vez: a próxima só sai quando a anterior termina.
+    expect(t.spoken.filter((piece) => piece.contextId.startsWith("bridge"))).toHaveLength(1);
+    t.ports.tts.audio("bridge-1", Buffer.alloc(SHORT));
+    expect(t.audio).toEqual([]);
+    t.ports.tts.done("bridge-1");
+    expect(store.get(BridgeStore.keyOf(VOICE, "pt")).map((phrase) => phrase.text)).toEqual(["Certo."]);
+    expect(t.spoken.at(-1)?.contextId).toBe("bridge-2");
+  });
+
+  it("o áudio guardado perde o silêncio das pontas (a ponte curta não atrasa a resposta atrás dela)", async () => {
+    const store = new BridgeStore();
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: store });
+    const voiced = speech(10);
+    t.ports.tts.audio("bridge-1", Buffer.concat([silence(8), voiced, silence(6)]));
+    t.ports.tts.done("bridge-1");
+    const saved = store.get(BridgeStore.keyOf(VOICE, "pt"))[0];
+    // 8 quadros de silêncio antes e 6 depois viram 1 de folga de cada lado.
+    expect(saved?.pcm.length).toBe((10 + 2) * 320);
+  });
+
+  it("o modelo demora para o primeiro texto: toca uma frase curta; quando o texto chega, a resposta vem em seguida, sem cortar a frase", async () => {
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: fullStore() });
+    commit(t);
+    expect(bridgeAudio(t)).toHaveLength(0);
+    t.time.advance(150);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toEqual([Buffer.alloc(SHORT, 1)]);
+    t.time.advance(120);
+    t.streams[0]?.push({ type: "text", delta: "Atendemos das oito às dezoito." });
+    await until(() => t.spoken.some((piece) => piece.contextId === "turn-1"));
+    // O texto chegou: a faixa longa não toca mais.
+    t.time.advance(1000);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toHaveLength(1);
+    t.time.advance(100);
+    t.ports.tts.firstAudio("turn-1", 100);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]).toMatchObject({ bridge: true });
+    expect(t.metrics[0]?.rttMs).toBeLessThan(t.metrics[0]?.answerMs ?? 0);
+    expect(t.transcripts.filter((turn) => turn.speaker === "agent")).toEqual([]);
+  });
+
+  it("o texto chega antes do prazo da ponte: nenhuma frase toca", async () => {
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: fullStore() });
+    commit(t);
+    t.time.advance(60);
+    t.streams[0]?.push({ type: "text", delta: "Atendemos das oito às dezoito." });
+    await until(() => t.spoken.some((piece) => piece.contextId === "turn-1"));
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toEqual([]);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]?.bridge).toBeUndefined();
+  });
+
+  it("se a curta acabou e o texto ainda não veio, toca uma mais longa (diferente), e para por aí", async () => {
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: fullStore() });
+    commit(t);
+    t.time.advance(150);
+    t.timers.runAll();
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(bridgeAudio(t).map((chunk) => chunk.length)).toEqual([SHORT, LONG]);
+    t.time.advance(2000);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toHaveLength(2);
+  });
+
+  it("não repete a mesma frase em turnos seguidos (nem a que tocou no turno anterior)", () => {
+    const phrases = [...fullStore().get(BridgeStore.keyOf(VOICE, "pt"))];
+    const recent: string[] = [];
+    const played: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const phrase = pickBridge(phrases, "short", recent, () => 0);
+      if (!phrase) throw new Error("sem frase");
+      played.push(phrase.text);
+      recent.push(phrase.text);
+      if (recent.length > 2) recent.shift();
+    }
+    for (let i = 1; i < played.length; i++) expect(played[i]).not.toBe(played[i - 1]);
+    expect(new Set(played).size).toBeGreaterThan(2);
+    // Com uma frase só na faixa, ela repete (melhor que ficar calado), mas só quando é a única.
+    expect(pickBridge(phrases.slice(0, 1), "short", ["Certo."], () => 0)).toBeUndefined();
+  });
+
+  it("nunca antes de ferramenta sensível: depois de uma pergunta de confirmação, o 'sim' não ganha ponte", async () => {
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: fullStore() });
+    t.session.say("Posso marcar para sexta às dez?");
+    t.ports.tts.done("say-1");
+    commit(t, "Sim, pode.");
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toEqual([]);
+  });
+
+  it("desligada na tela do agente (latency.bridge=false), nada é sintetizado nem tocado", async () => {
+    const t = await setup({ voiceId: VOICE, greeting: "Bom dia.", latency: { bridge: false } }, { bridgeStore: new BridgeStore() });
+    t.ports.tts.done("say-1");
+    expect(t.spoken.map((piece) => piece.contextId)).toEqual(["say-1"]);
+    commit(t);
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toEqual([]);
+  });
+
+  it("o turno acaba antes do prazo (a pessoa interrompeu, ou o agente teve de falar outra coisa): a ponte dele não toca", async () => {
+    const t = await setup({ voiceId: VOICE, latency: { bridge: true } }, { bridgeStore: fullStore() });
+    commit(t);
+    t.session.say("Preciso encerrar.");
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(bridgeAudio(t)).toEqual([]);
+  });
+});
+
+describe("achados da revisão do PR #36", () => {
+  const pauseAndFinal = (t: Awaited<ReturnType<typeof setup>>, text: string): void => {
+    t.session.sendAudio(speech(30));
+    t.session.sendAudio(silence(6));
+    t.time.advance(260);
+    t.ports.stt.final(text, false);
+  };
+
+  it("pedido adiantado aproveitado e depois cortado por barge-in antes do extrato: o custo entra na conta", async () => {
+    const t = await setup({ greeting: undefined });
+    const calls: Array<Record<string, unknown>> = [];
+    t.session.on("llmCall", (call) => calls.push({ ...call }));
+    // Uma chamada completa antes, para haver custo de referência.
+    callerSays(t, "Qual o horário?");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "text", delta: "Das oito às dezoito." }, { type: "usage", usage: { promptTokens: 7000, cachedTokens: 0, completionTokens: 9, costCents: 0.3, provider: "Together" } });
+    t.streams[0]?.end();
+    await until(() => t.spoken.some((piece) => piece.contextId === "turn-1" && piece.final));
+    t.ports.tts.done("turn-1");
+    t.usages.length = 0;
+    pauseAndFinal(t, "sexta de manhã");
+    expect(t.streams).toHaveLength(2);
+    t.streams[1]?.push({ type: "text", delta: "Pode ser sexta às nove." });
+    t.time.advance(200);
+    t.timers.runAll();
+    await until(() => t.spoken.some((piece) => piece.contextId === "turn-2"));
+    // A pessoa fala por cima antes de o extrato do pedido chegar.
+    t.ports.tts.audio("turn-2", Buffer.alloc(320));
+    t.ports.stt.partial("espera um pouco, por favor");
+    await until(() => t.streams[1]?.signal.aborted === true);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(t.usages.some((usage) => usage.providerCostCents === 0.3)).toBe(true);
+    expect(calls.some((call) => call.purpose === "speculative")).toBe(true);
+  });
+
+  it("a pausa de um turno não vale para o seguinte: um final comum no meio da fala não fecha o turno", async () => {
+    const t = await setup();
+    pauseAndFinal(t, "Quanto custa um projeto?");
+    expect(t.streams).toHaveLength(1);
+    t.streams[0]?.end();
+    // Outra fala começa sem o detector de pausa ver o começo dela; um final sem pausa não fecha nada.
+    t.ports.stt.final("e também queria saber", false);
+    expect(t.streams).toHaveLength(1);
+    expect(t.timers.pending()).toEqual([]);
+  });
+
+  it("turno que continua um resultado de ferramenta não ganha ponte, mesmo com fala enfileirada durante a ferramenta", async () => {
+    const store = new BridgeStore();
+    const key = BridgeStore.keyOf("voz-x", "pt");
+    for (const text of BRIDGE_TEXTS.pt?.short ?? []) store.put(key, { text, tier: "short", pcm: Buffer.alloc(3200, 1) });
+    for (const text of BRIDGE_TEXTS.pt?.long ?? []) store.put(key, { text, tier: "long", pcm: Buffer.alloc(9600, 2) });
+    const t = await setup({ voiceId: "voz-x", latency: { bridge: true } }, { bridgeStore: store });
+    callerSays(t, "Registra um recado, por favor.");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "tool_call", call: { id: "c1", type: "function", function: { name: "call_webhook", arguments: "{}" } } });
+    t.streams[0]?.end();
+    await until(() => t.toolCalls.length === 1);
+    t.timers.runAll();
+    const before = t.audio.length;
+    callerSays(t, "Pode ser hoje mesmo.");
+    t.timers.runAll();
+    t.session.sendToolResult("c1", { ok: true });
+    t.time.advance(500);
+    t.timers.runAll();
+    expect(t.audio.length).toBe(before);
+  });
+
+  it("pergunta de confirmação em qualquer frase da última fala conta como sensível", () => {
+    expect(sensitiveTurn("Posso marcar às dez? Me confirma.", true)).toBe(true);
+    expect(sensitiveTurn("Posso marcar às dez?", false)).toBe(false);
+    expect(sensitiveTurn("Atendemos até as seis.", true)).toBe(false);
   });
 });

@@ -63,7 +63,11 @@ export type LlmEvent =
   | { type: "tool_call"; call: ChatToolCall }
   | { type: "usage"; usage: LlmUsage }
   /** O provedor recusou `reasoning` ou `cache_control` (HTTP 4xx): o pedido foi repetido sem eles. Vem antes de qualquer texto. */
-  | { type: "fallback"; status: number };
+  | { type: "fallback"; status: number }
+  /** O primeiro conteúdo (texto ou pedaço de chamada de função) chegou. Só existe com `markFirst`, para o tempo limite; não sai do `streamChatResilient`. */
+  | { type: "first" }
+  /** O provedor demorou para o primeiro conteúdo e o pedido foi refeito no próximo da lista (`provider` é o que foi deixado). */
+  | { type: "retry"; provider: string };
 
 export class LlmHttpError extends Error {
   constructor(readonly status: number) {
@@ -78,6 +82,8 @@ const chunkSchema = z.object({
         delta: z
           .object({
             content: z.string().nullish(),
+            reasoning: z.string().nullish(),
+            reasoning_content: z.string().nullish(),
             tool_calls: z
               .array(
                 z.object({
@@ -113,6 +119,12 @@ export interface ChatRequest {
   model?: string;
   /** Perfil do agente (`llm-profile.ts`). Omitido: o padrão (A). */
   profile?: LlmProfile;
+  /** Teto de saída desta chamada, no lugar do do perfil (o aquecimento pede poucos tokens). */
+  maxTokens?: number;
+  /** Ordem de provedores desta chamada, no lugar da do perfil (a nova tentativa tira o que demorou). */
+  providerOrder?: readonly string[];
+  /** Interno do `streamChatResilient`: emite `first` quando o primeiro conteúdo chega. */
+  markFirst?: boolean;
   /** Pedido sem `reasoning` nem `cache_control`: a sessão que já caiu no fallback segue assim, sem tentar de novo a cada turno. */
   plain?: boolean;
   baseUrl?: string;
@@ -127,7 +139,13 @@ function withCachedSystemPrompt(messages: readonly ChatMessage[]): readonly unkn
   );
 }
 
-export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile" | "plain">): Record<string, unknown> {
+/** A ordem de provedores vale quando o modelo é o do perfil (um modelo trocado à mão, nos testes, não herda o roteamento dele). */
+function providerOrderOf(request: Pick<ChatRequest, "model" | "profile" | "providerOrder">): readonly string[] | undefined {
+  const profile = request.profile ?? llmProfileOf(undefined);
+  return request.providerOrder ?? (request.model === undefined || request.model === profile.model ? profile.providerOrder : undefined);
+}
+
+export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile" | "plain" | "maxTokens" | "providerOrder">): Record<string, unknown> {
   const profile = request.profile ?? llmProfileOf(undefined);
   const model = request.model ?? profile.model;
   return {
@@ -136,10 +154,10 @@ export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "mode
     stream: true,
     // Fala ao telefone: resposta curta. O teto também limita o gasto de uma resposta descontrolada. Com o raciocínio ligado ele
     // é dividido com o texto, por isso o perfil que o mantém ligado usa 1024.
-    max_tokens: profile.maxTokens,
+    max_tokens: request.maxTokens ?? profile.maxTokens,
     ...(!request.plain && profile.reasoning === "off" && { reasoning: { enabled: false } }),
     ...(!request.plain && profile.reasoning === "low" && { reasoning: { effort: "low" } }),
-    ...(profile.providerOrder && !request.model && { provider: { order: profile.providerOrder, allow_fallbacks: true } }),
+    ...(providerOrderOf(request) && { provider: { order: providerOrderOf(request), allow_fallbacks: true } }),
     ...(request.tools.length > 0 && {
       tools: request.tools.map((tool) => ({ type: "function", function: tool })),
       tool_choice: "auto",
@@ -148,7 +166,7 @@ export function chatBody(request: Pick<ChatRequest, "messages" | "tools" | "mode
 }
 
 /** O perfil manda algo que o fallback tira (`reasoning` ou `cache_control`)? Se não, repetir não muda nada. */
-function chatBodyDiffersWhenPlain(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile">): boolean {
+function chatBodyDiffersWhenPlain(request: Pick<ChatRequest, "messages" | "tools" | "model" | "profile" | "maxTokens" | "providerOrder">): boolean {
   return JSON.stringify(chatBody(request)) !== JSON.stringify(chatBody({ ...request, plain: true }));
 }
 
@@ -199,6 +217,7 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
   let buffered = "";
   let finished = false;
   let usageReceived = false;
+  let firstSeen = false;
   let finishReason: string | undefined;
   let provider: string | undefined;
   const model = request.model ?? (request.profile ?? llmProfileOf(undefined)).model;
@@ -239,6 +258,10 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
         for (const choice of chunk.choices ?? []) {
           if (choice.finish_reason) finishReason = choice.finish_reason;
           const content = choice.delta?.content;
+          if (request.markFirst && !firstSeen && (content || choice.delta?.reasoning || choice.delta?.reasoning_content || (choice.delta?.tool_calls?.length ?? 0) > 0)) {
+            firstSeen = true;
+            yield { type: "first" };
+          }
           if (content) yield { type: "text", delta: content };
           for (const part of choice.delta?.tool_calls ?? []) {
             const call = calls.get(part.index) ?? { id: "", name: "", arguments: "" };
@@ -261,12 +284,59 @@ export async function* streamChat(request: ChatRequest): AsyncGenerator<LlmEvent
       // Um aborto também custa. Sem extrato final, estima a entrada por byte e todo o teto
       // de saída: conserva o teto da chamada mesmo quando o usuário interrompe cada resposta.
       const promptTokens = Buffer.byteLength(JSON.stringify(request.messages)) + Buffer.byteLength(JSON.stringify(request.tools));
-      yield { type: "usage", usage: usageOf({ prompt_tokens: promptTokens, completion_tokens: (request.profile ?? llmProfileOf(undefined)).maxTokens }, { model }) };
+      yield { type: "usage", usage: usageOf({ prompt_tokens: promptTokens, completion_tokens: request.maxTokens ?? (request.profile ?? llmProfileOf(undefined)).maxTokens }, { model }) };
     }
   }
   if (request.signal?.aborted) return;
   for (const [index, call] of [...calls.entries()].sort(([a], [b]) => a - b)) {
     if (!call.name) continue;
     yield { type: "tool_call", call: { id: call.id || `call_${index}`, type: "function", function: { name: call.name, arguments: call.arguments || "{}" } } };
+  }
+}
+
+/**
+ * `streamChat` com tempo limite no PRIMEIRO conteúdo (ADR 0023): se o provedor da vez não entrega nada em
+ * `profile.firstTokenTimeoutMs`, o pedido é cortado e refeito no próximo da ordem do perfil, até o último, que não tem limite. O
+ * roteamento do OpenRouter só troca de provedor quando ele falha; um provedor lento mas vivo segurava a cauda (p90) inteira.
+ * A estimativa de custo do pedido cortado fica com quem consome (`retry`): o provedor não manda extrato de um pedido cortado.
+ */
+export async function* streamChatResilient(request: ChatRequest): AsyncGenerator<LlmEvent> {
+  const profile = request.profile ?? llmProfileOf(undefined);
+  const timeoutMs = profile.firstTokenTimeoutMs;
+  const order = providerOrderOf(request);
+  if (!timeoutMs || !order || order.length < 2) {
+    yield* streamChat(request);
+    return;
+  }
+  for (let attempt = 0; attempt < order.length; attempt++) {
+    const remaining = order.slice(attempt);
+    const last = attempt === order.length - 1;
+    const controller = new AbortController();
+    const signal = request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
+    let timedOut = false;
+    const timer = last
+      ? undefined
+      : setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+    try {
+      for await (const event of streamChat({ ...request, signal, providerOrder: remaining, markFirst: true })) {
+        if (event.type === "first") {
+          if (timer) clearTimeout(timer);
+          continue;
+        }
+        // O extrato estimado de um pedido que nós mesmos cortamos não vale como uma chamada.
+        if (timedOut && event.type === "usage") continue;
+        yield event;
+      }
+    } catch (error) {
+      // Cortado por nós (prazo) ou pela pessoa (barge-in): a `fetch` rejeita antes de haver resposta; não é erro do provedor.
+      if (!timedOut && !request.signal?.aborted) throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (!timedOut || request.signal?.aborted) return;
+    yield { type: "retry", provider: remaining[0] ?? "" };
   }
 }

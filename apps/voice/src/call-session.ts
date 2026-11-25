@@ -638,7 +638,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     // A latência de cada turno, medida pelo motor (o pipeline), fica na linha do tempo: é o número
     // que diz se a meta de RTT da ligação real foi atingida.
     session.on("turnMetrics", (metrics) =>
-      void event("turn_latency", { turn: metrics.turn, rttMs: metrics.rttMs, ttfbMs: metrics.ttfbMs, llmFirstTokenMs: metrics.llmFirstTokenMs, endpointDelayMs: metrics.endpointDelayMs }).catch(
+      void event("turn_latency", { ...metrics }).catch(
         logFailure("could not record a turn latency"),
       ),
     );

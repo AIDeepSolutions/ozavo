@@ -453,13 +453,23 @@ export function Timeline({
       }
       case "turn_latency": {
         const ms = (value: unknown): string => Math.round(Number(value)).toLocaleString(locale);
-        return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency, { rtt: ms(p.rttMs), ttfb: ms(p.ttfbMs), llm: ms(p.llmFirstTokenMs) })}</Quiet> };
+        // Eventos novos trazem as etapas; os antigos, só o total.
+        if (typeof p.endpointMs !== "number") return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency, { rtt: ms(p.rttMs), ttfb: ms(p.ttfbMs), llm: ms(p.llmFirstTokenMs) })}</Quiet> };
+        const notes = [
+          typeof p.provider === "string" && p.provider !== "" ? fill(e.turn_latency_note_provider, { provider: p.provider }) : "",
+          p.bridge === true ? fill(e.turn_latency_note_bridge, { answer: ms(p.answerMs) }) : "",
+          p.speculation === "hit" ? e.turn_latency_note_hit : p.speculation === "miss" ? e.turn_latency_note_miss : "",
+          typeof p.retries === "number" && p.retries > 0 ? e.turn_latency_note_retries : "",
+        ].join("");
+        return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.turn_latency_stages, { rtt: ms(p.rttMs), endpoint: ms(p.endpointMs), model: ms(p.modelMs), sentence: ms(p.firstSentenceMs), ttfb: ms(p.ttfbMs), notes })}</Quiet> };
       }
       case "llm_call": {
         // O corte pelo teto de saída (`length`) é o que mais importa ver: a resposta do agente ficou incompleta.
         const n = (value: unknown): string => (typeof value === "number" ? Math.round(value).toLocaleString(locale) : "?");
         const label = (value: unknown): string => (typeof value === "string" && value !== "" ? value : "?");
         if (p.fallback === true) return { ...base, tone: "accent", icon: Gauge, body: <Quiet>{fill(e.llm_call_fallback, { status: n(p.fallbackStatus) })}</Quiet> };
+        if (p.purpose === "warmup") return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.llm_call_warmup, { model: label(p.model), provider: label(p.provider), prompt: n(p.promptTokens), cached: n(p.cachedTokens), ms: n(p.firstTokenMs) })}</Quiet> };
+        if (p.purpose === "speculative") return { ...base, tone: "neutral", icon: Gauge, body: <Quiet>{fill(e.llm_call_speculative, { model: label(p.model), prompt: n(p.promptTokens) })}</Quiet> };
         return {
           ...base,
           tone: p.finishReason === "length" ? "accent" : "neutral",

@@ -36,6 +36,8 @@ export const CARTESIA_WS_URL = "wss://api.cartesia.ai/tts/websocket";
 export const CARTESIA_API_URL = "https://api.cartesia.ai";
 export const CARTESIA_VERSION = "2026-08-14";
 export const CARTESIA_MODEL = "sonic-3.6";
+/** De quanto em quanto tempo a conexão ociosa recebe um ping. */
+export const CARTESIA_PING_MS = 20_000;
 export const CARTESIA_OUTPUT_FORMAT = { container: "raw", encoding: "pcm_mulaw", sample_rate: 8000 } as const;
 
 const serverMessage = z.discriminatedUnion("type", [
@@ -148,6 +150,14 @@ export async function openCartesiaTts(options: CartesiaTtsOptions, handlers: Tts
 
   const language = cartesiaLanguage(options.language);
   const model = options.model ?? CARTESIA_MODEL;
+  // A conexão fica aberta a ligação inteira, e o agente passa longos trechos calado (quem liga fala): o ping evita que o provedor ou
+  // um intermediário feche a conexão ociosa no meio da conversa.
+  let cancelPing: (() => void) | undefined;
+  const keepAlive = (): void => {
+    socket.ping();
+    cancelPing = schedule(keepAlive, CARTESIA_PING_MS);
+  };
+  cancelPing = schedule(keepAlive, CARTESIA_PING_MS);
   return {
     speak(contextId, text, final) {
       if (cancelled.has(contextId)) return;
@@ -182,6 +192,7 @@ export async function openCartesiaTts(options: CartesiaTtsOptions, handlers: Tts
       return value;
     },
     close: () => {
+      cancelPing?.();
       for (const contextId of deadlines.keys()) clearDeadline(contextId);
       return socket.close();
     },

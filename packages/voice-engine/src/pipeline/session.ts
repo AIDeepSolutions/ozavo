@@ -6,7 +6,9 @@ import type { AnsweringMachineDetection, KnowledgeCallInfo, ToolSpec, TurnLatenc
 import { AnsweringMachineDetector, type AmdOptions } from "./amd";
 import type { CartesiaTts, TtsHandlers } from "./cartesia-tts";
 import type { DeepgramStt, SttHandlers } from "./deepgram-stt";
-import { endpointDelayMs } from "./endpointing";
+import { assessTurnEnd, endpointDelayMs, type TurnEndKind } from "./endpointing";
+import { BRIDGE_TEXTS, BridgeStore, durationMs, pickBridge, sensitiveTurn, sharedBridgeStore, trimEdges, type BridgePhrase } from "./bridge";
+import { resolveLatency, withStablePrefix } from "./latency";
 import { KnowledgeRetriever, SPECULATE_DEBOUNCE_MS, SPECULATE_MIN_WORDS, wordCount, type EmbeddingResult } from "./knowledge-retrieval";
 import type { ChatMessage, ChatToolCall, LlmEvent } from "./openrouter-llm";
 import { TURN_TARGET_MAX_CHARACTERS, createTurnLimiter } from "./turn-guard";
@@ -38,6 +40,11 @@ export interface PipelineSessionDeps {
   openStt(handlers: SttHandlers): Promise<SttPort>;
   openTts(handlers: TtsHandlers): Promise<TtsPort>;
   chat(messages: readonly ChatMessage[], tools: readonly ToolSpec[], signal: AbortSignal): AsyncIterable<LlmEvent>;
+  /**
+   * Chamada de aquecimento: o mesmo prefixo da conversa (instrução + ferramentas), uma resposta mínima. Esquenta a conexão com o
+   * provedor e o cache do prefixo antes do primeiro turno. Ausente, não há aquecimento.
+   */
+  warm?(messages: readonly ChatMessage[], tools: readonly ToolSpec[], signal: AbortSignal): AsyncIterable<LlmEvent>;
   /** Agendador dos prazos (`setTimeout` por padrão). Devolve como cancelar. */
   schedule?: (fn: () => void, delayMs: number) => () => void;
   onMetrics?(metrics: TurnMetrics): void;
@@ -51,6 +58,12 @@ export interface PipelineSessionDeps {
    * Sem ele, a busca é só por palavras. Só vale com `config.knowledge.mode === "rag"` e `config.knowledge.search`.
    */
   embedQuestion?(text: string): Promise<EmbeddingResult>;
+  /** Detector de pausa local (padrão: `PAUSE_VAD`), que marca o fim REAL da fala para a medida de latência. */
+  pauseVad?: VadOptions;
+  /** Onde ficam as frases de ponte já sintetizadas (padrão: o do processo). */
+  bridgeStore?: BridgeStore;
+  /** Sorteio da frase de ponte (padrão: `Math.random`). */
+  random?: () => number;
 }
 
 /** As mensagens do modelo neste turno: a mesma lista, com os trechos da base logo antes da última fala da pessoa. */
@@ -72,6 +85,9 @@ const APOLOGY: Record<string, string> = {
   en: "Sorry, I had a problem answering. Could you repeat that, please?",
   es: "Disculpe, tuve un problema para responder. ¿Puede repetir, por favor?",
 };
+
+/** O recado do aquecimento: curto, sem pedir nada (o modelo só precisa receber o prefixo). */
+const WARMUP_USER_TEXT: Record<string, string> = { pt: "Oi.", en: "Hi.", es: "Hola." };
 
 const LANGUAGE_RULE: Record<string, string> = {
   pt: "Responda sempre em português do Brasil.",
@@ -98,6 +114,9 @@ const BYTES_PER_MS = 16;
  * quem realmente interrompe, sim.
  */
 const BARGE_IN_VAD: VadOptions = { startFrames: 14, marginDb: 15 };
+
+/** Pausa local: 5 quadros (100 ms) de silêncio depois de fala marcam o fim REAL da fala. */
+const PAUSE_VAD: VadOptions = { stopFrames: 5 };
 
 const normalizeWords = (text: string): string[] =>
   text
@@ -171,9 +190,21 @@ interface AgentTurn {
   /** Fim da fala de quem ligou que abriu o turno; ausente quando o turno veio de um resultado de ferramenta. */
   userEndedAt?: number;
   endpointDelayMs: number;
+  /** Quando o turno foi dado por encerrado e o pedido ao modelo saiu. */
+  commitAt: number;
   firstTokenAt?: number;
   ttsStartedAt?: number;
   ttfbMs?: number;
+  /** O provedor do modelo que respondeu (do extrato de uso). */
+  provider?: string;
+  /** Quando a frase de ponte começou a tocar neste turno. */
+  bridgeAt?: number;
+  /** Cancela os prazos da frase de ponte (o texto chegou, ou o turno acabou). */
+  cancelBridge?: () => void;
+  /** Quantas vezes o pedido foi refeito no provedor seguinte por demora no primeiro texto. */
+  retries?: number;
+  /** `hit`: a resposta veio de um pedido adiantado; `miss`: um pedido adiantado foi descartado e este refez. */
+  speculation?: "hit" | "miss";
   measured: boolean;
   /** Texto já mandado à síntese. */
   spoken: string;
@@ -185,6 +216,30 @@ interface AgentTurn {
   recorded: boolean;
 }
 
+/**
+ * Pedido ao modelo que saiu antes de o fim de turno estar decidido. Os eventos ficam guardados (nada vai à síntese): se o turno
+ * fechar com o mesmo texto, a resposta é aproveitada daqui; se a pessoa continuar, o pedido é descartado.
+ */
+interface Speculation {
+  /** O texto da pessoa com que o pedido saiu, comparável (sem pontuação nem caixa). */
+  key: string;
+  /** Tamanho do histórico quando saiu: se mudou (resultado de ferramenta, fala avulsa), o pedido não vale mais. */
+  historyLength: number;
+  abort: AbortController;
+  events: LlmEvent[];
+  done: boolean;
+  error?: unknown;
+  wake?: () => void;
+  firstEventAt?: number;
+  /** O extrato de uso do pedido já foi entregue a um turno (então o custo dele já foi contado). */
+  usageSeen?: boolean;
+  startedAt: number;
+  /** Os trechos da base que o pedido levou (modo de busca): valem para o turno que o aproveitar. */
+  knowledge?: { context: string | undefined; info: KnowledgeCallInfo };
+}
+
+const speechKey = (text: string): string => normalizeWords(text).join(" ");
+
 export async function createPipelineSession(deps: PipelineSessionDeps): Promise<VoiceSession> {
   const { config, clock } = deps;
   const schedule = deps.schedule ?? scheduleTimeout;
@@ -195,11 +250,31 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   const history: ChatMessage[] = [
     {
       role: "system",
-      content: `${instructionsWithVocabulary(config.instructions, config.vocabulary)}\n\n${LANGUAGE_RULE[lang] ?? `Always answer in ${config.language}.`} ${PHONE_STYLE}`,
+      // O que varia por ligação (contexto do pedido de saída) vai por último: o prefixo fica igual para o cache do provedor.
+      content: withStablePrefix(instructionsWithVocabulary(config.instructions, config.vocabulary), `${LANGUAGE_RULE[lang] ?? `Always answer in ${config.language}.`} ${PHONE_STYLE}`),
     },
   ];
   const vad = new EnergyVad(deps.vad);
+  const latency = resolveLatency(config.latency);
   const bargeVad = new EnergyVad(deps.bargeInVad ?? BARGE_IN_VAD);
+  const pauseVad = new EnergyVad({ ...(deps.pauseVad ?? PAUSE_VAD), stopFrames: Math.max(1, Math.round(latency.pauseMs / 20)) });
+  /** Quando a pessoa parou de falar de verdade (último quadro com voz), pelo áudio; `undefined` enquanto ela fala. */
+  let speechEndedAt: number | undefined;
+  const environment = config.listeningEnvironment ?? "normal";
+  /** Pedido adiantado ao modelo, se há um. */
+  let speculation: Speculation | undefined;
+  /** Um pedido adiantado foi descartado neste turno (a pessoa continuou): o turno que vier a seguir leva a marca. */
+  let speculationMissed = false;
+  /** Custo da última chamada completa ao modelo, para estimar o de um pedido adiantado descartado (o provedor não manda extrato). */
+  let lastCallCostCents = 0;
+  let lastPromptTokens = 0;
+  const bridgeStore = deps.bridgeStore ?? sharedBridgeStore;
+  const bridgeKey = BridgeStore.keyOf(config.voiceId, lang);
+  const bridgeTexts = BRIDGE_TEXTS[lang];
+  /** Contexto de síntese de uma frase de ponte (guardada ao terminar), por id de contexto. */
+  const bridgeSynth = new Map<string, { text: string; tier: "short" | "long"; chunks: Buffer[] }>();
+  let bridgeSeq = 0;
+  const recentBridges: string[] = [];
   /** O que o agente falou há pouco (turno e falas avulsas), para reconhecer o próprio eco. */
   let recentAgentText = "";
   const rememberAgentText = (text: string): void => {
@@ -270,17 +345,17 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       : undefined;
   /** Os trechos do último turno de quem ligou: valem também para a continuação do turno depois de uma ferramenta. */
   let knowledgeContext: string | undefined;
-  let cancelSpeculation: (() => void) | undefined;
+  let cancelKnowledgeSpeculation: (() => void) | undefined;
   /** A busca especulativa: o texto de quem ligou até agora (finais + parcial), depois de um tempo sem mudar. */
-  const speculate = (delayMs: number): void => {
+  const speculateKnowledge = (delayMs: number): void => {
     if (!retriever) return;
-    cancelSpeculation?.();
-    cancelSpeculation = undefined;
+    cancelKnowledgeSpeculation?.();
+    cancelKnowledgeSpeculation = undefined;
     const text = [...finals, ...(partial ? [partial] : [])].join(" ").trim();
     if (wordCount(text) < SPECULATE_MIN_WORDS) return;
     if (delayMs <= 0) return retriever.speculate(text, true);
-    cancelSpeculation = schedule(() => {
-      cancelSpeculation = undefined;
+    cancelKnowledgeSpeculation = schedule(() => {
+      cancelKnowledgeSpeculation = undefined;
       retriever.speculate(text);
     }, delayMs);
   };
@@ -301,6 +376,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     const current = turn;
     if (current) {
       turn = undefined;
+      current.cancelBridge?.();
       current.abort.abort();
       tts?.cancel(current.contextId);
       recordAgent(current);
@@ -327,13 +403,61 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     session.say(text);
   };
 
-  const respond = async (userEndedAt: number | undefined, endpointDelay: number, question?: string): Promise<void> => {
+  /** Toca uma frase de ponte: o áudio guardado vai direto à saída, na fila do que o agente já fala. */
+  const playBridge = (phrase: BridgePhrase, current: AgentTurn): void => {
+    const at = now();
+    playhead = Math.max(playhead, at) + phrase.pcm.length / BYTES_PER_MS;
+    rememberAgentText(phrase.text);
+    recentBridges.push(phrase.text);
+    if (recentBridges.length > 2) recentBridges.shift();
+    current.bridgeAt ??= at;
+    emitter.emit("audio", phrase.pcm);
+  };
+
+  /**
+   * Se o primeiro texto do modelo não chegar em `bridgeAfterMs` depois do pedido, toca uma frase curta; se mesmo assim não chegar
+   * quando ela acabar, uma mais longa. Nunca antes de uma ferramenta sensível, nunca em turno que continua um resultado de ferramenta.
+   */
+  const scheduleBridge = (current: AgentTurn): void => {
+    if (!latency.bridge || !bridgeTexts || finished) return;
+    const lastAgent = [...history].reverse().find((message) => message.role === "assistant" && typeof message.content === "string")?.content;
+    if (sensitiveTurn(typeof lastAgent === "string" ? lastAgent : undefined, hasWriteTools)) return;
+    let cancelNext: (() => void) | undefined;
+    const attempt = (tier: "short" | "long"): void => {
+      if (turn !== current || current.firstTokenAt !== undefined || finished) return;
+      const phrase = pickBridge(bridgeStore.get(bridgeKey), tier, recentBridges, deps.random);
+      if (!phrase) return;
+      playBridge(phrase, current);
+      if (tier === "short") cancelNext = schedule(() => attempt("long"), Math.ceil(durationMs(phrase)) + 300);
+    };
+    const cancelFirst = schedule(() => attempt("short"), Math.max(0, latency.bridgeAfterMs - (now() - current.commitAt)));
+    current.cancelBridge = () => {
+      cancelFirst();
+      cancelNext?.();
+      current.cancelBridge = undefined;
+    };
+  };
+
+  /** Sintetiza, uma de cada vez e só com a voz livre, as frases de ponte que ainda faltam para esta voz e este idioma. */
+  const synthesizeNextBridge = (): void => {
+    if (!latency.bridge || !bridgeTexts || finished || !tts || bridgeSynth.size > 0 || sayContexts.size > 0 || turn) return;
+    const missing = ([["short", bridgeTexts.short], ["long", bridgeTexts.long]] as const).flatMap(([tier, texts]) => texts.map((text) => ({ tier, text }))).find(({ text }) => !bridgeStore.has(bridgeKey, text));
+    if (!missing) return;
+    const contextId = `bridge-${++bridgeSeq}`;
+    bridgeSynth.set(contextId, { text: missing.text, tier: missing.tier, chunks: [] });
+    tts.speak(contextId, missing.text, true);
+  };
+
+  const respond = async (userEndedAt: number | undefined, endpointDelay: number, adopted?: Speculation, missed = false, question?: string, afterTool = false): Promise<void> => {
     const current: AgentTurn = {
       id: ++turnSeq,
       contextId: `turn-${turnSeq}`,
       abort: new AbortController(),
       userEndedAt,
       endpointDelayMs: endpointDelay,
+      commitAt: now(),
+      ...(adopted && { speculation: "hit" as const }),
+      ...(!adopted && missed && { speculation: "miss" as const }),
       measured: false,
       spoken: "",
       written: false,
@@ -341,9 +465,14 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       recorded: false,
     };
     turn = current;
+    if (userEndedAt !== undefined && !afterTool) scheduleBridge(current);
     // Os trechos da base para esta fala (modo de busca): a busca é especulativa e tem orçamento, então a espera é curta e nunca falha.
+    // Um pedido adiantado já trouxe os trechos da fala que ele usou: valem os dele.
     let knowledgeInfo: KnowledgeCallInfo | undefined = knowledge?.mode === "full" ? { mode: "full", hits: [], retrievalMs: 0, speculative: false, usedVector: false, embeddingTokens: 0 } : undefined;
-    if (retriever && question !== undefined) {
+    if (adopted?.knowledge) {
+      knowledgeContext = adopted.knowledge.context;
+      knowledgeInfo = { ...adopted.knowledge.info, embeddingTokens: retriever?.settle() ?? 0 };
+    } else if (retriever && question !== undefined) {
       const retrieved = await retriever.forTurn(question);
       if (turn !== current || current.abort.signal.aborted) return;
       knowledgeContext = formatRetrievedContext(retrieved.hits, { language: config.language, only: knowledge?.only === true, maxTokens: CONTEXT_MAX_TOKENS }).text;
@@ -381,13 +510,24 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       emit(piece, final);
     };
     try {
-      for await (const event of deps.chat(withKnowledgeContext(history, knowledgeContext), config.tools, current.abort.signal)) {
+      for await (const event of adopted ? replay(adopted, current.abort.signal) : deps.chat(withKnowledgeContext(history, knowledgeContext), config.tools, current.abort.signal)) {
         if (event.type === "fallback") {
           emitter.emit("llmCall", { promptTokens: 0, cachedTokens: 0, completionTokens: 0, fallback: true, fallbackStatus: event.status });
           continue;
         }
+        if (event.type === "retry") {
+          // O primeiro provedor demorou e o pedido foi refeito no próximo: o pedido cortado também custou (estimado pelo último extrato).
+          current.retries = (current.retries ?? 0) + 1;
+          chargeDiscarded("retry", undefined, event.provider);
+          continue;
+        }
         if (event.type === "usage") {
           const { promptTokens, cachedTokens, completionTokens, costCents } = event.usage;
+          if (event.usage.provider && turn === current) current.provider = event.usage.provider;
+          if (event.usage.provider) {
+            lastCallCostCents = event.usage.costCents;
+            lastPromptTokens = event.usage.promptTokens;
+          }
           emitter.emit("llmCall", {
             model: event.usage.model,
             provider: event.usage.provider,
@@ -406,6 +546,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         if (turn !== current) continue;
         if (event.type === "text") {
           current.firstTokenAt ??= now();
+          current.cancelBridge?.();
           const delta = limiter.push(event.delta);
           text += delta;
           pending += delta;
@@ -418,6 +559,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         }
       }
     } catch (cause) {
+      current.cancelBridge?.();
       if (turn !== current || current.abort.signal.aborted) return;
       tts?.cancel(current.contextId);
       recordAgent(current);
@@ -427,6 +569,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       speakApology();
       return;
     }
+    current.cancelBridge?.();
     if (turn !== current) return;
     const tail = limiter.flush();
     text += tail;
@@ -462,8 +605,103 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     }
   };
 
-  const startResponse = (endedAt: number | undefined, delay: number, question?: string): void => {
-    const pending = respond(endedAt, delay, question);
+  /**
+   * Um pedido ao modelo que foi cortado (adiantado e descartado, ou refeito no provedor seguinte) não manda extrato, mas custou: entra na
+   * conta pelo custo da última chamada completa (ou, antes de haver uma, pelo do aquecimento).
+   */
+  const chargeDiscarded = (purpose: "speculative" | "retry", spec?: Speculation, provider?: string): void => {
+    if (spec) spec.usageSeen = true;
+    emitter.emit("llmCall", { purpose, ...(provider && { provider }), promptTokens: lastPromptTokens, cachedTokens: 0, completionTokens: 0 });
+    flushUsage({ providerCostCents: lastCallCostCents });
+  };
+
+  /** Entrega, na ordem, os eventos que o pedido adiantado já recebeu e os que ainda vão chegar. */
+  async function* replay(spec: Speculation, signal: AbortSignal): AsyncGenerator<LlmEvent> {
+    let index = 0;
+    // Um só ouvinte do corte para a espera inteira (um por espera acumulava ouvintes numa resposta de muitos pedaços).
+    const aborted = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    for (;;) {
+      if (signal.aborted) {
+        spec.abort.abort();
+        // Cortado (a pessoa falou por cima) antes de o extrato chegar: o pedido custou mesmo assim.
+        if (!spec.usageSeen) chargeDiscarded("speculative", spec);
+        return;
+      }
+      while (index < spec.events.length) {
+        const next = spec.events[index++];
+        if (next?.type === "usage") spec.usageSeen = true;
+        if (next) yield next;
+      }
+      if (spec.done) {
+        if (spec.error) throw spec.error;
+        return;
+      }
+      await Promise.race([new Promise<void>((resolve) => (spec.wake = resolve)), aborted]);
+    }
+  }
+
+  /** Larga o pedido adiantado (a pessoa continuou, ou o texto mudou). Conta como gasto estimado: o provedor não manda extrato de um pedido cortado. */
+  const dropSpeculation = (markMissed = true): void => {
+    const spec = speculation;
+    if (!spec) return;
+    speculation = undefined;
+    if (markMissed) speculationMissed = true;
+    spec.abort.abort();
+    chargeDiscarded("speculative", spec);
+  };
+
+  /** Começa o pedido ao modelo com o texto que já temos, sem falar nada, antes de o fim de turno estar decidido. */
+  const startSpeculation = (text: string): void => {
+    if (!latency.speculation || finished || turn || awaitingTools.size > 0) return;
+    const key = speechKey(text);
+    if (speculation) {
+      if (speculation.key === key && speculation.historyLength === history.length) return;
+      dropSpeculation();
+    }
+    const spec: Speculation = { key, historyLength: history.length, abort: new AbortController(), events: [], done: false, startedAt: now() };
+    speculation = spec;
+    const wake = (): void => {
+      const waiting = spec.wake;
+      spec.wake = undefined;
+      waiting?.();
+    };
+    void (async () => {
+      try {
+        if (retriever) {
+          // Modo de busca: o pedido adiantado leva os trechos da fala parcial, buscados como no fim do turno (mesmo orçamento).
+          const retrieved = await retriever.forTurn(text, true);
+          if (spec.abort.signal.aborted) return;
+          spec.knowledge = { context: formatRetrievedContext(retrieved.hits, { language: config.language, only: knowledge?.only === true, maxTokens: CONTEXT_MAX_TOKENS }).text, info: retrieved.info };
+        }
+        for await (const event of deps.chat(withKnowledgeContext([...history, { role: "user", content: text }], spec.knowledge?.context), config.tools, spec.abort.signal)) {
+          if (spec.abort.signal.aborted) return;
+          if (event.type === "text" || event.type === "tool_call") spec.firstEventAt ??= now();
+          spec.events.push(event);
+          wake();
+        }
+      } catch (cause) {
+        spec.error = cause;
+      } finally {
+        spec.done = true;
+        wake();
+      }
+    })();
+  };
+
+  /** O pedido adiantado, se ainda vale para este texto e este histórico; senão, descarta. */
+  const takeSpeculation = (text: string): Speculation | undefined => {
+    const spec = speculation;
+    if (!spec) return undefined;
+    if (spec.key !== speechKey(text) || spec.historyLength !== history.length - 1 || spec.abort.signal.aborted || spec.error) {
+      dropSpeculation();
+      return undefined;
+    }
+    speculation = undefined;
+    return spec;
+  };
+
+  const startResponse = (endedAt: number | undefined, delay: number, adopted?: Speculation, missed = false, question?: string, afterTool = false): void => {
+    const pending = respond(endedAt, delay, adopted, missed, question, afterTool);
     activeResponses.add(pending);
     void pending.finally(() => activeResponses.delete(pending));
   };
@@ -471,24 +709,52 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
   const endCallerTurn = (): void => {
     cancelEndpoint?.();
     cancelEndpoint = undefined;
-    cancelSpeculation?.();
-    cancelSpeculation = undefined;
+    cancelKnowledgeSpeculation?.();
+    cancelKnowledgeSpeculation = undefined;
     const text = [...finals, ...(finals.length === 0 && partial ? [partial] : [])].join(" ").trim();
     finals = [];
     partial = "";
-    if (text === "" || finished) return;
-    const endedAt = lastFinalAt || now();
+    if (text === "" || finished) {
+      dropSpeculation(false);
+      speculationMissed = false;
+      return;
+    }
+    // O fim real da fala (pausa vista no áudio) vale mais que a chegada do último texto, que vem ~0,3 a 0,6 s depois.
+    const endedAt = speechEndedAt ?? (lastFinalAt || now());
+    // A pausa vale para este turno só: um valor velho faria o próximo final, no meio de outra fala, fechar o turno.
+    speechEndedAt = undefined;
     const delay = turnDelay;
     emitter.emit("transcript", { speaker: "user", text });
     flushUsage();
     if (awaitingTools.size > 0) {
+      dropSpeculation(false);
       queuedUser.push({ text, endedAt, delay });
       return;
     }
     // O modelo ainda pensava no turno anterior: recomeça com tudo o que a pessoa disse.
     if (turn) stopTurn(false);
     history.push({ role: "user", content: text });
-    startResponse(endedAt, delay, text);
+    const adopted = takeSpeculation(text);
+    const missed = speculationMissed;
+    speculationMissed = false;
+    startResponse(endedAt, delay, adopted, missed, text);
+  };
+
+  /** Um final chegou e o turno pode estar acabando: decide quanto esperar, e adianta o pedido ao modelo se a frase parece fechada. */
+  const scheduleTurnEnd = (paused: boolean): void => {
+    const text = finals.join(" ");
+    const assessment = assessTurnEnd(text, environment);
+    const delay = paused && speechEndedAt !== undefined ? Math.max(0, assessment.silenceMs - (now() - speechEndedAt)) : endpointDelayMs(text, environment);
+    turnDelay = delay;
+    if (delay <= 0) {
+      cancelEndpoint = undefined;
+      endCallerTurn();
+      return;
+    }
+    cancelEndpoint = schedule(endCallerTurn, delay);
+    const likelyDone: readonly TurnEndKind[] = ["closed", "short", "default"];
+    // Só com a pausa confirmada pelo áudio: sem ela o prazo vem do provedor, e adiantar o pedido seria chutar.
+    if (paused && likelyDone.includes(assessment.kind)) startSpeculation(text);
   };
 
   let turnDelay = 0;
@@ -496,15 +762,19 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     partial(text) {
       if (finished) return;
       partial = text;
-      // A pessoa continua falando: o fim de turno marcado não vale mais.
-      cancelEndpoint?.();
-      cancelEndpoint = undefined;
+      // Texto novo: a pessoa continua falando, e o fim de turno marcado não vale mais. Parcial que só repete o que o provedor já
+      // entregou como final (chega depois do `Finalize`) não é continuação.
+      if (finals.length === 0 || !isEchoOf(text, finals.join(" "))) {
+        cancelEndpoint?.();
+        cancelEndpoint = undefined;
+        dropSpeculation();
+      }
       emitter.emit("callerActivity", { words: true });
       amd?.pushTranscript(text);
       // Palavra que o agente acabou de dizer é eco do microfone, não pessoa interrompendo.
       if (!isEchoOf(text, recentAgentText)) {
         bargeIn();
-        speculate(SPECULATE_DEBOUNCE_MS);
+        speculateKnowledge(SPECULATE_DEBOUNCE_MS);
       }
     },
     final(text, speechFinal) {
@@ -516,17 +786,20 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         emitter.emit("callerActivity", { words: true });
         amd?.pushTranscript(text);
         // O trecho final é definitivo: a busca sai já, e o prazo de fim de turno que vem a seguir é o que ela usa para chegar.
-        if (!isEchoOf(text, recentAgentText)) speculate(0);
+        if (!isEchoOf(text, recentAgentText)) speculateKnowledge(0);
       }
-      if (!speechFinal || finals.length === 0) return;
+      if (finals.length === 0) return;
+      // Com o fim de turno por pausa, um final que chega durante a pausa também pode fechar o turno (pedimos esse final ao provedor).
+      const paused = latency.fastEndpoint && speechEndedAt !== undefined;
+      if (!speechFinal && !paused) return;
       cancelEndpoint?.();
-      turnDelay = endpointDelayMs(finals.join(" "), config.listeningEnvironment);
-      cancelEndpoint = schedule(endCallerTurn, turnDelay);
+      scheduleTurnEnd(paused);
     },
     speechStarted() {
       if (finished) return;
       cancelEndpoint?.();
       cancelEndpoint = undefined;
+      dropSpeculation();
       // Só sinaliza: o provedor também "vê fala" no eco e no ruído. Quem corta o agente é a
       // transcrição (que não seja eco) ou o detector de energia sustentado.
       emitter.emit("callerActivity", { words: false });
@@ -544,6 +817,11 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
 
   const ttsHandlers: TtsHandlers = {
     audio(contextId, pcm16) {
+      const collecting = bridgeSynth.get(contextId);
+      if (collecting) {
+        collecting.chunks.push(pcm16);
+        return;
+      }
       if (finished || (!sayContexts.has(contextId) && turn?.contextId !== contextId)) return;
       const at = now();
       const current = turn;
@@ -555,7 +833,15 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
             endpointDelayMs: current.endpointDelayMs,
             llmFirstTokenMs: (current.firstTokenAt ?? at) - current.userEndedAt,
             ttfbMs: current.ttfbMs ?? at - current.ttsStartedAt,
-            rttMs: at - current.userEndedAt,
+            // O primeiro som é o da frase de ponte, se tocou; o da resposta de verdade é quando o áudio dela começa de fato (depois da ponte).
+            rttMs: (current.bridgeAt ?? at) - current.userEndedAt,
+            answerMs: Math.max(at, playhead) - current.userEndedAt,
+            ...(current.bridgeAt !== undefined && { bridge: true }),
+            endpointMs: Math.max(0, current.commitAt - current.userEndedAt),
+            ...(current.firstTokenAt !== undefined && { modelMs: current.firstTokenAt - current.commitAt, firstSentenceMs: current.ttsStartedAt - current.firstTokenAt }),
+            ...(current.provider !== undefined && { provider: current.provider }),
+            ...(current.speculation !== undefined && { speculation: current.speculation }),
+            ...(current.retries !== undefined && { retries: current.retries }),
           };
           deps.onMetrics?.(metrics);
           emitter.emit("turnMetrics", metrics);
@@ -568,9 +854,18 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (turn && turn.contextId === contextId) turn.ttfbMs = ttfbMs;
     },
     done(contextId) {
+      const collecting = bridgeSynth.get(contextId);
+      if (collecting) {
+        bridgeSynth.delete(contextId);
+        if (collecting.chunks.length > 0) bridgeStore.put(bridgeKey, { text: collecting.text, tier: collecting.tier, pcm: trimEdges(Buffer.concat(collecting.chunks)) });
+        flushUsage();
+        synthesizeNextBridge();
+        return;
+      }
       if (sayContexts.has(contextId)) {
         recordSay(contextId);
         flushUsage();
+        synthesizeNextBridge();
         return;
       }
       const current = turn;
@@ -583,6 +878,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         const next = afterSynthesis;
         afterSynthesis = undefined;
         next?.();
+        synthesizeNextBridge();
       }
     },
     error: (error) => {
@@ -595,6 +891,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     },
   };
 
+  const warmAbort = new AbortController();
   let stt: SttPort | undefined;
   let tts: TtsPort | undefined;
   const opened = await Promise.allSettled([deps.openStt(sttHandlers), deps.openTts(ttsHandlers)]);
@@ -613,6 +910,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
 
   const shutdown = async (reason: string): Promise<void> => {
     finished = true;
+    warmAbort.abort();
+    dropSpeculation(false);
     cancelEndpoint?.();
     if (turn) recordAgent(turn);
     turn?.abort.abort();
@@ -649,6 +948,19 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         cancelEndpoint = undefined;
         emitter.emit("callerActivity", { words: false });
       }
+      for (const event of pauseVad.push(pcm16_8k)) {
+        if (event.type === "speech_start") {
+          speechEndedAt = undefined;
+          // Voltou a falar: o fim de turno marcado e o pedido adiantado não valem mais.
+          cancelEndpoint?.();
+          cancelEndpoint = undefined;
+          dropSpeculation();
+        } else {
+          speechEndedAt = now() - latency.pauseMs;
+          // Pede ao provedor o texto do que foi dito até aqui, sem esperar o `speech_final` dele (~0,3 s a mais).
+          if (latency.fastEndpoint) stt?.finalize();
+        }
+      }
       for (const event of bargeVad.push(pcm16_8k)) if (event.type === "speech_start") bargeIn();
     },
     sendToolResult(id, result) {
@@ -669,7 +981,7 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       for (const item of waiting) history.push({ role: "user", content: item.text });
       const last = waiting.at(-1);
       const question = waiting.length > 0 ? waiting.map((item) => item.text).join(" ") : undefined;
-      const next = () => startResponse(last?.endedAt, last?.delay ?? 0, question);
+      const next = () => startResponse(last?.endedAt, last?.delay ?? 0, undefined, false, question, true);
       if (turn?.synthesizing) afterSynthesis = next;
       else next();
     },
@@ -697,7 +1009,43 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     },
   };
 
+  // Aquecimento: enquanto o aviso de gravação e a saudação tocam, uma chamada mínima ao modelo com o MESMO prefixo (instrução +
+  // ferramentas) abre a conexão com o provedor e esquenta o cache dele, para o primeiro turno de verdade não pagar a partida a frio.
+  // Falhar não atrapalha a ligação: fica registrado como uma chamada de aquecimento sem tokens.
+  if (latency.warmup && deps.warm) {
+    const warming = (async (): Promise<void> => {
+      const startedAt = now();
+      let firstTokenMs: number | undefined;
+      try {
+        for await (const event of deps.warm?.([...history, { role: "user", content: WARMUP_USER_TEXT[lang] ?? WARMUP_USER_TEXT.en ?? "Hi" }], config.tools, warmAbort.signal) ?? []) {
+          if (event.type === "text" || event.type === "tool_call") firstTokenMs ??= now() - startedAt;
+          if (event.type !== "usage") continue;
+          const { promptTokens, cachedTokens, completionTokens, costCents } = event.usage;
+          emitter.emit("llmCall", {
+            purpose: "warmup",
+            model: event.usage.model,
+            provider: event.usage.provider,
+            promptTokens,
+            cachedTokens,
+            cacheWriteTokens: event.usage.cacheWriteTokens,
+            completionTokens,
+            ...(firstTokenMs !== undefined && { firstTokenMs }),
+          });
+          if (event.usage.provider) {
+            lastCallCostCents = costCents;
+            lastPromptTokens = promptTokens;
+          }
+          flushUsage({ textInputTokens: Math.max(0, promptTokens - cachedTokens), cachedInputTokens: cachedTokens, textOutputTokens: completionTokens, providerCostCents: costCents });
+        }
+      } catch {
+        if (!warmAbort.signal.aborted) emitter.emit("llmCall", { purpose: "warmup", finishReason: "error", promptTokens: 0, cachedTokens: 0, completionTokens: 0 });
+      }
+    })();
+    activeResponses.add(warming);
+    void warming.finally(() => activeResponses.delete(warming));
+  }
   if (config.greeting) session.say(config.greeting);
+  else synthesizeNextBridge();
   return session;
 }
 

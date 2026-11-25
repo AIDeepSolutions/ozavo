@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeSse, textChunk, toolChunk, usageChunk } from "../testing/fake-pipeline";
 import type { ToolSpec } from "../types";
 import { LLM_PROFILES } from "./llm-profile";
-import { FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, chatBody, streamChat, type LlmEvent } from "./openrouter-llm";
+import { FALLBACK_PRICING, LlmHttpError, OPENROUTER_MODEL, chatBody, streamChat, streamChatResilient, type LlmEvent } from "./openrouter-llm";
 
 const stops: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -59,7 +59,11 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     expect(JSON.stringify(d)).not.toContain("cache_control");
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.d, plain: true })).not.toHaveProperty("reasoning");
     expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.b })).not.toHaveProperty("provider");
-    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e })).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", reasoning: { enabled: false }, provider: { order: ["together"], allow_fallbacks: true } });
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e })).toMatchObject({ model: "deepseek/deepseek-v4.1-flash", reasoning: { enabled: false }, provider: { order: ["together", "wafer", "reka"], allow_fallbacks: true } });
+    // Um modelo trocado à mão (teste) não herda o roteamento do perfil; o do próprio perfil, sim.
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e, model: "outro/modelo" })).not.toHaveProperty("provider");
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e, model: LLM_PROFILES.e.model })).toHaveProperty("provider");
+    expect(chatBody({ messages, tools: [], profile: LLM_PROFILES.e, providerOrder: ["wafer", "reka"] })).toMatchObject({ provider: { order: ["wafer", "reka"] } });
     const c = chatBody({ messages, tools: [], profile: LLM_PROFILES.c });
     expect(c).toMatchObject({ model: "google/gemini-2.5-flash", max_tokens: 400, messages });
     expect(c).not.toHaveProperty("reasoning");
@@ -221,5 +225,79 @@ describe("OpenRouter, Chat Completions em streaming", () => {
     });
     stops.push(() => server.stop());
     await expect(collect(streamChat({ apiKey: "k", baseUrl: server.url, messages: [], tools: [] }))).rejects.toThrow("OpenRouter: erro no meio da resposta");
+  });
+});
+
+describe("tempo limite no primeiro conteúdo, com nova tentativa no próximo provedor (ADR 0023)", () => {
+  const profile = { ...LLM_PROFILES.e, firstTokenTimeoutMs: 250 };
+  const messages = [{ role: "user" as const, content: "oi" }];
+
+  it("provedor que não entrega nada no prazo é largado, e o pedido sai de novo com os provedores que sobraram", async () => {
+    let calls = 0;
+    const server = await startFakeSse((_request, reply) => {
+      calls++;
+      if (calls === 1) return; // o primeiro provedor não responde
+      reply.write({ provider: "Wafer", choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+      reply.write({ provider: "Wafer", choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, cost: 0.0001 } });
+      reply.end();
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
+    expect(events.map((event) => event.type)).toEqual(["retry", "text", "usage"]);
+    expect(events[0]).toEqual({ type: "retry", provider: "together" });
+    expect(server.requests.map((request) => (request.body.provider as { order: string[] }).order)).toEqual([["together", "wafer", "reka"], ["wafer", "reka"]]);
+    expect(events.find((event) => event.type === "usage")).toMatchObject({ usage: { provider: "Wafer" } });
+  });
+
+  it("resposta no prazo: nenhuma nova tentativa, e o extrato é o do provedor", async () => {
+    const server = await startFakeSse((_request, reply) => {
+      reply.write({ provider: "Together", choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+      reply.write({ provider: "Together", choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, cost: 0.0001 } });
+      reply.end();
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
+    expect(events.map((event) => event.type)).toEqual(["text", "usage"]);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it("chamada de função também conta como conteúdo: não refaz um pedido que só responde com ferramenta", async () => {
+    const server = await startFakeSse(async (_request, reply) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      reply.write(toolChunk(0, { id: "c1", name: "agenda_marcar", arguments: "{}" }));
+      reply.end();
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools, profile }));
+    expect(events.some((event) => event.type === "retry")).toBe(false);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it("o último provedor da ordem não tem limite, e sem ordem ou sem limite no perfil é o streamChat de sempre", async () => {
+    let calls = 0;
+    const server = await startFakeSse(async (_request, reply) => {
+      calls++;
+      if (calls < 3) return; // os dois primeiros não respondem
+      await new Promise((resolve) => setTimeout(resolve, 400)); // o último demora mais que o limite e ainda assim vale
+      reply.write({ choices: [{ delta: { content: "Oi." }, finish_reason: null }] });
+      reply.end();
+    });
+    stops.push(() => server.stop());
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile }));
+    expect(events.filter((event) => event.type === "retry")).toHaveLength(2);
+    expect(events.some((event) => event.type === "text")).toBe(true);
+    const plain = await startFakeSse((_request, reply) => reply.end());
+    stops.push(() => plain.stop());
+    await collect(streamChatResilient({ apiKey: "k", baseUrl: plain.url, messages, tools: [], profile: LLM_PROFILES.b }));
+    expect(plain.requests).toHaveLength(1);
+  });
+
+  it("barge-in no meio: termina sem nova tentativa", async () => {
+    const server = await startFakeSse(() => undefined);
+    stops.push(() => server.stop());
+    const abort = new AbortController();
+    setTimeout(() => abort.abort(), 20);
+    const events = await collect(streamChatResilient({ apiKey: "k", baseUrl: server.url, messages, tools: [], profile, signal: abort.signal }));
+    expect(events.some((event) => event.type === "retry")).toBe(false);
   });
 });

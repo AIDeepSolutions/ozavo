@@ -180,13 +180,16 @@ export class KnowledgeRetriever {
    * reaproveita a busca especulativa quando a fala final é igual ou quase (`REUSE_SIMILARITY`); senão busca as
    * palavras da fala final na hora, com o vetor do texto parcial como aproximação (quando ele se parece
    * o bastante) ou o da própria fala.
+   *
+   * `peek`: a busca serve a um pedido ao modelo adiantado (ainda sem o fim do turno decidido). Não zera o estado nem entrega os
+   * tokens de embedding: se o pedido for aproveitado, `settle()` fecha o turno; se for largado, a busca da fala final reaproveita o trabalho.
    */
-  async forTurn(text: string): Promise<TurnRetrieval> {
+  async forTurn(text: string, peek = false): Promise<TurnRetrieval> {
     const startedAt = this.deps.now();
     const base = { mode: "rag" as const, speculative: false, usedVector: false };
     if (!needsKnowledge(text)) {
-      this.reset();
-      return { hits: [], info: { ...base, hits: [], retrievalMs: 0, embeddingTokens: this.drainTokens(), skipped: true } };
+      if (!peek) this.reset();
+      return { hits: [], info: { ...base, hits: [], retrievalMs: 0, embeddingTokens: peek ? 0 : this.drainTokens(), skipped: true } };
     }
     const closest = [...this.entries].sort((a, b) => wordSimilarity(b.text, text) - wordSimilarity(a.text, text))[0];
     const similarity = closest ? wordSimilarity(closest.text, text) : 0;
@@ -224,12 +227,18 @@ export class KnowledgeRetriever {
         retrievalMs: Math.max(0, this.deps.now() - startedAt),
         speculative,
         usedVector,
-        embeddingTokens: this.drainTokens(),
+        embeddingTokens: peek ? 0 : this.drainTokens(),
         ...(fallback && { fallback }),
       },
     };
-    this.reset();
+    if (!peek) this.reset();
     return result;
+  }
+
+  /** Fecha o turno de um pedido adiantado aproveitado: zera o estado e devolve os tokens de embedding que o turno gastou. */
+  settle(): number {
+    this.reset();
+    return this.drainTokens();
   }
 
   private reset(): void {

@@ -3,6 +3,7 @@ import { isPublicAddress } from "@ozavo/core";
 import { z } from "zod";
 import type { AnalysisGuess } from "./analysis";
 import type { OutcomeGuess } from "./outcome";
+import type { LatencyOptions } from "./pipeline/latency";
 import type { LlmProfileId } from "./pipeline/llm-profile";
 
 /** Definição de ferramenta no formato que os motores entendem (JSON Schema em `parameters`). */
@@ -47,6 +48,11 @@ export interface VoiceSessionConfig {
    * cada fala de quem ligou, por `search`. Ausente: o agente não tem base pronta, e nada muda.
    */
   knowledge?: KnowledgeConfig;
+  /**
+   * Ajustes de latência do motor em pipeline (`pipeline/latency.ts`): aquecimento, frase de ponte, especulação e fim de turno
+   * rápido. Ausente, tudo ligado. Os motores de voz direta ignoram.
+   */
+  latency?: Partial<LatencyOptions>;
 }
 
 /** Um trecho devolvido pela busca (o mesmo formato de `KnowledgeHit` de `@ozavo/core`). */
@@ -107,8 +113,24 @@ export interface TurnLatency {
   llmFirstTokenMs: number;
   /** Do primeiro texto mandado à síntese ao primeiro áudio dela (TTFB). */
   ttfbMs: number;
-  /** Do fim da fala de quem ligou ao primeiro áudio do agente. */
+  /** Do fim REAL da fala de quem ligou (pausa vista no áudio) ao primeiro som do agente: a frase de ponte conta. */
   rttMs: number;
+  /** Do fim real da fala ao primeiro som do TEXTO do modelo (sem a ponte): o total honesto. Igual a `rttMs` quando não houve ponte. */
+  answerMs?: number;
+  /** Do fim real da fala à decisão de que o turno acabou (espera do STT e do prazo de fim de turno). */
+  endpointMs?: number;
+  /** Do pedido ao modelo ao primeiro texto dele (só o modelo e a rede). */
+  modelMs?: number;
+  /** Do primeiro texto do modelo à primeira frase entregue à síntese. */
+  firstSentenceMs?: number;
+  /** Provedor que respondeu (o do OpenRouter), quando declarado. */
+  provider?: string;
+  /** A frase de ponte tocou antes da resposta. */
+  bridge?: boolean;
+  /** O pedido ao modelo começou antes do fim de turno: `hit` aproveitou, `miss` descartou e refez. Ausente: sem especulação. */
+  speculation?: "hit" | "miss";
+  /** Quantas conexões de modelo foram refeitas neste turno por demora no primeiro texto. */
+  retries?: number;
 }
 
 export interface VoiceSessionEvents {
@@ -170,6 +192,10 @@ export interface LlmCallInfo {
   fallbackStatus?: number;
   /** O que a base de conhecimento fez neste turno (sem o texto da conversa nem dos trechos). Ausente: o agente não tem base. */
   knowledge?: KnowledgeCallInfo;
+  /** Para que serviu a chamada, quando não foi uma resposta: `warmup` (aquecimento) ou `speculative` (especulativa descartada). */
+  purpose?: "warmup" | "speculative" | "retry";
+  /** Do pedido ao primeiro texto, em ms. */
+  firstTokenMs?: number;
 }
 
 /** Por que a busca não entregou tudo: a ligação seguiu sem os trechos ou só com os da busca por palavras. */
