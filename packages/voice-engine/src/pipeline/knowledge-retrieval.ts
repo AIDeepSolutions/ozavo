@@ -69,7 +69,7 @@ const ACKNOWLEDGEMENTS = new Set([
   "si", "sí", "vale", "bueno", "buenos", "dias", "días", "tardes", "noches", "hola", "gracias", "adios", "adiós", "hasta", "luego", "entiendo", "claro", "perfecto", "genial", "perdon", "perdón", "disculpe", "espere", "momento",
 ]);
 
-const NUMBER_WORDS = new Set(["zero", "um", "uma", "dois", "duas", "tres", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "cero", "uno", "dos", "cuatro", "seis", "siete", "ocho", "nueve", "diez"]);
+const NUMBER_WORDS = new Set(["zero", "um", "uma", "dois", "duas", "tres", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze", "treze", "catorze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "cero", "uno", "dos", "cuatro", "seis", "siete", "ocho", "nueve", "diez"]);
 
 const normalizeWords = (text: string): string[] =>
   text

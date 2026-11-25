@@ -54,7 +54,7 @@ function harness(options: { embed?: (text: string) => Promise<EmbeddingResult>; 
 }
 
 describe("quais falas pedem busca", () => {
-  it.each(["ok", "sim", "não", "tchau", "bom dia", "tudo bem", "obrigado", "pode ser", "isso mesmo", "11 99999 8888", "dois", "um dois três", "uhum", "", "   "])("%j não pede", (text) => {
+  it.each(["ok", "sim", "não", "tchau", "bom dia", "tudo bem", "obrigado", "pode ser", "isso mesmo", "11 99999 8888", "dois", "um dois três", "onze nove nove nove nove oito oito oito", "uhum", "", "   "])("%j não pede", (text) => {
     expect(needsKnowledge(text)).toBe(false);
   });
 
