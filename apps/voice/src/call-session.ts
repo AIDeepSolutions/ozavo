@@ -6,6 +6,7 @@ import { messageOf, silentLogger, type Logger } from "./log";
 import { panelNotice } from "./panel-notice";
 import { createSilenceGuard, type SilenceGuard } from "./silence-guard";
 import { MIN_FREE_BYTES_TO_RECORD, freeBytes, startRecording, type Recording } from "./recording";
+import { prepareCallKnowledge, type CallKnowledge } from "./knowledge";
 import { failureTone, realSchedule, type CallTransport, type Schedule } from "./transport";
 
 /** O áudio do motor é PCM16 mono 8 kHz: 16 bytes por milissegundo de fala. */
@@ -484,6 +485,11 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
     }
     const engineId = overrides?.engineId ?? agent.engine;
     engine = deps.engines.get(engineId);
+    // A base de conhecimento do agente carrega junto com o resto da preparação (a roteirizada de teste não usa).
+    const knowledgeLoading: Promise<CallKnowledge> | undefined =
+      engine && !engine.keyless && overrides?.instructions === undefined
+        ? prepareCallKnowledge({ orgQuery: () => autoCommitOrgQuery(deps.db, organizationId), agentId, language: agent.language, supportsRetrieval: engine.retrievesKnowledge === true, now: () => clock.now().getTime(), log })
+        : undefined;
     const notice = await q.one<{ value: unknown }>("select value from settings where organization_id = $1 and key = $2", [organizationId, RECORDING_NOTICE_SETTING]);
     // Sem texto do operador, ou com texto em branco, vale o padrão: o aviso nunca falta.
     const recordingNotice = typeof notice?.value === "string" && notice.value.trim() !== "" ? notice.value.trim() : DEFAULT_RECORDING_NOTICE;
@@ -527,14 +533,16 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
         }
       }
     }
+    let knowledge: CallKnowledge = { kind: "none" };
     if (engine && problem === undefined && !ending) {
+      knowledge = (await knowledgeLoading) ?? knowledge;
       const connecting = engine.connect(
         {
           direction: call.direction,
           // O roteiro da chamada simulada substitui tudo: é o teste de um roteiro, não da empresa.
           instructions:
             overrides?.instructions ??
-            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined, now: clock.now(), timeZone: (await readAgendaConnector(q))?.timezone }),
+            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined, now: clock.now(), timeZone: (await readAgendaConnector(q))?.timezone, knowledgeSection: knowledge.kind === "ready" ? knowledge.section : undefined }),
           // O aviso vem antes de tudo, e os motores falam a abertura ao conectar: o aviso entra
           // na frente da saudação. Lição do DeskcommCRM: na ligação recebida quem atende fala
           // primeiro; na que nós fazemos, quem atende diz "alô" e o agente responde a isso, então
@@ -549,6 +557,8 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
           listeningEnvironment: agent.listening_environment,
           // O perfil do modelo de texto (só o motor em pipeline usa).
           llmProfile: isLlmProfileId(agent.llm_profile) ? agent.llm_profile : undefined,
+          // A base de conhecimento (só o motor em pipeline busca por turno; os outros recebem a base inteira no prompt).
+          knowledge: knowledge.kind === "ready" ? knowledge.config : undefined,
         },
         apiKey,
       );
@@ -678,6 +688,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
       q.exec("update calls set status = 'in_progress', answered_at = $2, engine = $3 where id = $1", [callId, clock.now(), engineId]),
       event("call_answered", { engine: engineId }),
       event("recording_notice", { text: recordingNotice }),
+      ...(knowledge.kind === "none" ? [] : [event("knowledge_loaded", knowledge.payload)]),
     ];
     if (call.direction !== "inbound") session.say(recordingNotice);
     cancelTimers.push(schedule(() => wrapUp(FAREWELL.maxDuration, { status: "completed", endReason: "max_duration" }), agent.max_call_seconds * 1000));

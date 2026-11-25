@@ -324,3 +324,52 @@ describe("partes da chave na tela", () => {
     expect(parsePipelineKey(JSON.stringify(typed))).toEqual({ deepgram: "deepgram-falsa", cartesia: "cartesia-falsa", openrouter: "openrouter-falsa" });
   });
 });
+
+describe("base de conhecimento no motor em pipeline", () => {
+  it("declara que busca na base; o embedding da pergunta vai ao OpenRouter com a chave da ligação e os trechos chegam ao modelo antes da fala", async () => {
+    const deepgram = await startFakeWs();
+    const cartesia = await startFakeWs();
+    const replies: SseReply[] = [];
+    const openrouter = await startFakeSse((_request, reply) => void replies.push(reply));
+    stops.push(() => deepgram.stop(), () => cartesia.stop(), () => openrouter.stop());
+    const embeddingRequests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const fakeFetch = (async (url: unknown, init?: RequestInit): Promise<Response> => {
+      if (!String(url).endsWith("/embeddings")) return fetch(url as string, init);
+      embeddingRequests.push({ url: String(url), authorization: new Headers(init?.headers).get("authorization"), body: JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array<number>(1536).fill(0.01) }], usage: { prompt_tokens: 6, cost: 1.2e-7 } }), { status: 200 });
+    }) as typeof fetch;
+    const searches: Array<{ question: string; embedded: boolean }> = [];
+    const session = await connectPipeline(
+      {
+        instructions: "Você é a recepcionista.",
+        language: "pt-BR",
+        tools: [],
+        knowledge: {
+          mode: "rag",
+          only: false,
+          search: async ({ question, embedding }) => {
+            searches.push({ question, embedded: embedding !== null });
+            return [{ chunkId: "c1", sourceId: "s1", sourceName: "Manual", position: 1, section: "Preços", content: "Limpeza R$ 180,00.", tokenCount: 10, vectorScore: 0.6, lexicalRank: 1, score: 0.03 }];
+          },
+        },
+      },
+      KEY,
+      { urls: { stt: deepgram.url, tts: cartesia.url, llm: openrouter.url }, fetch: fakeFetch },
+    );
+    stops.unshift(() => session.close());
+    expect(engine.retrievesKnowledge).toBe(true);
+    const usages: Array<{ providerCostCents?: number }> = [];
+    session.on("usage", (usage) => usages.push(usage));
+
+    deepgram.send(results("Quanto custa a limpeza dental?", true));
+    await until(() => replies.length === 1);
+    const messages = openrouter.requests[0]?.body.messages as Array<{ role: string; content: unknown }>;
+    expect(messages.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(JSON.stringify(messages[1])).toContain("Limpeza R$ 180,00.");
+    expect(embeddingRequests).toHaveLength(1);
+    expect(embeddingRequests[0]).toMatchObject({ authorization: "Bearer sk-or-falsa", body: { model: "openai/text-embedding-3-small", input: ["Quanto custa a limpeza dental?"] } });
+    expect(searches.map((s) => s.embedded).sort()).toEqual([false, true]);
+    // 1,2e-7 dólar = 1,2e-5 centavo, no extrato como custo do provedor
+    expect(usages.some((u) => u.providerCostCents !== undefined && Math.abs(u.providerCostCents - 1.2e-5) < 1e-12)).toBe(true);
+  });
+});

@@ -29,7 +29,7 @@
  * Onde o áudio é processado: nenhum dos três publica, nas páginas consultadas, o país onde processa a
  * fala; fica `undeclared`.
  */
-import { systemClock, type Clock } from "@ozavo/core";
+import { embedTexts, systemClock, type Clock } from "@ozavo/core";
 import { checkKeyOverHttp } from "../key-check";
 import { CARTESIA_API_URL, CARTESIA_MODEL, CARTESIA_VERSION, openCartesiaTts } from "../pipeline/cartesia-tts";
 import { InvalidPipelineKeyError, parsePipelineKey, type PipelineCredentials } from "../pipeline/credentials";
@@ -42,6 +42,9 @@ import type { ConnectOptions, KeyCheck, KeyCheckOptions, KeyCheckResult, VoiceEn
 import { z } from "zod";
 
 export const PIPELINE_ENGINE_ID = "deepgram-openrouter-cartesia";
+
+/** Prazo do embedding da pergunta. A busca só espera o orçamento (100 ms); o resto é para o resultado entrar no cache da ligação. */
+const QUESTION_EMBEDDING_TIMEOUT_MS = 2000;
 
 export interface PipelineConnectOptions extends ConnectOptions {
   /** Endereços de cada provedor (testes apontam para servidores falsos). */
@@ -76,6 +79,15 @@ export async function connectPipeline(config: VoiceSessionConfig, apiKey: string
     schedule: options.schedule,
     onMetrics: options.onMetrics,
     amd: options.amd,
+    // Embedding da pergunta para a base de conhecimento: a chave do OpenRouter é a mesma do modelo de texto, e uma tentativa só (repetir estoura o orçamento do turno).
+    ...(config.knowledge?.mode === "rag" && config.knowledge.search && {
+      embedQuestion: async (text: string) => {
+        const result = await embedTexts([text], { apiKey: keys.openrouter, fetch: options.fetch, attempts: 1, timeoutMs: QUESTION_EMBEDDING_TIMEOUT_MS });
+        const vector = result.vectors[0];
+        if (!vector) throw new Error("empty embedding");
+        return { vector, tokens: result.tokens, costMicrocents: result.costMicrocents };
+      },
+    }),
     openStt: (handlers) =>
       openDeepgramStt(
         {
@@ -177,6 +189,7 @@ const engine: VoiceEngine = {
   voices: CARTESIA_PT_VOICES,
   acceptsCustomVoices: true,
   detectsAnsweringMachine: true,
+  retrievesKnowledge: true,
   defaultVoice: CARTESIA_DEFAULT_VOICE,
   // A ordem e os ids são os de `pipelineCredentials`: a tela monta o JSON que `parsePipelineKey` lê.
   keyParts: [

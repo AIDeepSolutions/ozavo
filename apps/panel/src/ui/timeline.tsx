@@ -60,6 +60,42 @@ export function analysisNotDoneText(e: TimelineDictionary["events"], payload: Re
   return fill(e.analysis_not_done, { reason: known ? fill(known, { model: text(payload.model) }) : code });
 }
 
+/** O que a base de conhecimento fez neste turno (`llm_call.knowledge`): fonte, seção e pontuação de cada trecho, e o motivo de uma falha. Nunca o texto dos trechos. */
+function KnowledgeNote({ e, knowledge, locale }: { e: TimelineDictionary["events"]; knowledge: unknown; locale: string }) {
+  if (typeof knowledge !== "object" || knowledge === null) return null;
+  const k = knowledge as Record<string, unknown>;
+  const ms = Math.round(Number(k.retrievalMs) || 0).toLocaleString(locale);
+  const fallback = text(k.fallback);
+  const fallbackText = Object.hasOwn(e.llm_call_knowledge_fallback, fallback) ? e.llm_call_knowledge_fallback[fallback] : undefined;
+  const hits = Array.isArray(k.hits) ? (k.hits as Array<Record<string, unknown>>) : [];
+  if (k.mode === "full") return <Quiet>{e.llm_call_knowledge_full}</Quiet>;
+  if (k.skipped === true) return <Quiet>{e.llm_call_knowledge_skipped}</Quiet>;
+  const tags = [k.speculative === true ? e.llm_call_knowledge_tags.speculative : "", k.usedVector === true ? e.llm_call_knowledge_tags.vector : e.llm_call_knowledge_tags.words].filter((tag) => tag !== "");
+  return (
+    <>
+      {fallbackText && <Quiet>{fallbackText}</Quiet>}
+      {hits.length === 0 ? (
+        <Quiet>{fill(e.llm_call_knowledge_none, { ms })}</Quiet>
+      ) : (
+        <>
+          <Quiet>{fill(e.llm_call_knowledge_hits, { count: String(hits.length), ms, tags: `, ${tags.join(", ")}` })}</Quiet>
+          <ul className="grid gap-0.5 pl-4 text-[0.87rem] text-muted">
+            {hits.map((hit, index) => (
+              <li key={`${text(hit.chunkId)}-${index}`}>
+                {fill(e.llm_call_knowledge_hit, {
+                  source: text(hit.sourceName) || "?",
+                  section: text(hit.section) || "—",
+                  score: typeof hit.vectorScore === "number" ? hit.vectorScore.toLocaleString(locale, { maximumFractionDigits: 2 }) : Number(hit.score).toLocaleString(locale, { maximumFractionDigits: 4 }),
+                })}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
 const Quiet = ({ children }: { children: ReactNode }) => <p className="pt-1 text-muted">{children}</p>;
 /** O lugar do texto que saiu a pedido de quem ligou (`erased` no payload). */
 const Erased = ({ children }: { children: ReactNode }) => <p className="text-[0.87rem] text-muted italic">{children}</p>;
@@ -428,7 +464,31 @@ export function Timeline({
           ...base,
           tone: p.finishReason === "length" ? "accent" : "neutral",
           icon: Gauge,
-          body: <Quiet>{fill(e.llm_call, { model: label(p.model), provider: label(p.provider), prompt: n(p.promptTokens), cached: n(p.cachedTokens), reasoning: n(p.reasoningTokens), finish: label(p.finishReason) })}</Quiet>,
+          body: (
+            <>
+              <Quiet>{fill(e.llm_call, { model: label(p.model), provider: label(p.provider), prompt: n(p.promptTokens), cached: n(p.cachedTokens), reasoning: n(p.reasoningTokens), finish: label(p.finishReason) })}</Quiet>
+              <KnowledgeNote e={e} knowledge={p.knowledge} locale={locale} />
+            </>
+          ),
+        };
+      }
+      case "knowledge_loaded": {
+        const sourceCount = Number(p.sources);
+        const failed = typeof p.fallback === "string";
+        const reasonText = text(p.fallback);
+        const reason = Object.hasOwn(e.knowledge_unavailable_reasons, reasonText) ? e.knowledge_unavailable_reasons[reasonText] : reasonText;
+        const mode = text(p.mode);
+        return {
+          ...base,
+          tone: failed ? "accent" : "neutral",
+          icon: Gauge,
+          body: (
+            <Quiet>
+              {failed
+                ? fill(e.knowledge_loaded_unavailable, { reason: reason ?? reasonText })
+                : fill(e.knowledge_loaded, { sources: String(sourceCount), tokens: Number(p.tokens).toLocaleString(locale), mode: (Object.hasOwn(e.knowledge_modes, mode) ? e.knowledge_modes[mode] : mode) ?? mode, ms: Math.round(Number(p.loadMs)).toLocaleString(locale) })}
+            </Quiet>
+          ),
         };
       }
       case "webhook_queue_failed":

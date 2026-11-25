@@ -41,6 +41,40 @@ export interface VoiceSessionConfig {
    * ou desconhecido vale `a`. Os motores de voz direta ignoram.
    */
   llmProfile?: LlmProfileId;
+  /**
+   * A base de conhecimento do agente nesta ligação (`knowledge-prompt.ts`). No modo `full` os documentos já estão em
+   * `instructions` e este campo só diz isso à sessão (para registrar). No modo `rag` o motor em pipeline busca os trechos a
+   * cada fala de quem ligou, por `search`. Ausente: o agente não tem base pronta, e nada muda.
+   */
+  knowledge?: KnowledgeConfig;
+}
+
+/** Um trecho devolvido pela busca (o mesmo formato de `KnowledgeHit` de `@ozavo/core`). */
+export interface KnowledgeSearchHit {
+  chunkId: string;
+  sourceId: string;
+  sourceName: string;
+  position: number;
+  section: string | null;
+  content: string;
+  tokenCount: number;
+  /** Similaridade de cosseno (0 a 1), quando o trecho veio da busca por similaridade. */
+  vectorScore: number | null;
+  lexicalRank: number | null;
+  /** Pontuação da fusão das duas buscas. */
+  score: number;
+}
+
+export interface KnowledgeConfig {
+  mode: "full" | "rag";
+  /** O agente só responde pelo que está na base (a instrução já está em `instructions`; aqui vale para o aviso por turno). */
+  only: boolean;
+  /** Quantos trechos entram por turno (padrão 4). */
+  topK?: number;
+  /** Quanto o turno pode esperar pela busca, em ms (padrão 100). */
+  budgetMs?: number;
+  /** A busca na base da organização. `embedding` ausente: só por palavras. Só no modo `rag`. */
+  search?(query: { question: string; embedding: readonly number[] | null; k: number }): Promise<KnowledgeSearchHit[]>;
 }
 
 /** Como o agente ajusta a detecção de fala do provedor. `normal` é o de sempre. */
@@ -134,6 +168,28 @@ export interface LlmCallInfo {
   fallback?: boolean;
   /** O status HTTP da recusa que causou o fallback. */
   fallbackStatus?: number;
+  /** O que a base de conhecimento fez neste turno (sem o texto da conversa nem dos trechos). Ausente: o agente não tem base. */
+  knowledge?: KnowledgeCallInfo;
+}
+
+/** Por que a busca não entregou tudo: a ligação seguiu sem os trechos ou só com os da busca por palavras. */
+export type KnowledgeFallback = "embedding_late" | "embedding_failed" | "search_late" | "search_failed";
+
+/** Registro de auditoria da base num turno. Nunca carrega a fala de ninguém nem o texto dos trechos. */
+export interface KnowledgeCallInfo {
+  mode: "full" | "rag";
+  hits: Array<{ chunkId: string; sourceId: string; sourceName: string; position: number; section: string | null; score: number; vectorScore: number | null }>;
+  /** Quanto o turno esperou pela busca além do que já esperava, em ms. Zero quando o resultado especulativo já estava pronto. */
+  retrievalMs: number;
+  /** A busca saiu do texto parcial da transcrição (antes do fim da fala). */
+  speculative: boolean;
+  /** O vetor da pergunta entrou na busca (senão, só palavras). */
+  usedVector: boolean;
+  /** Tokens de embedding gastos neste turno (o custo está no extrato da ligação). */
+  embeddingTokens: number;
+  /** Fala curta demais para precisar de busca (ok, sim, tchau, número): nada foi buscado. */
+  skipped?: boolean;
+  fallback?: KnowledgeFallback;
 }
 
 export interface AnsweringMachineDetection {
@@ -363,6 +419,8 @@ export interface VoiceEngine {
    * quem atendeu (`apps/voice/src/call-session.ts`), então toda ligação de saída tem AMD.
    */
   detectsAnsweringMachine?: boolean;
+  /** O motor busca trechos da base de conhecimento a cada fala (`KnowledgeConfig.search`). Sem isto, só o modo "base inteira" vale. */
+  retrievesKnowledge?: boolean;
   pricing: EnginePricing;
   connect(config: VoiceSessionConfig, apiKey: string, options?: ConnectOptions): Promise<VoiceSession>;
   /**
