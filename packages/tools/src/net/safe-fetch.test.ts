@@ -2,11 +2,19 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fakeFetch, fakeLookup } from "../../test/helpers";
-import { isPublicAddress, safeFetch, UnsafeDestinationError } from "./safe-fetch";
+import { isPublicAddress, safeFetch, UnsafeDestinationError, USER_AGENT, withUserAgent } from "./safe-fetch";
 
 const neverFetch: typeof fetch = async () => {
   throw new Error("fetch must not be called for a blocked destination");
 };
+
+describe("User-Agent", () => {
+  it("o pedido sempre se identifica (a Cloudflare do Cal.com barrava o pedido sem User-Agent), mas respeita o de quem chama", () => {
+    expect(withUserAgent({ Authorization: "Bearer x" })).toEqual({ "User-Agent": USER_AGENT, Authorization: "Bearer x" });
+    expect(withUserAgent({ "user-agent": "Outro/2" })).toEqual({ "user-agent": "Outro/2" });
+    expect(USER_AGENT).toMatch(/^Ozavo\/\d/);
+  });
+});
 
 describe("safeFetch", () => {
   it.each([
