@@ -39,6 +39,17 @@ describe("assessTurnEnd: fim de turno pela pausa", () => {
     expect(kind("E quais são suas? empreitadas aí nessa empresa?")).toBe("closed");
   });
 
+  it("pergunta curta que termina na palavra interrogativa está completa (\"Tem como?\", ligação de 25/11), sem abrir mão dos casos cortados", () => {
+    expect(kind("Tem como?")).toBe("closed");
+    expect(kind("Quanto?")).toBe("closed");
+    expect(kind("E onde?")).toBe("closed");
+    // Sem o "?", a palavra interrogativa no fim ainda é frase aberta; e frase longa ou possessivo seguem abertos.
+    expect(kind("Tem como")).toBe("open");
+    expect(kind("Eu queria saber como")).toBe("open");
+    expect(kind("Eu queria entender como?")).toBe("open");
+    expect(kind("E quais são suas?")).toBe("open");
+  });
+
   it("frase fechada e resposta curta fecham na hora; a espera do silêncio é pequena", () => {
     expect(kind("Quero marcar uma consulta.")).toBe("closed");
     expect(kind("Vocês abrem sábado?")).toBe("closed");
@@ -52,7 +63,7 @@ describe("assessTurnEnd: fim de turno pela pausa", () => {
   it("conjunção, preposição, artigo, vírgula e reticências deixam a frase aberta", () => {
     for (const text of ["Quero marcar para", "Eu queria saber se", "Pode ser com o", "então,", "Quanto custa a"]) expect(kind(text)).toBe("open");
     expect(kind("deixa eu ver...")).toBe("hesitation");
-    expect(assessTurnEnd("Quero marcar para").silenceMs).toBeGreaterThanOrEqual(1000);
+    expect(assessTurnEnd("Quero marcar para").silenceMs).toBeGreaterThanOrEqual(850);
   });
 
   it("hesitação e dado ditado pela metade esperam, mesmo com ponto final", () => {

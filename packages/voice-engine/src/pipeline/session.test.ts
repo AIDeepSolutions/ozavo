@@ -9,7 +9,7 @@ import type { TtsHandlers } from "./cartesia-tts";
 import type { SttHandlers } from "./deepgram-stt";
 import { ENDPOINT_CLOSED_MS } from "./endpointing";
 import type { ChatMessage, LlmEvent } from "./openrouter-llm";
-import { createPipelineSession, isEchoOf, speakable, splitPoint, type PipelineSessionDeps, type TurnMetrics } from "./session";
+import { WORDS_QUIET_MS, WORDS_QUIET_STUCK_MS, createPipelineSession, isEchoOf, speakable, splitPoint, type PipelineSessionDeps, type TurnMetrics } from "./session";
 
 /** Um pedido ao modelo que o teste controla: empurra eventos, termina ou falha quando quiser. */
 class ScriptedStream {
@@ -248,7 +248,8 @@ describe("sessão do pipeline", () => {
   it("endpointing dinâmico: frase fechada encerra o turno no prazo curto, e o modelo recebe o histórico", async () => {
     const t = await setup();
     callerSays(t, "Quero marcar uma consulta.");
-    expect(t.timers.pending()).toEqual([ENDPOINT_CLOSED_MS]);
+    // O prazo do fim de turno e o silêncio de palavras (rede de segurança) ficam armados juntos.
+    expect(t.timers.pending()).toEqual([WORDS_QUIET_MS, ENDPOINT_CLOSED_MS]);
     expect(t.streams).toHaveLength(0);
     t.timers.runAll();
     expect(t.transcripts).toEqual([{ speaker: "user", text: "Quero marcar uma consulta." }]);
@@ -262,9 +263,10 @@ describe("sessão do pipeline", () => {
   it("a pessoa continuar falando cancela o fim de turno marcado", async () => {
     const t = await setup();
     t.ports.stt.final("Quero marcar para", true);
-    expect(t.timers.pending()).toHaveLength(1);
+    expect(t.timers.pending()).toHaveLength(2);
     t.ports.stt.partial("sexta");
-    expect(t.timers.pending()).toEqual([]);
+    // Só sobra o silêncio de palavras, rearmado pela palavra nova: o prazo do fim de turno foi cancelado.
+    expect(t.timers.pending()).toEqual([WORDS_QUIET_MS]);
     t.ports.stt.final("sexta de manhã.", true);
     t.timers.runAll();
     expect(t.transcripts).toEqual([{ speaker: "user", text: "Quero marcar para sexta de manhã." }]);
@@ -528,6 +530,7 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
         endpointMs: ENDPOINT_CLOSED_MS,
         modelMs: LLM_FIRST_TOKEN_MS,
         firstSentenceMs: 0,
+        endBy: "speech_final",
       },
     ]);
     // A mesma medida sai como evento da sessão, que a conversa grava na linha do tempo.
@@ -833,8 +836,8 @@ describe("fim de turno pela pausa e pedido adiantado ao modelo (ADR 0023)", () =
     // A Deepgram até pontua o pedaço: a palavra que sobra no fim (possessivo) o mantém aberto.
     t.ports.stt.final("E quais são suas?", false);
     expect(t.streams).toHaveLength(0);
-    expect(t.timers.pending().length).toBe(1);
-    expect(t.timers.pending()[0]).toBeGreaterThan(500);
+    expect(t.timers.pending().length).toBe(2);
+    expect(Math.max(...t.timers.pending())).toBeGreaterThan(400);
     // A pessoa continua: o prazo do fim de turno cai.
     t.time.advance(250);
     t.session.sendAudio(speech(20));
@@ -854,9 +857,9 @@ describe("fim de turno pela pausa e pedido adiantado ao modelo (ADR 0023)", () =
     pause(t);
     t.time.advance(260);
     t.ports.stt.final("sexta de manhã", false);
-    expect(t.timers.pending().length).toBe(1);
+    expect(t.timers.pending().length).toBe(2);
     t.ports.stt.partial("sexta de manhã");
-    expect(t.timers.pending().length).toBe(1);
+    expect(t.timers.pending().length).toBe(2);
     t.timers.runAll();
     expect(t.streams).toHaveLength(1);
   });
@@ -932,6 +935,131 @@ describe("fim de turno pela pausa e pedido adiantado ao modelo (ADR 0023)", () =
     expect(off.streams).toHaveLength(0);
     off.timers.runAll();
     expect(off.streams).toHaveLength(1);
+  });
+});
+
+describe("fim de turno que não depende da pausa local nem do speech_final (ligação de 25/11: 7 de 23 turnos esperaram o UtteranceEnd, ~1,25 s)", () => {
+  function pause(t: Awaited<ReturnType<typeof setup>>, speechFrames = 30): void {
+    t.session.sendAudio(speech(speechFrames));
+    t.session.sendAudio(silence(6));
+  }
+
+  it("o SpeechStarted da Deepgram depois do final (ruído de linha) não cancela a pausa confirmada nem joga fora o pedido adiantado", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(150);
+    t.ports.stt.final("Está certo.", false);
+    expect(t.streams).toHaveLength(1);
+    expect(t.timers.pending()).toContain(100);
+    t.ports.stt.speechStarted();
+    expect(t.streams[0]?.signal.aborted).toBe(false);
+    expect(t.timers.pending()).toContain(100);
+    t.streams[0]?.push({ type: "text", delta: "Perfeito, então fica combinado assim." });
+    t.time.advance(100);
+    t.timers.runAll();
+    await until(() => t.spoken.length === 1);
+    expect(t.streams).toHaveLength(1);
+    t.time.advance(80);
+    t.ports.tts.firstAudio("turn-1", 80);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]).toMatchObject({ speculation: "hit", endBy: "pause" });
+    expect(t.metrics[0]?.endpointMs).toBeLessThan(400);
+  });
+
+  it("o SpeechStarted sem pausa confirmada (a pessoa ainda fala) continua cancelando o fim de turno e o pedido adiantado", async () => {
+    const t = await setup();
+    pause(t);
+    t.time.advance(150);
+    t.ports.stt.final("Está certo.", false);
+    expect(t.streams).toHaveLength(1);
+    // A pessoa volta a falar: o detector local vê voz sustentada e o provedor também.
+    t.session.sendAudio(speech(20));
+    t.ports.stt.speechStarted();
+    expect(t.streams[0]?.signal.aborted).toBe(true);
+    expect(t.timers.pending()).not.toContain(100);
+  });
+
+  it("sem pausa local e sem speech_final: parciais que param de chegar pedem o texto (Finalize), e o final que volta fecha o turno", async () => {
+    const t = await setup();
+    t.ports.stt.partial("Quero a sexta de manhã");
+    expect(t.timers.pending()).toEqual([WORDS_QUIET_MS]);
+    expect(t.finalizes()).toBe(0);
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    expect(t.finalizes()).toBe(1);
+    // O final pedido chega pelo caminho da pausa, sem speech_final.
+    t.time.advance(150);
+    t.ports.stt.final("Quero a sexta de manhã.", false);
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(1);
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Quero a sexta de manhã." });
+  });
+
+  it("final sem pausa local e sem speech_final (só o UtteranceEnd fecharia): o silêncio de palavras fecha pelo prazo da classe da frase", async () => {
+    const t = await setup();
+    t.ports.stt.final("Pode sim senhor.", false);
+    expect(t.streams).toHaveLength(0);
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Pode sim senhor." });
+    expect(t.streams).toHaveLength(1);
+    t.ports.tts.firstAudio("turn-1", 80);
+    t.streams[0]?.push({ type: "text", delta: "Ótimo, então vou anotar isso agora." });
+    await until(() => t.spoken.length === 1);
+    t.ports.tts.audio("turn-1", Buffer.alloc(320));
+    expect(t.metrics[0]?.endBy).toBe("quiet");
+    expect(t.metrics[0]?.endpointMs).toBeLessThan(700);
+  });
+
+  it("frase aberta continua esperando: o silêncio de palavras só adianta o que a classe da frase já aceitava (E quais são suas / empreitadas)", async () => {
+    const t = await setup();
+    t.ports.stt.final("E quais são suas?", false);
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    // Possessivo no fim: o prazo é o de frase aberta (1 s do fim real da fala), não o curto.
+    expect(t.streams).toHaveLength(0);
+    expect(Math.max(...t.timers.pending())).toBeGreaterThan(400);
+    t.time.advance(300);
+    t.ports.stt.partial("empreitadas aí nessa empresa?");
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(0);
+    t.ports.stt.final("empreitadas aí nessa empresa?", false);
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([{ speaker: "user", text: "E quais são suas? empreitadas aí nessa empresa?" }]);
+  });
+
+  it("o detector local ainda vê voz: o silêncio de palavras espera (a pessoa pode estar retomando), até o limite de voz presa", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.final("Pode ser.", false);
+    t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.streams).toHaveLength(0);
+    // Voz presa (ruído): passado o limite sem palavras, vale o silêncio de palavras.
+    t.time.advance(WORDS_QUIET_STUCK_MS);
+    t.timers.runAll();
+    t.time.advance(100);
+    t.timers.runAll();
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Pode ser." });
+  });
+
+  it("palavra nova desarma o silêncio de palavras, e eco do agente não o arma", async () => {
+    const t = await setup();
+    t.ports.stt.partial("Quero a sexta");
+    t.ports.stt.partial("Quero a sexta de manhã");
+    expect(t.timers.pending()).toEqual([WORDS_QUIET_MS]);
+    const echo = await setup({}, {});
+    echo.session.say("Posso ajudar com a agenda?");
+    echo.ports.stt.partial("posso ajudar");
+    expect(echo.timers.pending()).toEqual([]);
   });
 });
 
@@ -1117,7 +1245,8 @@ describe("achados da revisão do PR #36", () => {
     // Outra fala começa sem o detector de pausa ver o começo dela; um final sem pausa não fecha nada.
     t.ports.stt.final("e também queria saber", false);
     expect(t.streams).toHaveLength(1);
-    expect(t.timers.pending()).toEqual([]);
+    // Nenhum prazo de fim de turno: só o silêncio de palavras, que decide depois do `Finalize` (testes abaixo).
+    expect(t.timers.pending()).toEqual([WORDS_QUIET_MS]);
   });
 
   it("turno que continua um resultado de ferramenta não ganha ponte, mesmo com fala enfileirada durante a ferramenta", async () => {

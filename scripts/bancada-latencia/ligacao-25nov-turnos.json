@@ -1,0 +1,186 @@
+[
+ {
+  "turn": 1,
+  "user": "Fala meu tudo bem?",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 992,
+  "modelMs": 388
+ },
+ {
+  "turn": 2,
+  "user": "Tudo bem.",
+  "endpointMs": 1276,
+  "speculation": "miss",
+  "rttMs": 1860,
+  "modelMs": 293
+ },
+ {
+  "turn": 3,
+  "user": "Ah, já tenho um pouquinho sobre o que você fazem, que eu gostaria de, marcar uma conversa para amanhã, às sim, das 5 até às 5 e meia, tem como?",
+  "endpointMs": 1001,
+  "speculation": null,
+  "rttMs": 1102,
+  "modelMs": 455
+ },
+ {
+  "turn": 4,
+  "user": "Meu nome completo é Fulano.",
+  "endpointMs": 349,
+  "speculation": "hit",
+  "rttMs": 450,
+  "modelMs": 284
+ },
+ {
+  "turn": 5,
+  "user": "Fulano, com p h.",
+  "endpointMs": 1256,
+  "speculation": "miss",
+  "rttMs": 1357,
+  "modelMs": 278
+ },
+ {
+  "turn": 6,
+  "user": "Não, é uma, n a t h EUS.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 899,
+  "modelMs": 267
+ },
+ {
+  "turn": 7,
+  "user": "Sim.",
+  "endpointMs": 300,
+  "speculation": "hit",
+  "rttMs": 402,
+  "modelMs": 257
+ },
+ {
+  "turn": 8,
+  "user": "Fulano Indústria, de Carro, LTDA.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 283
+ },
+ {
+  "turn": 9,
+  "user": "Fulano arroba e-mail ponto com.",
+  "endpointMs": 1253,
+  "speculation": null,
+  "rttMs": 1778,
+  "modelMs": 297
+ },
+ {
+  "turn": 10,
+  "user": "Está certo.",
+  "endpointMs": 1257,
+  "speculation": "miss",
+  "rttMs": 1358,
+  "modelMs": 281
+ },
+ {
+  "turn": 11,
+  "user": "Ah eu tenho alguma, planilhas, que eu preciso otimizar, sabe?",
+  "endpointMs": 352,
+  "speculation": "hit",
+  "rttMs": 454,
+  "modelMs": 220
+ },
+ {
+  "turn": 12,
+  "user": "E também tem algumas automações eu quero fazer, algumas",
+  "endpointMs": 499,
+  "speculation": "hit",
+  "rttMs": 823,
+  "modelMs": 79
+ },
+ {
+  "turn": 13,
+  "user": "Não então, queria marcar para amanhã, 5.",
+  "endpointMs": 40,
+  "speculation": null,
+  "rttMs": 140,
+  "modelMs": 297
+ },
+ {
+  "turn": 14,
+  "user": "Tem como?",
+  "endpointMs": 1189,
+  "speculation": null,
+  "rttMs": 2817,
+  "modelMs": 1280
+ },
+ {
+  "turn": 15,
+  "user": "Não, eu acho que pode ser no mesmo dia, tem algum horário mais cedo?",
+  "endpointMs": 349,
+  "speculation": "hit",
+  "rttMs": 450,
+  "modelMs": 1166
+ },
+ {
+  "turn": 17,
+  "user": "Hum, 10 da manhã.",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 452,
+  "modelMs": 1155
+ },
+ {
+  "turn": 19,
+  "user": "Coisa eu consigo marcar com você aqui,",
+  "endpointMs": 1000,
+  "speculation": null,
+  "rttMs": 1101,
+  "modelMs": 737
+ },
+ {
+  "turn": 21,
+  "user": "Pode sim senhor.",
+  "endpointMs": 1256,
+  "speculation": "miss",
+  "rttMs": 3018,
+  "modelMs": 1286
+ },
+ {
+  "turn": 25,
+  "user": "Eu queria entender, sobre o você, fazem em relação, relacionado, a",
+  "endpointMs": 279,
+  "speculation": null,
+  "rttMs": 380,
+  "modelMs": 1298
+ },
+ {
+  "turn": 26,
+  "user": "Eu queria entender o que você fazem",
+  "endpointMs": 862,
+  "speculation": "miss",
+  "rttMs": 963,
+  "modelMs": 732
+ },
+ {
+  "turn": 27,
+  "user": "relacionado a,",
+  "endpointMs": 1236,
+  "speculation": null,
+  "rttMs": 1336,
+  "modelMs": 1260
+ },
+ {
+  "turn": 30,
+  "user": "Vocês fizeram já?",
+  "endpointMs": 775,
+  "speculation": "miss",
+  "rttMs": 875,
+  "modelMs": 1305
+ },
+ {
+  "turn": 31,
+  "user": "Achei interessante, consegue me contar mais um pouquinho resumidamente?",
+  "endpointMs": 351,
+  "speculation": "hit",
+  "rttMs": 451,
+  "modelMs": 1165
+ }
+]
