@@ -76,7 +76,7 @@ export interface DeepgramStt {
 export function deepgramUrl(options: Pick<DeepgramSttOptions, "url" | "model" | "language" | "vocabulary" | "listeningEnvironment">): string {
   const url = recognitionUrl(options.url ?? DEEPGRAM_WS_URL, options.language, 8000, options.vocabulary ?? [], options.model ?? DEEPGRAM_MODEL);
   url.searchParams.set("vad_events", "true");
-  url.searchParams.set("endpointing", options.listeningEnvironment === "noisy" ? "400" : "100");
+  url.searchParams.set("endpointing", options.listeningEnvironment === "noisy" ? "400" : "250");
   url.searchParams.set("utterance_end_ms", "1000");
   return url.toString();
 }

@@ -21,7 +21,7 @@ export const AFTER_CLOSE_MS = 4000;
 // Os prazos acima são o ponto de partida do desenho, sem medida: a fatia 5 mede e ajusta.
 
 /** O pedido curto para repetir. O motor fala no idioma do agente. */
-export const ASK_TO_REPEAT = "Desculpe, a linha está com bastante barulho. Pode repetir, por favor?";
+export const ASK_TO_REPEAT = "Desculpe, não consegui ouvir direito. Pode repetir, por favor?";
 
 /** O payload de `caller_unanswered`. */
 export interface CallerUnanswered {

@@ -189,7 +189,7 @@ describe("motor deepgram-openrouter-cartesia (contrato com servidores falsos)", 
     t.cartesia.send({ type: "chunk", data: ulawOf(1600), context_id: "say-1" });
     await until(() => t.log.audio.length === 1);
     // Fala alta e sustentada (> 120 ms): o VAD local dispara sem esperar a Deepgram.
-    const loud = Buffer.alloc(320 * 10);
+    const loud = Buffer.alloc(320 * 20);
     for (let i = 0; i < loud.length / 2; i++) loud.writeInt16LE(i % 2 === 0 ? 9000 : -9000, i * 2);
     t.session.sendAudio(loud);
     expect(t.log.events).toEqual(["interrupted"]);

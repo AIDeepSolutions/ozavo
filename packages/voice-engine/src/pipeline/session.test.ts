@@ -8,7 +8,7 @@ import type { TtsHandlers } from "./cartesia-tts";
 import type { SttHandlers } from "./deepgram-stt";
 import { ENDPOINT_CLOSED_MS } from "./endpointing";
 import type { ChatMessage, LlmEvent } from "./openrouter-llm";
-import { createPipelineSession, splitPoint, type TurnMetrics } from "./session";
+import { createPipelineSession, isEchoOf, speakable, splitPoint, type TurnMetrics } from "./session";
 
 /** Um pedido ao modelo que o teste controla: empurra eventos, termina ou falha quando quiser. */
 class ScriptedStream {
@@ -321,7 +321,7 @@ describe("sessão do pipeline", () => {
     stream?.push({ type: "text", delta: "Temos três planos. O primeiro" });
     await until(() => t.spoken.length === 1);
     t.ports.tts.audio("turn-1", Buffer.alloc(16_000));
-    t.session.sendAudio(Buffer.concat([silence(10), speech(8)]));
+    t.session.sendAudio(Buffer.concat([silence(10), speech(16)]));
     expect(t.events).toContain("interrupted");
     expect(t.cancelled).toEqual(["turn-1"]);
     expect(stream?.signal.aborted).toBe(true);
@@ -337,11 +337,37 @@ describe("sessão do pipeline", () => {
 
   it("barge-in também corta a saudação; sem o agente falando, fala de quem ligou não interrompe", async () => {
     const t = await setup({ greeting: "Bom dia, aqui é a Clínica Exemplo, em que posso ajudar?" });
-    t.session.sendAudio(Buffer.concat([silence(10), speech(8)]));
+    t.session.sendAudio(Buffer.concat([silence(10), speech(16)]));
     expect(t.events).toEqual(["interrupted"]);
     expect(t.cancelled).toEqual(["say-1"]);
-    t.session.sendAudio(Buffer.concat([silence(20), speech(8)]));
+    t.session.sendAudio(Buffer.concat([silence(20), speech(16)]));
     expect(t.events).toEqual(["interrupted"]);
+  });
+
+  it("eco da própria fala do agente (transcrição ou início de fala do provedor) não o interrompe", async () => {
+    const t = await setup({ greeting: "Bom dia, aqui é a Clínica Exemplo, em que posso ajudar?" });
+    t.ports.stt.speechStarted();
+    t.ports.stt.partial("em que posso ajudar");
+    t.session.sendAudio(Buffer.concat([silence(10), speech(8)])); // estalo curto: abaixo dos 280 ms
+    expect(t.events).toEqual([]);
+    expect(t.cancelled).toEqual([]);
+    // Palavra que o agente não disse é a pessoa falando por cima.
+    t.ports.stt.partial("espera um instante");
+    expect(t.events).toEqual(["interrupted"]);
+  });
+
+  it("o que vai para a voz sai sem marcação, emoji, símbolo ou abreviação; a transcrição guarda o original", async () => {
+    const t = await setup();
+    callerSays(t, "Quanto custa?");
+    t.timers.runAll();
+    t.streams[0]?.push({ type: "text", delta: "O plano custa R$ 49,90 por mês, **com 10% de desconto** 😊 (Sr. Paulo)." });
+    t.streams[0]?.end();
+    await until(() => t.spoken.some((s) => s.final));
+    const said = t.spoken.map((s) => s.text).join("");
+    expect(said).not.toMatch(/[*😊()%$]/u);
+    expect(said).toContain("49 reais e 90 centavos");
+    expect(said).toContain("10 por cento");
+    expect(said).toContain("senhor Paulo");
   });
 
   it("a ponte ainda tocando o áudio conta como agente falando (o provedor termina antes)", async () => {
@@ -354,7 +380,7 @@ describe("sessão do pipeline", () => {
     t.ports.tts.audio("turn-1", Buffer.alloc(32_000)); // 2 s de fala
     t.ports.tts.done("turn-1");
     t.time.advance(500);
-    t.session.sendAudio(Buffer.concat([silence(10), speech(8)]));
+    t.session.sendAudio(Buffer.concat([silence(10), speech(16)]));
     expect(t.events).toEqual(["interrupted"]);
   });
 
@@ -480,7 +506,8 @@ describe("latência do turno (relógio de teste; os atrasos dos provedores são 
   });
 
   it("o primeiro trecho sai cedo: corte em vírgula num começo longo, não só no ponto final", () => {
-    expect(splitPoint("Sim.", true)).toBe(4);
+    expect(splitPoint("Sim.", true)).toBe(-1);
+    expect(splitPoint("Pois não, claro.", true)).toBe(16);
     expect(splitPoint("Claro, posso verificar isso para você, um instante", true)).toBe(38);
     expect(splitPoint("Claro, posso verificar isso", false)).toBe(-1);
     expect(splitPoint("Ok.", false)).toBe(-1);
@@ -622,5 +649,16 @@ describe("confirmação só depois do resultado da escrita (write-guard)", () =>
     t.streams[1]?.end();
     await until(() => t.spoken.length > 0);
     expect(t.spoken.map((piece) => piece.text).join("")).toContain("está marcada");
+  });
+});
+
+describe("eco e leitura", () => {
+  it("isEchoOf: só palavras que o agente acabou de dizer", () => {
+    expect(isEchoOf("Em que posso ajudar", "Bom dia, em que posso ajudar?")).toBe(true);
+    expect(isEchoOf("espera um instante", "Bom dia, em que posso ajudar?")).toBe(false);
+    expect(isEchoOf("", "qualquer coisa")).toBe(true);
+  });
+  it("speakable deixa texto comum como está", () => {
+    expect(speakable("Claro, posso ajudar com isso.")).toBe("Claro, posso ajudar com isso.");
   });
 });

@@ -40,6 +40,8 @@ export interface PipelineSessionDeps {
   schedule?: (fn: () => void, delayMs: number) => () => void;
   onMetrics?(metrics: TurnMetrics): void;
   vad?: VadOptions;
+  /** Detector do barge-in por energia (padrão: `BARGE_IN_VAD`). */
+  bargeInVad?: VadOptions;
   /** `false` desliga a detecção de caixa postal. */
   amd?: AmdOptions | false;
 }
@@ -60,11 +62,58 @@ export const MAX_TURN_CHARACTERS = TURN_TARGET_MAX_CHARACTERS;
 
 const PHONE_STYLE =
   "This is a phone call: answer in short sentences, one idea at a time, with no lists, markdown or emojis. " +
+  "Speak like a person: natural contractions, no stiff call-center phrases, and write numbers, money and abbreviations the way they are said aloud. " +
+  "Your name is the one in your instructions; it is simply your name, so never comment on it. " +
+  "Never mention noise or a bad line unless the person said so. " +
   "Aim for 120 to 160 characters per turn; shorter answers are allowed. Never exceed 160 characters: anything longer is cut off before it is spoken. " +
   "When a tool is needed, call it instead of describing it.";
 
 /** Bytes por milissegundo do PCM16 mono 8 kHz. */
 const BYTES_PER_MS = 16;
+
+/**
+ * Barge-in por energia: bem mais exigente que o VAD de atividade (280 ms seguidos, 15 dB acima do
+ * fundo). Eco da própria fala do agente e estalo de linha não duram isso nem passam dessa margem;
+ * quem realmente interrompe, sim.
+ */
+const BARGE_IN_VAD: VadOptions = { startFrames: 14, marginDb: 15 };
+
+const normalizeWords = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== "");
+
+/** Texto parecido com o que o agente acabou de falar: é o eco dele voltando pelo microfone. */
+export function isEchoOf(heard: string, agentText: string): boolean {
+  const words = normalizeWords(heard);
+  if (words.length === 0) return true;
+  const spoken = new Set(normalizeWords(agentText));
+  return words.every((word) => spoken.has(word));
+}
+
+/**
+ * O texto do modelo como a voz deve ler: sem marcação, sem emoji, com símbolo e abreviação por
+ * extenso. A transcrição guarda o texto original; só a síntese recebe este.
+ */
+export function speakable(text: string): string {
+  return text
+    .replace(/[*_`#>~|]+/g, "")
+    .replace(/\p{Extended_Pictographic}️?/gu, "")
+    .replace(/\bR\$\s?(\d+(?:\.\d{3})*)(?:,(\d{1,2}))?/g, (_m, reais: string, cents?: string) => `${reais.replace(/\./g, "")} reais${cents && Number(cents) > 0 ? ` e ${Number(cents)} centavos` : ""}`)
+    .replace(/(\d)\s?%/g, "$1 por cento")
+    .replace(/\bSr\.(?=\s|$)/g, "senhor")
+    .replace(/\bSra\.(?=\s|$)/g, "senhora")
+    .replace(/\bDra\.(?=\s|$)/g, "doutora")
+    .replace(/\bDr\.(?=\s|$)/g, "doutor")
+    .replace(/\s*[()[\]]\s*/g, ", ")
+    .replace(/\s+—\s+|\s+-\s+/g, ", ")
+    .replace(/,\s*([.!?,;:])/g, "$1")
+    .replace(/^\s*,\s*/, "")
+    .replace(/\s{2,}/g, " ");
+}
 
 /**
  * Onde cortar o texto do modelo para mandar à síntese: fim de frase, ou vírgula num trecho já
@@ -74,7 +123,7 @@ export function splitPoint(text: string, first: boolean): number {
   const strong = /[.!?…](\s|$)/g;
   for (let match = strong.exec(text); match; match = strong.exec(text)) {
     const end = match.index + 1;
-    if (end >= (first ? 4 : 12)) return end;
+    if (end >= (first ? 10 : 12)) return end;
   }
   const weakMin = first ? 24 : 80;
   const weak = /[,;:](\s)/g;
@@ -129,6 +178,12 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
     },
   ];
   const vad = new EnergyVad(deps.vad);
+  const bargeVad = new EnergyVad(deps.bargeInVad ?? BARGE_IN_VAD);
+  /** O que o agente falou há pouco (turno e falas avulsas), para reconhecer o próprio eco. */
+  let recentAgentText = "";
+  const rememberAgentText = (text: string): void => {
+    recentAgentText = `${recentAgentText} ${text}`.slice(-600);
+  };
   const amd =
     deps.amd === false || config.direction !== "outbound"
       ? undefined
@@ -248,7 +303,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (current.ttsStartedAt === undefined && piece.trim() !== "") current.ttsStartedAt = now();
       if (piece.trim() !== "") current.synthesizing = true;
       current.spoken += piece;
-      tts?.speak(current.contextId, piece, final);
+      if (piece.trim() !== "") rememberAgentText(piece);
+      tts?.speak(current.contextId, speakable(piece), final);
       flushUsage();
     };
     const send = (piece: string, final: boolean): void => {
@@ -377,7 +433,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       cancelEndpoint = undefined;
       emitter.emit("callerActivity", { words: true });
       amd?.pushTranscript(text);
-      bargeIn();
+      // Palavra que o agente acabou de dizer é eco do microfone, não pessoa interrompendo.
+      if (!isEchoOf(text, recentAgentText)) bargeIn();
     },
     final(text, speechFinal) {
       if (finished) return;
@@ -397,8 +454,9 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (finished) return;
       cancelEndpoint?.();
       cancelEndpoint = undefined;
+      // Só sinaliza: o provedor também "vê fala" no eco e no ruído. Quem corta o agente é a
+      // transcrição (que não seja eco) ou o detector de energia sustentado.
       emitter.emit("callerActivity", { words: false });
-      bargeIn();
     },
     utteranceEnd() {
       if (finished || finals.length === 0) return;
@@ -517,8 +575,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
         cancelEndpoint?.();
         cancelEndpoint = undefined;
         emitter.emit("callerActivity", { words: false });
-        bargeIn();
       }
+      for (const event of bargeVad.push(pcm16_8k)) if (event.type === "speech_start") bargeIn();
     },
     sendToolResult(id, result) {
       if (finished) return;
@@ -546,7 +604,8 @@ export async function createPipelineSession(deps: PipelineSessionDeps): Promise<
       if (turn || agentAudible()) stopTurn(true);
       const contextId = `say-${++saySeq}`;
       sayContexts.set(contextId, text);
-      tts?.speak(contextId, text, true);
+      rememberAgentText(text);
+      tts?.speak(contextId, speakable(text), true);
       history.push({ role: "assistant", content: text });
     },
     closeCallerTurn() {
