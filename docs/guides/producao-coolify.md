@@ -90,7 +90,9 @@ O pacote de configuração do Asterisk vai numa variável (`ASTERISK_CONF_B64`),
 2. `tar czf` de `extensions.conf http.conf ari.conf rtp.conf pjsip.conf tls` (de `asterisk/generated`)
    e `base64 -w0` vira `ASTERISK_CONF_B64`. A CA do Supabase vira `SUPABASE_CA_B64`.
 3. Variáveis: `DATABASE_URL`, `SYSTEM_DATABASE_URL`, `OZAVO_SECRET_KEY`, `PUBLIC_URL`, `ARI_PASSWORD` (a
-   mesma do `ari.conf`), `INTERNAL_TOKEN`, `PUBLIC_IP`, `OZAVO_UDP_ONLY_HOSTS`. No painel:
+   mesma do `ari.conf`), `INTERNAL_TOKEN`, `PUBLIC_IP`, `OZAVO_UDP_ONLY_HOSTS` e `PANEL_HOST` (domínio do painel, sem
+   `https://`: o Compose usa para rotear `/voice-ws`, o áudio de "Falar com o agente", à porta 8091 da voz;
+   sem isso a tela fica em "Conectando"). No painel:
    `VOICE_INTERNAL_URL=http://ozavo-voice:8090` e o mesmo `INTERNAL_TOKEN`.
 4. Com a exceção de UDP da Telera, acrescente ao `pjsip.conf` uma `type=acl` que só permite o IP da
    Telera (`deny=0.0.0.0/0.0.0.0` + `permit=<IP>/255.255.255.255`): a 5060/udp do Compose não filtra por
