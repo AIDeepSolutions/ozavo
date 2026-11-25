@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agendaNotWired, agendaQueryError, groupSlotsByDay, speakSlot } from "../agenda-speech";
+import { agendaFailureDiagnostic, agendaNotWired, agendaQueryError, groupSlotsByDay, speakSlot } from "../agenda-speech";
 import { defineTool } from "../define-tool";
 import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
 
@@ -93,8 +93,8 @@ export function createAgendaHorariosLivres(deps: ToolDeps = {}, options: Horario
           return {
             ok: true,
             message:
-              `${windowNote}Não há horário livre para ${input.service_type} nesse período (a consulta funcionou e voltou vazia). Ofereça outro período, ` +
-              "ou anote o pedido para a equipe retornar (create_task). Não invente horário.",
+              `${windowNote}Não há horário livre para ${input.service_type} nesse período (a consulta funcionou e voltou vazia). Diga com naturalidade algo como: "não achei horário livre nesse dia, quer tentar outro?", ` +
+              "e consulte de novo outro dia ou período que a pessoa escolher; se ela não quiser, anote o pedido para a equipe retornar (create_task). Não invente horário.",
             data: { slots: [], timezone: agenda.timezone, window },
           };
         }
@@ -115,8 +115,8 @@ export function createAgendaHorariosLivres(deps: ToolDeps = {}, options: Horario
               : ""),
           data: { slots: agenda.slots, timezone: agenda.timezone, window },
         };
-      } catch {
-        return { ok: false, message: agendaQueryError(), data: { error: "query_failed" } };
+      } catch (error) {
+        return { ok: false, message: agendaQueryError(), data: { error: "query_failed" }, diagnostic: agendaFailureDiagnostic(error) };
       }
     },
   });

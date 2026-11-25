@@ -116,4 +116,21 @@ describe("agenda pelo Cal.com", () => {
     await expect(agenda.freeSlots({ serviceType: "Consulta", from: "2026-11-17T00:00:00Z", to: "2026-11-18T00:00:00Z", callId: "c1" })).rejects.toThrow(/401/);
     await expect(agenda.freeSlots({ serviceType: "Exame", from: "2026-11-17T00:00:00Z", to: "2026-11-18T00:00:00Z", callId: "c1" })).rejects.toThrow(/Unknown service/);
   });
+
+  it("a consulta que falha na conexão tem uma segunda tentativa; a recusa do Cal.com não, e o corpo dela vai para o diagnóstico", async () => {
+    let calls = 0;
+    const fetch = (async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError("fetch failed", { cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }) });
+      return new Response(JSON.stringify({ status: "success", data: { "2026-11-26": [{ start: "2026-11-26T09:00:00.000-03:00" }] } }), { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+    const agenda = createCalcomAgenda(config, { fetch, lookup: async () => ["93.184.216.34"] });
+    const pedido = { serviceType: "Consulta", from: "2026-11-25T00:00:00Z", to: "2026-12-02T00:00:00Z", callId: "c1" };
+    await expect(agenda.freeSlots(pedido)).resolves.toMatchObject({ slots: [{ startsAt: "2026-11-26T09:00:00.000-03:00" }] });
+    expect(calls).toBe(2);
+
+    const recusa = fakeCalcom([{ status: 400, body: { status: "error", error: { message: "start is in the past" } } }, { status: 200, body: { data: {} } }]);
+    await expect(createCalcomAgenda(config, recusa.net).freeSlots(pedido)).rejects.toThrow(/HTTP 400.*start is in the past/);
+    expect(recusa.seen).toHaveLength(1);
+  });
 });

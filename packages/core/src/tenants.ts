@@ -97,13 +97,26 @@ export function normalizeCnpj(input: string): string | null {
   return check(12) === Number(digits[12]) && check(13) === Number(digits[13]) ? digits : null;
 }
 
+/** O fuso em que o agente entende "hoje", "amanhã" e "às quatro": o da agenda da empresa, que hoje é o de Brasília. */
+export const DEFAULT_CALL_TIME_ZONE = "America/Sao_Paulo";
+
+/**
+ * Quando é "agora" para o agente. O modelo não tem relógio: sem isto ele não sabe o dia da semana, e erra `hoje`,
+ * `amanhã` e `sexta` ao consultar a agenda. A frase fica no fim da instrução e é recalculada a cada ligação.
+ */
+export function callMoment(now: Date, timeZone: string): string {
+  const spoken = new Intl.DateTimeFormat("pt-BR", { timeZone, dateStyle: "full", timeStyle: "short" }).format(now);
+  return `Agora, nesta ligação, é ${spoken} (fuso ${timeZone}). Use este momento para entender "hoje", "amanhã", "sexta" e "daqui a uma semana" e para nunca oferecer data que já passou; ao falar de horário, use o horário local, sem dizer fuso.`;
+}
+
 /**
  * A instrução que o motor recebe numa ligação: o prompt base da empresa, a instrução do agente e,
  * na ligação pedida por um sistema de fora, o contexto que veio no pedido. O contexto vai marcado
  * como dado: quem pede a ligação não escreve instrução para o agente.
  */
-export function composeCallInstructions(input: { basePrompt: string; agentInstructions: string; requestContext?: unknown }): string {
+export function composeCallInstructions(input: { basePrompt: string; agentInstructions: string; requestContext?: unknown; now: Date; timeZone?: string }): string {
   const parts = [input.basePrompt.trim(), input.agentInstructions.trim()].filter((part) => part !== "");
+  parts.push(callMoment(input.now, input.timeZone ?? DEFAULT_CALL_TIME_ZONE));
   if (input.requestContext !== undefined && input.requestContext !== null) {
     parts.push(
       [

@@ -10,3 +10,4 @@ export * from "./net/safe-fetch";
 export * from "./connectors/whatsapp";
 export * from "./connectors/waha";
 export * from "./connectors/webhook";
+export { readAgendaConnector } from "./connectors/agenda-settings";

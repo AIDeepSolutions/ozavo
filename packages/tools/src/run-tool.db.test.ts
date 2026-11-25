@@ -62,6 +62,21 @@ describe("runTool", () => {
     expect(finished).toEqual({ kind: "tool_result", at: t0, payload: { name: "exploding", ok: false, message: result.message, error: "connect ECONNREFUSED 10.0.0.7:5432 at Socket.internal" } });
   });
 
+  it("o motivo técnico (diagnostic) vai para o operador no evento e não segue ao modelo", async () => {
+    const tratada = defineTool({
+      name: "tratada",
+      description: "Ferramenta de teste",
+      inputSchema: z.object({}),
+      async run() {
+        return { ok: false, message: "A agenda não respondeu.", diagnostic: "TypeError: fetch failed <- Error: connect ENETUNREACH [ENETUNREACH]" };
+      },
+    });
+    const result = await runTool(tratada, {}, ctx);
+    expect(result).toEqual({ ok: false, message: "A agenda não respondeu." });
+    const [, finished] = await lastTwo();
+    expect(finished).toMatchObject({ kind: "tool_result", payload: { name: "tratada", ok: false, error: "TypeError: fetch failed <- Error: connect ENETUNREACH [ENETUNREACH]" } });
+  });
+
   it("entrega à ferramenta a entrada já validada, com os padrões aplicados", async () => {
     let received: unknown;
     const echo = defineTool({

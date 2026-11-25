@@ -139,8 +139,12 @@ export async function runTool(tool: Tool, rawArgs: unknown, ctx: ToolContext): P
     }
   }
 
+  // O motivo técnico de uma falha tratada pela ferramenta mora no mesmo campo `error` do operador (tela e apagamento já o conhecem) e nunca segue ao modelo.
+  const { diagnostic, ...forModel } = result;
+  const operatorDetail = error ?? diagnostic;
+  result = forModel;
   try {
-    await recordEvent(ctx.q, ctx.callId, "tool_result", { name: tool.name, ok: result.ok, message: result.message, ...(error !== undefined && { error }), ...(release !== undefined && spent && { spent: true }) }, ctx.clock.now());
+    await recordEvent(ctx.q, ctx.callId, "tool_result", { name: tool.name, ok: result.ok, message: result.message, ...(operatorDetail !== undefined && { error: operatorDetail }), ...(release !== undefined && spent && { spent: true }) }, ctx.clock.now());
   } finally {
     // A vaga só fecha com o desfecho gravado: a entrada nunca é podada antes de o banco saber dele.
     // Se a gravação falhar, a vaga gasta conta assim mesmo: o efeito pode ter saído, e só a memória sabe.

@@ -117,6 +117,15 @@ describe("agenda_horarios_livres", () => {
     expect(result.message).toContain("NÃO diga que não há horário");
     expect(result.message).toContain("create_task");
     expect(result.data).toMatchObject({ error: "query_failed" });
+    // O motivo técnico vai para o operador, em uma linha.
+    expect(result.diagnostic).toEqual(expect.any(String));
+    expect(result.diagnostic).not.toBe("");
+  });
+
+  it("sem horário no dia pedido, a fala sugerida é natural e manda tentar outro dia", async () => {
+    const vazio = await createAgendaHorariosLivres({ agenda: crmSimulado({ slots: [] }) }).run({ service_type: "Consulta" }, contextoDaAgenda());
+
+    expect(vazio.message).toContain("não achei horário livre nesse dia, quer tentar outro?");
   });
 
   it("erro de consulta e lista vazia são respostas diferentes: vazio só quando a consulta deu certo", async () => {

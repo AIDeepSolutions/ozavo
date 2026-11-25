@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { agendaNotWired, agendaUnavailable } from "../agenda-speech";
+import { agendaFailureDiagnostic, agendaNotWired, agendaUnavailable } from "../agenda-speech";
 import { checkWriteAuthorization } from "../authorization";
 import { defineTool } from "../define-tool";
 import { agendaAvailability, agendaOf, settingsAgendaDeps, type ToolDeps } from "../deps";
@@ -64,8 +64,8 @@ export function createAgendaCancelar(deps: ToolDeps = {}) {
           message: "Compromisso cancelado. Diga à pessoa que o horário que você leu foi desmarcado e pergunte se ela quer marcar outro.",
           data: { appointmentId: input.appointment_id, startsAt: input.appointment_starts_at, cancelled: true },
         };
-      } catch {
-        return { ok: false, message: agendaUnavailable("o compromisso não foi cancelado", "que foi cancelado") };
+      } catch (error) {
+        return { ok: false, message: agendaUnavailable("o compromisso não foi cancelado", "que foi cancelado"), diagnostic: agendaFailureDiagnostic(error) };
       }
     },
   });

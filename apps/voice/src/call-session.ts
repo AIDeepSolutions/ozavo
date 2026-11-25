@@ -1,5 +1,5 @@
 import { CALL_RECORDING_SETTING, callRecordingOf, checkUsageAlerts, composeCallInstructions, decryptSecret, readTenantProfile, enqueueTask, recordEvent, recordingPath, scheduleRecordingMaintenance, withOrg, type CallEventKind, type CallStatus, type Clock, type Db, type OrgQuery } from "@ozavo/core";
-import { ConversationLog, appointmentIdsFromRequestContext, autoCommitOrgQuery, runTool, toSpec, toolCalledArgs, type CallerAppointmentsSource, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
+import { ConversationLog, appointmentIdsFromRequestContext, autoCommitOrgQuery, readAgendaConnector, runTool, toSpec, toolCalledArgs, type CallerAppointmentsSource, type RecordingStop, type Tool, type ToolContext, type ToolResult } from "@ozavo/tools";
 import { AnsweringMachineDetector, EngineTimeoutError, MICROCENTS_PER_CENT, estimateCostCents, isLlmProfileId, llmProfileOf, type AnsweringMachineDetection, type Usage, type VoiceEngine, type VoiceSession } from "@ozavo/voice-engine";
 import type { ApprovalWaiter } from "./approvals";
 import { messageOf, silentLogger, type Logger } from "./log";
@@ -534,7 +534,7 @@ export function startCallSession(deps: CallSessionDeps, input: CallSessionInput)
           // O roteiro da chamada simulada substitui tudo: é o teste de um roteiro, não da empresa.
           instructions:
             overrides?.instructions ??
-            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined }),
+            composeCallInstructions({ basePrompt: tenant.basePrompt, agentInstructions: agent.instructions, requestContext: call.request_context ?? undefined, now: clock.now(), timeZone: (await readAgendaConnector(q))?.timezone }),
           // O aviso vem antes de tudo, e os motores falam a abertura ao conectar: o aviso entra
           // na frente da saudação. Lição do DeskcommCRM: na ligação recebida quem atende fala
           // primeiro; na que nós fazemos, quem atende diz "alô" e o agente responde a isso, então

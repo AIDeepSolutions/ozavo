@@ -197,7 +197,7 @@ describe("motor sem chave ao atender (Review Focus 2)", { timeout: 120_000 }, ()
     const session = made.start();
     await waitFor(async () => (await kindsOf(app, made.callId)).includes("call_answered"), "the call to be answered");
     expect(manual.keys).toEqual(["sk-certa"]);
-    expect(manual.configs).toMatchObject([{ instructions: "Você atende a clínica.", greeting: `${DEFAULT_RECORDING_NOTICE} Bom dia.`, language: "pt-BR" }]);
+    expect(manual.configs).toMatchObject([{ instructions: expect.stringMatching(/^Você atende a clínica\.\n\nAgora, nesta ligação, é sexta-feira, 10 de maio de 2030 às 09:00 \(fuso America\/Sao_Paulo\)/), greeting: `${DEFAULT_RECORDING_NOTICE} Bom dia.`, language: "pt-BR" }]);
     expect(manual.configs[0]?.tools.map((tool) => tool.name)).toEqual(["end_call", "notify_human"]);
     expect(made.harness.logs.some((entry) => entry.message.includes("not installed") && entry.fields?.tool === "nao_existe")).toBe(true);
 
