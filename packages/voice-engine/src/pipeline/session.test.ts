@@ -1055,7 +1055,7 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
   it("voz presa por ruído e frase completa: o Finalize sai junto com o limite (não depois dele) e o turno fecha sem esperar o limite cheio", async () => {
     const t = await setup();
     t.session.sendAudio(speech(30));
-    t.ports.stt.partial("Quero marcar para sexta de manhã");
+    t.ports.stt.partial("Quero marcar para sexta de manhã.");
     t.time.advance(WORDS_QUIET_MS);
     t.timers.runAll();
     // O detector local ainda "vê fala": o texto pendente já foi pedido, mas o turno não fechou.
@@ -1063,17 +1063,17 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
     expect(t.streams).toHaveLength(0);
     // O final pedido chega (confirma as mesmas palavras): não conta como palavra nova, e o limite da frase completa já passou.
     t.time.advance(150);
-    t.ports.stt.final("Quero marcar para sexta de manhã", true);
+    t.ports.stt.final("Quero marcar para sexta de manhã.", true);
     t.time.advance(100);
     t.timers.runAll();
     t.timers.runAll();
-    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Quero marcar para sexta de manhã" });
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Quero marcar para sexta de manhã." });
     expect(t.streams).toHaveLength(1);
     t.ports.tts.firstAudio("turn-1", 80);
     t.streams[0]?.push({ type: "text", delta: "Certo, vou ver a agenda." });
     await until(() => t.spoken.length === 1);
     t.ports.tts.audio("turn-1", Buffer.alloc(320));
-    expect(t.metrics[0]).toMatchObject({ endBy: "quiet", endKind: "default" });
+    expect(t.metrics[0]).toMatchObject({ endBy: "quiet", endKind: "closed" });
     expect(t.metrics[0]?.endpointMs).toBeLessThan(WORDS_QUIET_STUCK_MS);
   });
 
@@ -1082,6 +1082,10 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
     t.session.sendAudio(speech(30));
     t.ports.stt.partial("Oi, Nico, tudo bem? Eu gostaria de fazer");
     t.time.advance(WORDS_QUIET_MS);
+    t.timers.runAll();
+    // Cedo demais para pedir o texto (fatiaria a fala contínua): só perto do limite da classe.
+    expect(t.finalizes()).toBe(0);
+    t.time.advance(100);
     t.timers.runAll();
     expect(t.finalizes()).toBe(1);
     t.time.advance(150);
@@ -1093,6 +1097,36 @@ describe("fim de turno que não depende da pausa local nem do speech_final (liga
     expect(t.timers.pending().filter((delay) => delay > 100 && delay < 400)).toEqual([]);
     t.ports.stt.partial("agendamento");
     t.timers.runAll();
+    expect(t.streams).toHaveLength(0);
+  });
+
+  it("voz presa e frase aberta: o pedido de texto não deixa o turno sem prazo nenhum (o ruído reabre a pausa local e o final só confirma o parcial)", async () => {
+    const t = await setup();
+    t.session.sendAudio(speech(30));
+    t.ports.stt.partial("Eu gostaria de fazer");
+    t.time.advance(WORDS_QUIET_MS + 100);
+    t.timers.runAll();
+    t.time.advance(150);
+    t.ports.stt.final("Eu gostaria de fazer", true);
+    // Mesmo com o final já entregue, algum prazo segue armado para decidir.
+    expect(t.timers.pending().length).toBeGreaterThan(0);
+    for (let i = 0; i < 12; i++) {
+      t.time.advance(100);
+      t.timers.runAll();
+    }
+    expect(t.streams).toHaveLength(1);
+    expect(t.transcripts.at(-1)).toEqual({ speaker: "user", text: "Eu gostaria de fazer" });
+  });
+
+  it("fala contínua com voz local ativa e parciais espaçados não é fatiada em vários turnos", async () => {
+    const t = await setup();
+    for (const text of ["eu", "eu queria saber", "eu queria saber se vocês", "eu queria saber se vocês atendem"]) {
+      t.session.sendAudio(speech(25));
+      t.ports.stt.partial(text);
+      t.time.advance(500);
+      t.timers.runAll();
+    }
+    expect(t.transcripts.filter((turn) => turn.speaker === "user")).toEqual([]);
     expect(t.streams).toHaveLength(0);
   });
 

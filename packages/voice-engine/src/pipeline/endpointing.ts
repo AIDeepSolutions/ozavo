@@ -79,12 +79,12 @@ const INTERROGATIVE_ENDING = new Set(["como", "quanto", "quantos", "quanta", "qu
 const POSSESSIVE = new Set(["meu", "minha", "meus", "minhas", "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas", "dele", "dela", "deles", "delas", "teu", "tua"]);
 // Determinante ou demonstrativo no fim: falta o substantivo ("automatizar alguma", "esse"). Só vale sem pontuação final ("alguma." fecha).
 const NEEDS_NOUN = new Set(
-  ["algum", "alguma", "alguns", "algumas", "outro", "outra", "outros", "outras", "cada", "todo", "toda", "todos", "todas", "esse", "essa", "esses", "essas", "este", "esta", "estes", "estas", "aquele", "aquela", "aqueles", "aquelas", "nenhum", "nenhuma", "varios", "varias", "certos", "certas", "muitos", "muitas", "poucos", "poucas"].map(normalize),
+  ["algum", "alguma", "alguns", "algumas", "outro", "outra", "outros", "outras", "cada", "todo", "toda", "todos", "todas", "qualquer", "esse", "essa", "esses", "essas", "aquele", "aquela", "aqueles", "aquelas", "nenhum", "nenhuma", "varios", "varias", "certos", "certas", "muitos", "muitas", "poucos", "poucas"].map(normalize),
 );
 // Verbo de intenção seguido de infinitivo sem complemento ("Eu gostaria de fazer", "quero marcar"): o objeto ainda vem. Só sem pontuação final.
-const INTENT_INFINITIVE = /(?:^|\s)(?:gostaria|gostaríamos|queria|queríamos|quero|queremos|preciso|precisamos|precisava|posso|podemos|poderia|pretendo|vou|vamos|tenho\s+que|tinha\s+que|deveria|tentar|tentando)\s+(?:de\s+|em\s+)?\p{L}+(?:ar|er|ir|or)$/iu;
-// E-mail ou site ditado que acaba no domínio ("arroba e-mail ponto com", "ponto com ponto br", "gmail.com"): completo, só não tão certo quanto uma frase com ponto.
-const DOMAIN_ENDING = /(?:\b(?:ponto\s+com(?:\s+ponto\s+br)?|ponto\s+br|ponto\s+net|ponto\s+org)|\.(?:com|br|net|org))[.!?]?$/i;
+const INTENT_INFINITIVE = /(?:^|\s)(?:gostaria|gostaríamos|queria|queríamos|quero|queremos|preciso|precisamos|precisava|posso|podemos|poderia|pretendo|tenho\s+que|tinha\s+que|deveria)\s+(?:de\s+|em\s+)?(?:fazer|marcar|agendar|remarcar|saber|falar|ver|entender|perguntar|pedir|criar|contratar|conhecer|automatizar|otimizar|desenvolver|implementar|integrar|montar|organizar|resolver|melhorar|comprar|cancelar|testar|conversar|tirar)$/iu;
+// E-mail ou site ditado que acaba no domínio COM pontuação final ("arroba e-mail ponto com.", "gmail.com."): a Deepgram fechou a frase. Sem pontuação, "ponto com" ainda pode seguir com "ponto br" e fica aberto.
+const DOMAIN_ENDING = /(?:\b(?:ponto\s+com(?:\s+ponto\s+br)?|ponto\s+br|ponto\s+net|ponto\s+org)|\.(?:com|br|net|org))[.!?]$/i;
 // Enchimento de quem pensa: só vale como frase aberta quando a frase não tem pontuação final.
 const FILLER = new Set(["entao", "assim", "tipo", "ne", "e", "hum", "humm", "ahn", "ee", "eh", "um", "uh", "este", "hm", "hmm"]);
 const SHORT_ANSWER = new Set(

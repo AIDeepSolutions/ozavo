@@ -96,8 +96,13 @@ describe("assessTurnEnd: fim de turno pela pausa", () => {
     expect(kind("Pretendo ir amanhã de manhã")).toBe("default");
     // "ponto com" termina em "com", mas o e-mail acabou ali.
     expect(kind("Mateus arroba e-mail ponto com.")).toBe("default");
-    expect(kind("Mateus arroba e-mail ponto com")).toBe("default");
-    expect(kind("meu e-mail é fulano@empresa.com.br")).toBe("default");
+    expect(kind("meu e-mail é fulano@empresa.com.br.")).toBe("default");
+    // Sem pontuação final o "ponto br" ainda pode vir: segue aberto.
+    expect(kind("Mateus arroba e-mail ponto com")).toBe("open");
+    expect(kind("Ela não está")).toBe("default");
+    // Verbo sem relação de intenção, ou que não pede objeto, não abre a frase.
+    expect(kind("Vou pensar")).toBe("default");
+    expect(kind("Quero sair")).toBe("default");
     // Domínio com ponto e vírgula depois ainda é frase aberta.
     expect(kind("fulano ponto com,")).toBe("open");
     // "com" fora do e-mail continua abrindo a frase.
