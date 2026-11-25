@@ -1,0 +1,80 @@
+# Voz + Asterisk como recurso Docker Compose do Coolify (painel e rotinas já são aplicações à parte).
+# Guia: docs/guides/producao-coolify.md. Nada de segredo aqui: tudo vem de variáveis do Coolify.
+#
+# Quem sobe isto não tem acesso ao disco do servidor, então os arquivos do Asterisk (gerados por
+# scripts/prepare-production.ts) vão como UM pacote tar.gz em base64 na variável ASTERISK_CONF_B64,
+# e o Asterisk os grava ao iniciar. A CA do Supabase vai em SUPABASE_CA_B64 pelo mesmo motivo.
+name: ozavo-voz
+
+services:
+  asterisk:
+    image: andrius/asterisk@sha256:927d4c98777149c3380c4f8d0e82b1b1ba9e7b38528f86c1e1593d5a25032f27
+    restart: unless-stopped
+    environment:
+      ASTERISK_CONF_B64: ${ASTERISK_CONF_B64}
+    # Mesmo comando da imagem, depois de gravar a configuração. A chave TLS é do usuário do Asterisk.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "$$ASTERISK_CONF_B64" | base64 -d | tar xz -C /etc/asterisk
+        chmod 644 /etc/asterisk/*.conf /etc/asterisk/tls/server.crt
+        mkdir -p /etc/asterisk/keys /etc/asterisk/generated
+        mv /etc/asterisk/tls/server.crt /etc/asterisk/tls/server.key /etc/asterisk/keys/
+        chown 1000:1000 /etc/asterisk/keys/server.key && chmod 600 /etc/asterisk/keys/server.key
+        exec /usr/local/bin/entrypoint.sh /usr/sbin/asterisk -vvvdddf -T -W -U asterisk -p
+    ports:
+      - '5060:5060/udp'
+      - '10000-10200:10000-10200/udp'
+    volumes:
+      - asterisk-generated:/etc/asterisk/generated
+    healthcheck:
+      test: [CMD, asterisk, -rx, 'core show uptime']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  voice:
+    build: { context: .., target: voice }
+    restart: unless-stopped
+    depends_on: { asterisk: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SYSTEM_DATABASE_URL: ${SYSTEM_DATABASE_URL}
+      OZAVO_SECRET_KEY: ${OZAVO_SECRET_KEY}
+      PUBLIC_URL: ${PUBLIC_URL}
+      ARI_PASSWORD: ${ARI_PASSWORD}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      PUBLIC_IP: ${PUBLIC_IP}
+      OZAVO_UDP_ONLY_HOSTS: ${OZAVO_UDP_ONLY_HOSTS}
+      RECORDINGS_DIR: /recordings
+      SUPABASE_CA_B64: ${SUPABASE_CA_B64}
+    # A URL do banco aponta para /etc/ssl/ozavo/supabase-prod-ca-2021.crt (sslmode=verify-full).
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p /etc/ssl/ozavo
+        echo "$$SUPABASE_CA_B64" | base64 -d > /etc/ssl/ozavo/supabase-prod-ca-2021.crt
+        exec pnpm --filter @ozavo/voice start
+    volumes:
+      - recordings:/recordings
+      - asterisk-generated:/asterisk-generated
+    # O painel (rede do Coolify) alcança a voz por este apelido: http://ozavo-voice:8090
+    networks:
+      default: {}
+      coolify: { aliases: [ozavo-voice] }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  coolify:
+    external: true
+volumes:
+  asterisk-generated:
+  recordings:

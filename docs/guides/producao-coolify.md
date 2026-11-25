@@ -57,3 +57,21 @@ Antes de subir, com o número homologado em mãos:
 
 Sem tronco, subir voz e Asterisk só troca `voice_down` por `trunk_none` e abre portas na internet
 sem uso. Por isso a ordem é: rotinas agora, voz e Asterisk quando o número estiver homologado.
+
+## Voz e Asterisk sem acesso ao disco do servidor (Compose do Coolify)
+
+Quando só há a API do Coolify (sem SSH), use [`deploy/docker-compose.coolify-voz.yml`](../../deploy/docker-compose.coolify-voz.yml):
+recurso Docker Compose, mesmo repositório e ramo, arquivo de Compose `/deploy/docker-compose.coolify-voz.yml`.
+O pacote de configuração do Asterisk vai numa variável (`ASTERISK_CONF_B64`), sem arquivo no host:
+
+1. Rode `scripts/prepare-production.ts` num diretório novo, fora do repositório (com
+   `temporaryUdpHost` só se a exceção da Telera estiver valendo), reaproveitando `OZAVO_SECRET_KEY` e
+   as URLs do painel.
+2. `tar czf` de `extensions.conf http.conf ari.conf rtp.conf pjsip.conf tls` (de `asterisk/generated`)
+   e `base64 -w0` vira `ASTERISK_CONF_B64`. A CA do Supabase vira `SUPABASE_CA_B64`.
+3. Variáveis: `DATABASE_URL`, `SYSTEM_DATABASE_URL`, `OZAVO_SECRET_KEY`, `PUBLIC_URL`, `ARI_PASSWORD` (a
+   mesma do `ari.conf`), `INTERNAL_TOKEN`, `PUBLIC_IP`, `OZAVO_UDP_ONLY_HOSTS`. No painel:
+   `VOICE_INTERNAL_URL=http://ozavo-voice:8090` e o mesmo `INTERNAL_TOKEN`.
+4. Com a exceção de UDP da Telera, acrescente ao `pjsip.conf` uma `type=acl` que só permite o IP da
+   Telera (`deny=0.0.0.0/0.0.0.0` + `permit=<IP>/255.255.255.255`): a 5060/udp do Compose não filtra por
+   origem. Esse bloco é da exceção temporária e sai junto com ela.
