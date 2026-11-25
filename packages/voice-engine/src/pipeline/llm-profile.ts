@@ -35,6 +35,11 @@ export interface LlmProfile {
   reasoning: "default" | "off" | "low";
   /** Roteamento do OpenRouter (`provider`): ordem de preferência. Os provedores seguintes entram como reserva se o primeiro falhar. */
   providerOrder?: readonly string[];
+  /**
+   * Quanto esperar pelo primeiro conteúdo de um provedor da `providerOrder` antes de refazer o pedido no próximo (o último não tem
+   * limite). Corta a cauda: um provedor vivo mas lento segurava o p90 inteiro. Ausente: sem nova tentativa.
+   */
+  firstTokenTimeoutMs?: number;
   /** As ferramentas de agenda trazem os horários livres agrupados por dia (só com o raciocínio desligado). */
   groupSlotsByDay: boolean;
 }
@@ -43,8 +48,8 @@ export const LLM_PROFILES: Readonly<Record<LlmProfileId, LlmProfile>> = {
   a: { id: "a", model: "anthropic/claude-haiku-5.5", maxTokens: 1024, cacheSystemPrompt: true, reasoning: "default", groupSlotsByDay: false },
   b: { id: "b", model: "anthropic/claude-haiku-5.5", maxTokens: 400, cacheSystemPrompt: true, reasoning: "off", groupSlotsByDay: true },
   c: { id: "c", model: "google/gemini-2.5-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "default", groupSlotsByDay: false },
-  d: { id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"] },
-  e: { id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together"] },
+  d: { id: "d", model: "openai/gpt-oss-120b", maxTokens: 400, cacheSystemPrompt: false, reasoning: "low", groupSlotsByDay: false, providerOrder: ["cerebras", "groq", "baseten"], firstTokenTimeoutMs: 800 },
+  e: { id: "e", model: "deepseek/deepseek-v4.1-flash", maxTokens: 400, cacheSystemPrompt: false, reasoning: "off", groupSlotsByDay: false, providerOrder: ["together", "wafer", "reka"], firstTokenTimeoutMs: 800 },
 };
 
 /** O perfil de quem não escolheu: o A (qualidade primeiro). */

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { pcm16ToUlaw } from "../resample";
-import { manualClock, startFakeWs, until } from "../testing/fake-pipeline";
-import { CARTESIA_MODEL, cartesiaLanguage, openCartesiaTts, type TtsHandlers } from "./cartesia-tts";
+import { manualClock, manualScheduler, startFakeWs, until } from "../testing/fake-pipeline";
+import { CARTESIA_MODEL, CARTESIA_PING_MS, cartesiaLanguage, openCartesiaTts, type TtsHandlers } from "./cartesia-tts";
 
 const stops: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -35,6 +35,22 @@ describe("Cartesia TTS", () => {
     const { server } = await setup();
     expect(server.request.headers["x-api-key"]).toBe("sk_car_falsa");
     expect(server.request.url).toContain("cartesia_version=");
+  });
+
+  it("manda ping de tempos em tempos para a conexão ociosa não ser fechada, e para ao fechar", async () => {
+    const server = await startFakeWs();
+    stops.push(() => server.stop());
+    const timers = manualScheduler();
+    const { handlers } = recorder();
+    const tts = await openCartesiaTts({ apiKey: "k", voiceId: "voz-do-tenant-1", language: "pt-BR", clock: manualClock().clock, url: server.url, timeout: { schedule: timers.schedule } }, handlers);
+    // O prazo de abertura (10 s) foi cancelado; resta o do ping.
+    expect(timers.pending()).toContain(CARTESIA_PING_MS);
+    timers.runAll();
+    await until(() => server.pings() === 1);
+    expect(timers.pending()).toContain(CARTESIA_PING_MS);
+    await tts.close();
+    timers.runAll();
+    expect(server.pings()).toBe(1);
   });
 
   it("pede μ-law 8 kHz nativo, com a voz do tenant, em pt", async () => {

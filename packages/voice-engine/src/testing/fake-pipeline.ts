@@ -16,6 +16,7 @@ export async function startFakeWs() {
   const unread: Message[] = [];
   const waiters: Waiter[] = [];
   const binary: Buffer[] = [];
+  let pings = 0;
   let client: WebSocket | undefined;
   const request = { url: "", headers: {} as IncomingHttpHeaders };
   let onConnect: () => void = () => undefined;
@@ -25,6 +26,7 @@ export async function startFakeWs() {
     client = socket;
     request.url = incoming.url ?? "";
     request.headers = incoming.headers;
+    socket.on("ping", () => void pings++);
     socket.on("message", (data, isBinary) => {
       const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
       if (isBinary) {
@@ -43,6 +45,8 @@ export async function startFakeWs() {
     url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
     request,
     connected,
+    /** Quantos pings de protocolo o servidor recebeu. */
+    pings: () => pings,
     /** Áudio binário recebido até agora, colado. */
     binary: () => Buffer.concat(binary),
     waitFor(matches: (message: Message) => boolean): Promise<Message> {
